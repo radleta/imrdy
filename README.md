@@ -47,6 +47,8 @@ imrdy packs list          List installed sound packs
 imrdy packs test <name>   Play a random sound from a pack
 imrdy packs validate      Validate pack structure
 imrdy packs set-default   Set the default sound pack
+imrdy packs remove <name> Remove an installed pack
+imrdy packs pack <path>   Validate and package a pack as ZIP
 
 imrdy config show         Show current configuration
 imrdy config set <k> <v>  Update a config value

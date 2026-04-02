@@ -1,3 +1,5 @@
+using System.IO.Compression;
+using System.Security.Cryptography;
 using System.Text.Json;
 using Imrdy.Core;
 using Imrdy.Core.Sound;
@@ -8,7 +10,7 @@ using Spectre.Console;
 namespace Imrdy.Windows.Commands;
 
 /// <summary>
-/// Manages sound packs: list, test, validate, set-default.
+/// Manages sound packs: list, test, validate, set-default, remove, pack.
 /// </summary>
 internal static class PacksCommand
 {
@@ -31,6 +33,8 @@ internal static class PacksCommand
             "test" => Test(services, args[1..]),
             "validate" => Validate(services, args[1..], json),
             "set-default" => SetDefault(services, args[1..]),
+            "remove" => Remove(services, args[1..], json),
+            "pack" => Pack(services, args[1..], json),
             _ => UnknownSubcommand(services, args[0]),
         };
     }
@@ -178,7 +182,13 @@ internal static class PacksCommand
             var packDirs = new List<string>();
             if (args.Length > 0)
             {
-                var specificDir = Path.Combine(PacksRoot, args[0]);
+                var specificDir = Path.GetFullPath(Path.Combine(PacksRoot, args[0]));
+                if (!specificDir.StartsWith(Path.GetFullPath(PacksRoot) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+                {
+                    console.MarkupLine($"[red]Invalid pack name:[/] {Markup.Escape(args[0])}");
+                    return 1;
+                }
+
                 if (!Directory.Exists(specificDir))
                 {
                     console.MarkupLine($"[red]Pack directory not found:[/] {Markup.Escape(args[0])}");
@@ -320,6 +330,270 @@ internal static class PacksCommand
             console.MarkupLine($"[red]Error:[/] {Markup.Escape(ex.Message)}");
             return 2;
         }
+    }
+
+    private static int Remove(ServiceProvider services, string[] args, bool json)
+    {
+        var console = services.GetRequiredService<IAnsiConsole>();
+
+        if (args.Length == 0)
+        {
+            console.MarkupLine("[red]Usage:[/] imrdy packs remove <name>");
+            return 1;
+        }
+
+        var name = args[0];
+        var packDir = Path.GetFullPath(Path.Combine(PacksRoot, name));
+
+        // Path containment guard — prevent traversal outside packs directory
+        if (!packDir.StartsWith(Path.GetFullPath(PacksRoot) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+        {
+            console.MarkupLine($"[red]Invalid pack name:[/] {Markup.Escape(name)}");
+            return 1;
+        }
+
+        try
+        {
+            if (!Directory.Exists(packDir))
+            {
+                if (json)
+                {
+                    Console.WriteLine(JsonSerializer.Serialize(new { error = $"Pack not found: {name}" }));
+                }
+                else
+                {
+                    console.MarkupLine($"[red]Pack not found:[/] {Markup.Escape(name)}");
+                }
+
+                return 1;
+            }
+
+            Directory.Delete(packDir, recursive: true);
+
+            var defaultCleared = false;
+            if (File.Exists(ConfigPath))
+            {
+                try
+                {
+                    var bytes = File.ReadAllBytes(ConfigPath);
+                    var config = JsonSerializer.Deserialize(bytes, ImrdyJsonContext.Default.SoundConfig)
+                                 ?? new SoundConfig();
+
+                    if (string.Equals(config.Default, name, StringComparison.OrdinalIgnoreCase))
+                    {
+                        config = config with { Default = null };
+                        SoundConfigWriter.Save(config, ConfigPath);
+                        defaultCleared = true;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    console.MarkupLine($"[yellow]Warning: could not update config ({Markup.Escape(ex.Message)})[/]");
+                }
+            }
+
+            if (json)
+            {
+                Console.WriteLine(JsonSerializer.Serialize(new { removed = name }));
+            }
+            else
+            {
+                console.MarkupLine($"Removed pack [green]{Markup.Escape(name)}[/]");
+                if (defaultCleared)
+                {
+                    console.MarkupLine("[yellow]Warning: default pack was cleared (was set to this pack)[/]");
+                }
+            }
+
+            return 0;
+        }
+        catch (Exception ex)
+        {
+            if (json)
+            {
+                Console.WriteLine(JsonSerializer.Serialize(new { error = ex.Message }));
+            }
+            else
+            {
+                console.MarkupLine($"[red]Error:[/] {Markup.Escape(ex.Message)}");
+            }
+
+            return 2;
+        }
+    }
+
+    private static int Pack(ServiceProvider services, string[] args, bool json)
+    {
+        var packValidator = services.GetRequiredService<PackValidator>();
+        var console = services.GetRequiredService<IAnsiConsole>();
+
+        if (args.Length == 0)
+        {
+            console.MarkupLine("[red]Usage:[/] imrdy packs pack <path> [--output <dir>]");
+            return 1;
+        }
+
+        var path = args[0];
+
+        // Parse --output <dir>
+        var outputDir = Directory.GetCurrentDirectory();
+        for (var i = 1; i < args.Length - 1; i++)
+        {
+            if (args[i] == "--output")
+            {
+                outputDir = args[i + 1];
+                break;
+            }
+        }
+
+        try
+        {
+            var fullPath = Path.GetFullPath(path);
+            if (!Directory.Exists(fullPath))
+            {
+                console.MarkupLine($"[red]Directory not found:[/] {Markup.Escape(path)}");
+                return 1;
+            }
+
+            // Read pack.json for naming
+            var packJsonPath = Path.Combine(fullPath, "pack.json");
+            if (!File.Exists(packJsonPath))
+            {
+                console.MarkupLine($"[red]pack.json not found in:[/] {Markup.Escape(path)}");
+                return 1;
+            }
+
+            PackJson? packJson;
+            try
+            {
+                var bytes = File.ReadAllBytes(packJsonPath);
+                packJson = JsonSerializer.Deserialize(bytes, ImrdyJsonContext.Default.PackJson);
+            }
+            catch (JsonException ex)
+            {
+                console.MarkupLine($"[red]Invalid pack.json:[/] {Markup.Escape(ex.Message)}");
+                return 1;
+            }
+
+            if (packJson is null || string.IsNullOrEmpty(packJson.Name))
+            {
+                console.MarkupLine("[red]pack.json is missing the 'name' field.[/]");
+                return 1;
+            }
+
+            // Validate pack structure
+            var validationResult = packValidator.Validate(fullPath);
+            if (!validationResult.IsValid)
+            {
+                if (json)
+                {
+                    var validationOutput = new
+                    {
+                        error = "Validation failed",
+                        errors = validationResult.Errors.Select(e => new
+                        {
+                            path = e.Path,
+                            message = e.Message,
+                            severity = e.Severity.ToString().ToLowerInvariant(),
+                        }),
+                    };
+                    Console.WriteLine(JsonSerializer.Serialize(validationOutput, new JsonSerializerOptions { WriteIndented = true }));
+                }
+                else
+                {
+                    var tree = new Tree($"[red]\u2717[/] Validation failed for {Markup.Escape(packJson.Name)}");
+                    foreach (var error in validationResult.Errors)
+                    {
+                        var color = error.Severity == ValidationSeverity.Error ? "red" : "yellow";
+                        tree.AddNode($"[{color}]{Markup.Escape(error.Message)}[/]");
+                    }
+
+                    console.Write(tree);
+                }
+
+                return 1;
+            }
+
+            // Create ZIP
+            if (!Directory.Exists(outputDir))
+            {
+                Directory.CreateDirectory(outputDir);
+            }
+
+            // Sanitize name/version to prevent path separators in filename
+            var safeName = string.Concat(packJson.Name.Split(Path.GetInvalidFileNameChars()));
+            var safeVersion = string.Concat(packJson.Version.Split(Path.GetInvalidFileNameChars()));
+            var zipFileName = $"pack-{safeName}-v{safeVersion}.zip";
+            var zipPath = Path.GetFullPath(Path.Combine(outputDir, zipFileName));
+
+            // Path containment guard — ensure ZIP stays within output directory
+            if (!zipPath.StartsWith(Path.GetFullPath(outputDir) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(Path.GetDirectoryName(zipPath), Path.GetFullPath(outputDir), StringComparison.OrdinalIgnoreCase))
+            {
+                console.MarkupLine("[red]Invalid pack name or version for filename construction.[/]");
+                return 1;
+            }
+
+            // Remove existing ZIP if present to avoid ZipFile error
+            if (File.Exists(zipPath))
+            {
+                File.Delete(zipPath);
+            }
+
+            ZipFile.CreateFromDirectory(fullPath, zipPath);
+
+            // Compute SHA256
+            var sha256Hash = ComputeSha256(zipPath);
+            var fileSize = new FileInfo(zipPath).Length;
+
+            if (json)
+            {
+                var output = new
+                {
+                    path = zipPath,
+                    sha256 = sha256Hash,
+                    size = fileSize,
+                };
+                Console.WriteLine(JsonSerializer.Serialize(output, new JsonSerializerOptions { WriteIndented = true }));
+            }
+            else
+            {
+                console.MarkupLine($"Created [green]{Markup.Escape(zipPath)}[/] ({FormatSize(fileSize)})");
+                console.MarkupLine($"SHA256: [dim]{sha256Hash}[/]");
+            }
+
+            return 0;
+        }
+        catch (Exception ex)
+        {
+            if (json)
+            {
+                Console.WriteLine(JsonSerializer.Serialize(new { error = ex.Message }));
+            }
+            else
+            {
+                console.MarkupLine($"[red]Error:[/] {Markup.Escape(ex.Message)}");
+            }
+
+            return 2;
+        }
+    }
+
+    private static string ComputeSha256(string filePath)
+    {
+        using var stream = File.OpenRead(filePath);
+        var hash = SHA256.HashData(stream);
+        return Convert.ToHexStringLower(hash);
+    }
+
+    private static string FormatSize(long bytes)
+    {
+        return bytes switch
+        {
+            < 1024 => $"{bytes} B",
+            < 1024 * 1024 => $"{bytes / 1024.0:F1} KB",
+            _ => $"{bytes / (1024.0 * 1024.0):F1} MB",
+        };
     }
 
     private static int UnknownSubcommand(ServiceProvider services, string sub)

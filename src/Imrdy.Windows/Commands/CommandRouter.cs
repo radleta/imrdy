@@ -97,6 +97,8 @@ internal static class CommandRouter
                 console.MarkupLine("  [green]test[/] <name> [event] Play a random sound from a pack");
                 console.MarkupLine("  [green]validate[/] [name]    Validate pack structure");
                 console.MarkupLine("  [green]set-default[/] <name> Set default sound pack");
+                console.MarkupLine("  [green]remove[/] <name>      Remove an installed pack");
+                console.MarkupLine("  [green]pack[/] <path>        Validate and package a pack as ZIP");
                 break;
             case "config":
                 console.MarkupLine("[bold]imrdy config[/] <subcommand>");
