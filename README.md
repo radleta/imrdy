@@ -18,7 +18,7 @@ Click a session icon to switch to its virtual desktop and focus the terminal win
 claude plugin add https://github.com/radleta/imrdy
 ```
 
-The plugin auto-installs the binary on first session start via the bootstrap script.
+The plugin auto-installs the binary and default sound pack on first session start via the bootstrap script.
 
 ### Manual
 

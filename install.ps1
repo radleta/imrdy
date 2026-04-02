@@ -72,6 +72,106 @@ if ($ChecksumAsset) {
 Write-Host ""
 Write-Host "Installed imrdy to $InstallPath" -ForegroundColor Green
 
+# --- Download default sound pack (graceful — failure does not abort) ---
+try {
+    $PacksDir = Join-Path $env:USERPROFILE ".claude\sounds\packs"
+    $SoundsDir = Join-Path $env:USERPROFILE ".claude\sounds"
+    $ConfigPath = Join-Path $SoundsDir "config.json"
+
+    # Find latest pack-* release
+    Write-Host "Fetching latest sound pack release..." -ForegroundColor Cyan
+    $AllReleases = Invoke-RestMethod -Uri "https://api.github.com/repos/$Repo/releases" -Headers @{
+        "User-Agent" = "imrdy-installer"
+    }
+
+    $PackRelease = $AllReleases | Where-Object { $_.tag_name -like "pack-*" } | Select-Object -First 1
+    if (-not $PackRelease) {
+        Write-Host "No sound pack release found, skipping pack download" -ForegroundColor Yellow
+    } else {
+        $PackZipAsset = $PackRelease.assets | Where-Object { $_.name -like "*.zip" } | Select-Object -First 1
+        $PackChecksumAsset = $PackRelease.assets | Where-Object { $_.name -eq "SHA256SUMS.txt" } | Select-Object -First 1
+
+        if (-not $PackZipAsset) {
+            Write-Host "No pack ZIP asset found in release" -ForegroundColor Yellow
+        } else {
+            # Validate URL points to GitHub
+            $PackZipUrl = $PackZipAsset.browser_download_url
+            if ($PackZipUrl -notmatch '^https://(github\.com|objects\.githubusercontent\.com)/') {
+                Write-Warning "Unexpected pack download URL domain: $PackZipUrl"
+            } else {
+                $PackTmpDir = Join-Path ([System.IO.Path]::GetTempPath()) "imrdy-pack-$([System.Guid]::NewGuid())"
+                New-Item -ItemType Directory -Path $PackTmpDir -Force | Out-Null
+
+                try {
+                    $PackZipPath = Join-Path $PackTmpDir "pack.zip"
+                    Write-Host "Downloading sound pack..." -ForegroundColor Cyan
+                    Invoke-WebRequest -Uri $PackZipUrl -OutFile $PackZipPath
+
+                    # Verify pack checksum
+                    if ($PackChecksumAsset) {
+                        $PackChecksumUrl = $PackChecksumAsset.browser_download_url
+                        if ($PackChecksumUrl -match '^https://(github\.com|objects\.githubusercontent\.com)/') {
+                            $PackChecksumPath = Join-Path $PackTmpDir "SHA256SUMS.txt"
+                            Invoke-WebRequest -Uri $PackChecksumUrl -OutFile $PackChecksumPath
+
+                            $PackZipName = $PackZipAsset.name
+                            $ChecksumContent = Get-Content $PackChecksumPath
+                            $ExpectedLine = $ChecksumContent | Where-Object { $_ -match [regex]::Escape($PackZipName) }
+                            if ($ExpectedLine) {
+                                $PackExpectedHash = ($ExpectedLine -split "\s+")[0]
+                                $PackActualHash = (Get-FileHash $PackZipPath -Algorithm SHA256).Hash.ToLower()
+                                if ($PackActualHash -ne $PackExpectedHash) {
+                                    Write-Warning "Pack checksum verification FAILED! Expected: $PackExpectedHash, Got: $PackActualHash"
+                                    throw "Pack checksum mismatch"
+                                }
+                                Write-Host "Pack checksum verified" -ForegroundColor Green
+                            } else {
+                                Write-Host "Warning: no checksum found for pack ZIP" -ForegroundColor Yellow
+                            }
+                        }
+                    }
+
+                    # Extract pack to packs directory (with zip-slip protection)
+                    if (-not (Test-Path $PacksDir)) {
+                        New-Item -ItemType Directory -Path $PacksDir -Force | Out-Null
+                    }
+                    $DestFull = (Resolve-Path $PacksDir).Path
+                    Add-Type -AssemblyName System.IO.Compression.FileSystem
+                    $ZipArchive = [System.IO.Compression.ZipFile]::OpenRead($PackZipPath)
+                    try {
+                        foreach ($entry in $ZipArchive.Entries) {
+                            $TargetPath = [System.IO.Path]::GetFullPath((Join-Path $DestFull $entry.FullName))
+                            if (-not $TargetPath.StartsWith($DestFull + [System.IO.Path]::DirectorySeparatorChar) -and $TargetPath -ne $DestFull) {
+                                throw "Path traversal detected in pack ZIP: $($entry.FullName)"
+                            }
+                        }
+                    } finally {
+                        $ZipArchive.Dispose()
+                    }
+                    Expand-Archive -Path $PackZipPath -DestinationPath $PacksDir -Force
+                    Write-Host "Sound pack installed to $PacksDir" -ForegroundColor Green
+
+                    # Create default config.json if it doesn't exist
+                    if (-not (Test-Path $ConfigPath)) {
+                        if (-not (Test-Path $SoundsDir)) {
+                            New-Item -ItemType Directory -Path $SoundsDir -Force | Out-Null
+                        }
+                        '{"default":"assistant","soundEnabled":true}' | Set-Content -Path $ConfigPath -Encoding UTF8
+                        Write-Host "Created default sound config" -ForegroundColor Green
+                    }
+                } finally {
+                    # Clean up temp directory
+                    if (Test-Path $PackTmpDir) {
+                        Remove-Item $PackTmpDir -Recurse -Force -ErrorAction SilentlyContinue
+                    }
+                }
+            }
+        }
+    }
+} catch {
+    Write-Warning "Sound pack download failed: $($_.Exception.Message). Continuing without sounds."
+}
+
 # Check if install dir is in PATH
 $PathDirs = $env:PATH -split ";"
 if ($PathDirs -notcontains $InstallDir) {

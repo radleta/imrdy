@@ -91,5 +91,142 @@ fi
 chmod +x "${INSTALL_PATH}"
 echo "imrdy: installed to ${INSTALL_PATH}" >&2
 
+# --- Download default sound pack (graceful — failure does not abort) ---
+(
+    PACKS_DIR="${HOME}/.claude/sounds/packs"
+    SOUNDS_DIR="${HOME}/.claude/sounds"
+    CONFIG_PATH="${SOUNDS_DIR}/config.json"
+
+    # Find latest pack-* release and extract asset URLs
+    PACK_ZIP_URL=""
+    PACK_CHECKSUMS_URL=""
+
+    if command -v gh &>/dev/null; then
+        # Single API call, extract both URLs (zip on line 1, checksums on line 2)
+        PACK_URLS=$(gh api "repos/${REPO}/releases" --jq '
+            [.[] | select(.tag_name | startswith("pack-"))][0].assets
+            | (map(select(.name | endswith(".zip")))[0].browser_download_url // ""),
+              (map(select(.name == "SHA256SUMS.txt"))[0].browser_download_url // "")' 2>/dev/null || true)
+        if [ -n "${PACK_URLS}" ]; then
+            PACK_ZIP_URL=$(echo "${PACK_URLS}" | head -1)
+            PACK_CHECKSUMS_URL=$(echo "${PACK_URLS}" | tail -1)
+        fi
+    elif command -v curl &>/dev/null; then
+        ALL_RELEASES=$(curl -fsSL "https://api.github.com/repos/${REPO}/releases" 2>/dev/null || true)
+        if [ -n "${ALL_RELEASES}" ]; then
+            if command -v jq &>/dev/null; then
+                PACK_ZIP_URL=$(echo "${ALL_RELEASES}" | jq -r '
+                    [.[] | select(.tag_name | startswith("pack-"))][0].assets[]
+                    | select(.name | endswith(".zip"))
+                    | .browser_download_url // empty' 2>/dev/null || true)
+                PACK_CHECKSUMS_URL=$(echo "${ALL_RELEASES}" | jq -r '
+                    [.[] | select(.tag_name | startswith("pack-"))][0].assets[]
+                    | select(.name == "SHA256SUMS.txt")
+                    | .browser_download_url // empty' 2>/dev/null || true)
+            elif command -v python3 &>/dev/null; then
+                # Single python3 call outputs zip URL on line 1, checksums URL on line 2
+                PACK_PY_URLS=$(echo "${ALL_RELEASES}" | python3 -c "
+import json, sys
+zip_url, cs_url = '', ''
+for r in json.load(sys.stdin):
+    if r.get('tag_name','').startswith('pack-'):
+        for a in r.get('assets', []):
+            if a['name'].endswith('.zip'):
+                zip_url = a['browser_download_url']
+            elif a['name'] == 'SHA256SUMS.txt':
+                cs_url = a['browser_download_url']
+        break
+print(zip_url)
+print(cs_url)
+" 2>/dev/null || true)
+                if [ -n "${PACK_PY_URLS}" ]; then
+                    PACK_ZIP_URL=$(echo "${PACK_PY_URLS}" | head -1)
+                    PACK_CHECKSUMS_URL=$(echo "${PACK_PY_URLS}" | tail -1)
+                fi
+            else
+                echo "imrdy: no jq or python3 available, cannot parse pack releases" >&2
+                exit 0
+            fi
+        fi
+    fi
+
+    if [ -z "${PACK_ZIP_URL}" ]; then
+        echo "imrdy: no sound pack release found, skipping pack download" >&2
+        exit 0
+    fi
+
+    # Validate URLs point to GitHub
+    for url in "${PACK_ZIP_URL}" "${PACK_CHECKSUMS_URL:-}"; do
+        if [ -n "${url}" ] && [[ ! "${url}" =~ ^https://(github\.com|objects\.githubusercontent\.com)/ ]]; then
+            echo "imrdy: unexpected pack download URL domain: ${url}" >&2
+            exit 0
+        fi
+    done
+
+    PACK_TMP_DIR=$(mktemp -d)
+    trap '[ -n "${PACK_TMP_DIR:-}" ] && rm -rf "${PACK_TMP_DIR}"' EXIT
+
+    PACK_ZIP_PATH="${PACK_TMP_DIR}/pack.zip"
+    echo "imrdy: downloading sound pack..." >&2
+    curl -fsSL -o "${PACK_ZIP_PATH}" "${PACK_ZIP_URL}"
+
+    # Verify pack checksum
+    if [ -n "${PACK_CHECKSUMS_URL:-}" ]; then
+        PACK_CHECKSUMS_PATH="${PACK_TMP_DIR}/SHA256SUMS.txt"
+        curl -fsSL -o "${PACK_CHECKSUMS_PATH}" "${PACK_CHECKSUMS_URL}"
+
+        PACK_ZIP_NAME=$(basename "${PACK_ZIP_URL%%\?*}")
+        PACK_EXPECTED_HASH=$(grep -F " ${PACK_ZIP_NAME}" "${PACK_CHECKSUMS_PATH}" | awk '{print $1}')
+        if [ -n "${PACK_EXPECTED_HASH}" ]; then
+            PACK_ACTUAL_HASH=$(sha256sum "${PACK_ZIP_PATH}" | awk '{print $1}')
+            if [ "${PACK_ACTUAL_HASH}" != "${PACK_EXPECTED_HASH}" ]; then
+                echo "imrdy: pack checksum verification FAILED" >&2
+                echo "  expected: ${PACK_EXPECTED_HASH}" >&2
+                echo "  actual:   ${PACK_ACTUAL_HASH}" >&2
+                exit 0
+            fi
+            echo "imrdy: pack checksum verified" >&2
+        else
+            echo "imrdy: warning: no checksum found for pack ZIP" >&2
+        fi
+    fi
+
+    # Extract pack to packs directory (with zip-slip protection)
+    mkdir -p "${PACKS_DIR}"
+    PACKS_DIR_REAL=$(cd "${PACKS_DIR}" && pwd -P)
+    if command -v python3 &>/dev/null; then
+        python3 -c "
+import zipfile, sys, os
+zf = zipfile.ZipFile(sys.argv[1], 'r')
+dest = os.path.realpath(sys.argv[2])
+for member in zf.namelist():
+    target = os.path.realpath(os.path.join(dest, member))
+    if not target.startswith(dest + os.sep) and target != dest:
+        print(f'imrdy: path traversal detected in pack ZIP: {member}', file=sys.stderr)
+        sys.exit(1)
+zf.extractall(sys.argv[2])
+" "${PACK_ZIP_PATH}" "${PACKS_DIR_REAL}"
+    elif command -v unzip &>/dev/null; then
+        # Validate entries before extraction
+        UNSAFE_ENTRY=$(unzip -l "${PACK_ZIP_PATH}" | awk 'NR>3 && !/^-/ {print $NF}' | grep -E '(^/|\.\./)' || true)
+        if [ -n "${UNSAFE_ENTRY}" ]; then
+            echo "imrdy: path traversal detected in pack ZIP" >&2
+            exit 0
+        fi
+        unzip -qo "${PACK_ZIP_PATH}" -d "${PACKS_DIR}"
+    else
+        echo "imrdy: no python3 or unzip available, cannot extract pack" >&2
+        exit 0
+    fi
+    echo "imrdy: sound pack installed to ${PACKS_DIR}" >&2
+
+    # Create default config.json if it doesn't exist
+    if [ ! -f "${CONFIG_PATH}" ]; then
+        mkdir -p "${SOUNDS_DIR}"
+        echo '{"default":"assistant","soundEnabled":true}' > "${CONFIG_PATH}"
+        echo "imrdy: created default sound config" >&2
+    fi
+) || echo "imrdy: warning: sound pack download failed, continuing without sounds" >&2
+
 # Re-run the hook with the cached SessionStart payload
 exec "${INSTALL_PATH}" hook < "${STDIN_CACHE}"
