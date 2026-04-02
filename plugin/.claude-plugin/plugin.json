@@ -1,0 +1,14 @@
+{
+  "name": "imrdy",
+  "version": "1.0.0",
+  "description": "System tray monitor for Claude Code sessions on Windows",
+  "author": "Richard Adleta",
+  "repository": "https://github.com/radleta/imrdy",
+  "license": "MIT",
+  "userConfig": {
+    "soundPack": {
+      "description": "Default sound pack name",
+      "default": "assistant"
+    }
+  }
+}

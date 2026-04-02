@@ -1,0 +1,87 @@
+# EditorConfig for Claude Tray
+root = true
+
+[*]
+indent_style = space
+indent_size = 4
+end_of_line = crlf
+charset = utf-8
+trim_trailing_whitespace = true
+insert_final_newline = true
+
+[*.{csproj,props,targets,xml}]
+indent_size = 2
+
+[*.{json,yml,yaml}]
+indent_size = 2
+
+[*.md]
+trim_trailing_whitespace = false
+
+# C# Naming Conventions
+[*.cs]
+
+# PascalCase for public members
+dotnet_naming_rule.public_members_must_be_pascal_case.symbols = public_symbols
+dotnet_naming_rule.public_members_must_be_pascal_case.style = pascal_case_style
+dotnet_naming_rule.public_members_must_be_pascal_case.severity = error
+
+dotnet_naming_symbols.public_symbols.applicable_kinds = property, method, field, event, delegate, class, struct, interface, enum
+dotnet_naming_symbols.public_symbols.applicable_accessibilities = public, internal, protected, protected_internal
+
+dotnet_naming_style.pascal_case_style.capitalization = pascal_case
+
+# I prefix for interfaces
+dotnet_naming_rule.interfaces_must_begin_with_i.symbols = interface_symbols
+dotnet_naming_rule.interfaces_must_begin_with_i.style = interface_style
+dotnet_naming_rule.interfaces_must_begin_with_i.severity = error
+
+dotnet_naming_symbols.interface_symbols.applicable_kinds = interface
+dotnet_naming_symbols.interface_symbols.applicable_accessibilities = *
+
+dotnet_naming_style.interface_style.required_prefix = I
+dotnet_naming_style.interface_style.capitalization = pascal_case
+
+# T prefix for type parameters
+dotnet_naming_rule.type_parameters_must_begin_with_t.symbols = type_parameter_symbols
+dotnet_naming_rule.type_parameters_must_begin_with_t.style = type_parameter_style
+dotnet_naming_rule.type_parameters_must_begin_with_t.severity = error
+
+dotnet_naming_symbols.type_parameter_symbols.applicable_kinds = type_parameter
+dotnet_naming_symbols.type_parameter_symbols.applicable_accessibilities = *
+
+dotnet_naming_style.type_parameter_style.required_prefix = T
+dotnet_naming_style.type_parameter_style.capitalization = pascal_case
+
+# camelCase for private fields with _ prefix
+dotnet_naming_rule.private_fields_must_be_camel_case.symbols = private_field_symbols
+dotnet_naming_rule.private_fields_must_be_camel_case.style = private_field_style
+dotnet_naming_rule.private_fields_must_be_camel_case.severity = error
+
+dotnet_naming_symbols.private_field_symbols.applicable_kinds = field
+dotnet_naming_symbols.private_field_symbols.applicable_accessibilities = private
+
+dotnet_naming_style.private_field_style.required_prefix = _
+dotnet_naming_style.private_field_style.capitalization = camel_case
+
+# camelCase for parameters and local variables
+dotnet_naming_rule.locals_must_be_camel_case.symbols = local_symbols
+dotnet_naming_rule.locals_must_be_camel_case.style = camel_case_style
+dotnet_naming_rule.locals_must_be_camel_case.severity = error
+
+dotnet_naming_symbols.local_symbols.applicable_kinds = parameter, local
+dotnet_naming_symbols.local_symbols.applicable_accessibilities = *
+
+dotnet_naming_style.camel_case_style.capitalization = camel_case
+
+# Code style
+csharp_style_namespace_declarations = file_scoped:error
+csharp_style_var_for_built_in_types = true:suggestion
+csharp_style_var_when_type_is_apparent = true:suggestion
+csharp_style_var_elsewhere = true:suggestion
+csharp_style_expression_bodied_methods = when_on_single_line:suggestion
+csharp_style_expression_bodied_properties = true:suggestion
+csharp_style_expression_bodied_accessors = true:suggestion
+csharp_prefer_braces = true:suggestion
+csharp_using_directive_placement = outside_namespace:error
+dotnet_sort_system_directives_first = true

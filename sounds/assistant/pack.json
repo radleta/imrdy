@@ -1,0 +1,28 @@
+{
+  "name": "Assistant",
+  "description": "Friendly AI assistant \u2014 warm, playful female voice",
+  "version": "1.0.0",
+  "events": {
+    "session_start": {
+      "folder": "session_start"
+    },
+    "getting_to_work": {
+      "folder": "getting_to_work"
+    },
+    "needs_you": {
+      "folder": "needs_you"
+    },
+    "forgotten": {
+      "folder": "forgotten"
+    },
+    "finished": {
+      "folder": "finished"
+    },
+    "session_end": {
+      "folder": "session_end"
+    },
+    "combo": {
+      "folder": "combo"
+    }
+  }
+}

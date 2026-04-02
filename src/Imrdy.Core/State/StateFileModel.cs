@@ -1,0 +1,62 @@
+using System.Text.Json.Serialization;
+
+namespace Imrdy.Core.State;
+
+/// <summary>
+/// 12-field JSON model matching the session state file format.
+/// Written by hook, read by monitor.
+/// </summary>
+public sealed record StateFileModel
+{
+    private const int MaxMessageLength = 120;
+
+    [JsonPropertyName("session_id")]
+    public required string SessionId { get; init; }
+
+    [JsonPropertyName("status")]
+    public required string Status { get; init; }
+
+    [JsonPropertyName("project")]
+    public required string Project { get; init; }
+
+    [JsonPropertyName("cwd")]
+    public required string Cwd { get; init; }
+
+    [JsonPropertyName("hook_event")]
+    public required string HookEvent { get; init; }
+
+    [JsonPropertyName("notification_type")]
+    public string NotificationType { get; init; } = "";
+
+    [JsonPropertyName("last_message")]
+    public string LastMessage { get; init; } = "";
+
+    [JsonPropertyName("claude_pid")]
+    public int? ClaudePid { get; init; }
+
+    [JsonPropertyName("sound_pack")]
+    public string? SoundPack { get; init; }
+
+    [JsonPropertyName("desktop_index")]
+    public int? DesktopIndex { get; init; }
+
+    [JsonPropertyName("timestamp")]
+    public DateTimeOffset Timestamp { get; init; }
+
+    [JsonPropertyName("session_name")]
+    public string? SessionName { get; init; }
+
+    /// <summary>
+    /// Truncates a message to the maximum allowed length.
+    /// Port of truncateMessage() from hook-lib.mjs.
+    /// </summary>
+    public static string TruncateMessage(string? message, int maxLength = MaxMessageLength)
+    {
+        if (string.IsNullOrEmpty(message))
+        {
+            return "";
+        }
+
+        return message.Length <= maxLength ? message : message[..maxLength];
+    }
+}

@@ -1,0 +1,72 @@
+namespace Imrdy.Core.Tooltip;
+
+/// <summary>
+/// Formats tooltips for session and workspace tray icons.
+/// NotifyIcon.Text is limited to 63 characters.
+/// </summary>
+public static class TooltipFormatter
+{
+    private const int MaxTooltipLength = 63;
+
+    /// <summary>
+    /// Formats a session tooltip.
+    /// Unnamed: "project [status 2m] (d1) ~pack"
+    /// Named:   "project: session-name [status 2m] (d1) ~pack"
+    /// </summary>
+    public static string FormatSession(
+        string project,
+        string? sessionName,
+        string status,
+        TimeSpan age,
+        int? desktopIndex,
+        string? packName)
+    {
+        var ageStr = FormatAge(age);
+        var desktopStr = desktopIndex.HasValue ? $" (d{desktopIndex.Value})" : "";
+        var packStr = !string.IsNullOrEmpty(packName) ? $" ~{packName}" : "";
+
+        var tooltip = string.IsNullOrEmpty(sessionName)
+            ? $"{project} [{status} {ageStr}]{desktopStr}{packStr}"
+            : $"{project}: {sessionName} [{status} {ageStr}]{desktopStr}{packStr}";
+
+        return Truncate(tooltip);
+    }
+
+    /// <summary>
+    /// Formats a workspace tooltip: "name [workspace] (d1)"
+    /// </summary>
+    public static string FormatWorkspace(string name, int desktopIndex)
+    {
+        var tooltip = $"{name} [workspace] (d{desktopIndex})";
+        return Truncate(tooltip);
+    }
+
+    /// <summary>
+    /// Formats a time span as a human-readable age string.
+    /// Examples: "0s", "45s", "2m", "1h", "3d"
+    /// </summary>
+    public static string FormatAge(TimeSpan age)
+    {
+        if (age.TotalDays >= 1)
+        {
+            return $"{(int)age.TotalDays}d";
+        }
+
+        if (age.TotalHours >= 1)
+        {
+            return $"{(int)age.TotalHours}h";
+        }
+
+        if (age.TotalMinutes >= 1)
+        {
+            return $"{(int)age.TotalMinutes}m";
+        }
+
+        return $"{(int)age.TotalSeconds}s";
+    }
+
+    private static string Truncate(string text)
+    {
+        return text.Length <= MaxTooltipLength ? text : text[..MaxTooltipLength];
+    }
+}
