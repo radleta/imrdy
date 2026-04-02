@@ -27,6 +27,10 @@ internal sealed class TrayApp : ApplicationContext
 
     private static readonly string SessionsDir = Path.Combine(TrayDir, "sessions");
     private static readonly string WorkspacesPath = Path.Combine(TrayDir, "workspaces.json");
+    private static readonly string SoundsDir = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".claude", "sounds");
+    private static readonly string SoundsConfigPath = Path.Combine(SoundsDir, "config.json");
+    private static readonly string PacksRoot = Path.Combine(SoundsDir, "packs");
     private static readonly TimeSpan GracePeriod = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan StaleThreshold = TimeSpan.FromMinutes(60);
 
@@ -34,11 +38,17 @@ internal sealed class TrayApp : ApplicationContext
     private readonly StateFileReader _stateReader;
     private readonly WorkspaceStore _workspaceStore;
     private readonly CooldownTracker _cooldownTracker;
+    private readonly PackLoader _packLoader;
     private readonly IDesktopManager _desktopManager;
     private readonly AgingCache _agingCache = new();
     private readonly BalloonTipManager _balloonTipManager;
     private readonly WinFormsSoundPlayer _soundPlayer = new();
     private readonly CancellationTokenSource _shutdownCts = new();
+    private readonly Dictionary<string, ShuffleBag<string>> _soundBags = new();
+
+    private bool _soundEnabled = true;
+    private SoundConfig _soundConfig = new();
+    private IReadOnlyList<PackLoader.LoadedPack> _loadedPacks = [];
 
     private readonly Dictionary<string, SessionEntry> _sessions = new();
     private readonly Dictionary<string, WorkspaceSessionEntry> _workspaces = new();
@@ -47,6 +57,7 @@ internal sealed class TrayApp : ApplicationContext
 
     private FileSystemWatcher? _sessionWatcher;
     private FileSystemWatcher? _workspaceWatcher;
+    private FileSystemWatcher? _configWatcher;
 
     private System.Windows.Forms.Timer? _drainTimer;
     private System.Windows.Forms.Timer? _sweepTimer;
@@ -65,12 +76,14 @@ internal sealed class TrayApp : ApplicationContext
         StateFileReader stateReader,
         WorkspaceStore workspaceStore,
         CooldownTracker cooldownTracker,
+        PackLoader packLoader,
         IDesktopManager desktopManager)
     {
         _logger = loggerFactory.CreateLogger<TrayApp>();
         _stateReader = stateReader;
         _workspaceStore = workspaceStore;
         _cooldownTracker = cooldownTracker;
+        _packLoader = packLoader;
         _desktopManager = desktopManager;
         _balloonTipManager = new BalloonTipManager(loggerFactory);
 
@@ -78,6 +91,7 @@ internal sealed class TrayApp : ApplicationContext
         Application.ApplicationExit += OnApplicationExit;
 
         InitializeDirectories();
+        LoadSoundConfig();
         InitializeWatchers();
         InitializeTimers();
 
@@ -119,6 +133,18 @@ internal sealed class TrayApp : ApplicationContext
             _workspaceWatcher.Changed += OnWorkspaceFileChanged;
             _workspaceWatcher.Created += OnWorkspaceFileChanged;
         }
+
+        // Watch sounds config.json for live reload
+        if (Directory.Exists(SoundsDir))
+        {
+            _configWatcher = new FileSystemWatcher(SoundsDir, "config.json")
+            {
+                NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite | NotifyFilters.Size,
+                EnableRaisingEvents = true,
+            };
+            _configWatcher.Changed += OnSoundConfigFileChanged;
+            _configWatcher.Created += OnSoundConfigFileChanged;
+        }
     }
 
     private void InitializeTimers()
@@ -139,6 +165,26 @@ internal sealed class TrayApp : ApplicationContext
         _staleTimer.Start();
     }
 
+    // --- Sound Config ---
+
+    private void LoadSoundConfig()
+    {
+        try
+        {
+            _soundConfig = PackAssignment.LoadConfig(SoundsConfigPath);
+            _soundEnabled = _soundConfig.SoundEnabled;
+            _loadedPacks = _packLoader.LoadPacks(PacksRoot);
+            _soundBags.Clear();
+
+            _logger.LogDebug("Sound config loaded: enabled={Enabled}, packs={Count}",
+                _soundEnabled, _loadedPacks.Count);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to load sound config");
+        }
+    }
+
     // --- FSW Callbacks (background thread → queue) ---
 
     private void OnSessionFileChanged(object sender, FileSystemEventArgs e)
@@ -156,6 +202,11 @@ internal sealed class TrayApp : ApplicationContext
         _pendingChanges.Enqueue("WORKSPACE_RELOAD");
     }
 
+    private void OnSoundConfigFileChanged(object sender, FileSystemEventArgs e)
+    {
+        _pendingChanges.Enqueue("SOUND_CONFIG_RELOAD");
+    }
+
     // --- Timer Callbacks (UI thread) ---
 
     private void OnDrainTimerTick(object? sender, EventArgs e)
@@ -170,7 +221,11 @@ internal sealed class TrayApp : ApplicationContext
                     continue; // Debounce: skip duplicate events in same drain cycle
                 }
 
-                if (item == "WORKSPACE_RELOAD")
+                if (item == "SOUND_CONFIG_RELOAD")
+                {
+                    LoadSoundConfig();
+                }
+                else if (item == "WORKSPACE_RELOAD")
                 {
                     ReloadWorkspaces();
                 }
@@ -601,16 +656,60 @@ internal sealed class TrayApp : ApplicationContext
 
     private void PlaySoundEvent(SessionEntry entry, SoundEvent soundEvent)
     {
+        if (!_soundEnabled)
+        {
+            return;
+        }
+
         var now = DateTimeOffset.UtcNow;
         var isCombo = _cooldownTracker.RecordAndCheckCombo(entry.SessionId, now);
+        var effectiveEvent = isCombo ? SoundEvent.Combo : soundEvent;
 
         if (isCombo)
         {
-            _logger.LogDebug("Combo detected for session {SessionId}", entry.SessionId);
+            _logger.LogDebug("Combo detected for session {SessionId}, playing Combo instead of {Original}",
+                entry.SessionId, soundEvent);
         }
 
-        _logger.LogDebug("Sound event: {Event} for session {SessionId}",
-            soundEvent, entry.SessionId);
+        // Resolve which pack to use
+        var assignment = new PackAssignment(_loadedPacks, _soundConfig);
+        var packName = assignment.Resolve(
+            entry.SoundPack,
+            PathNormalizer.DeriveProject(entry.State?.Cwd ?? ""));
+
+        if (packName is null)
+        {
+            _logger.LogDebug("No pack resolved for session {SessionId}", entry.SessionId);
+            return;
+        }
+
+        // Find the loaded pack
+        var pack = _loadedPacks.FirstOrDefault(p =>
+            string.Equals(p.Name, packName, StringComparison.OrdinalIgnoreCase));
+
+        if (pack is null || !pack.WavFiles.TryGetValue(effectiveEvent, out var wavPaths) || wavPaths.Length == 0)
+        {
+            _logger.LogDebug("No WAV files for {Event} in pack {Pack}", effectiveEvent, packName);
+            return;
+        }
+
+        // Get or create shuffle bag for this pack+event combination
+        var bagKey = $"{packName}:{effectiveEvent}";
+        if (!_soundBags.TryGetValue(bagKey, out var bag))
+        {
+            bag = new ShuffleBag<string>(wavPaths);
+            _soundBags[bagKey] = bag;
+        }
+
+        var wavPath = bag.Draw();
+        if (wavPath is null)
+        {
+            return;
+        }
+
+        _soundPlayer.Play(wavPath);
+        _logger.LogDebug("Playing {Event} from {Pack}: {File}",
+            effectiveEvent, packName, Path.GetFileName(wavPath));
     }
 
     // --- Shutdown ---
@@ -662,6 +761,12 @@ internal sealed class TrayApp : ApplicationContext
         {
             _workspaceWatcher.EnableRaisingEvents = false;
             _workspaceWatcher.Dispose();
+        }
+
+        if (_configWatcher is not null)
+        {
+            _configWatcher.EnableRaisingEvents = false;
+            _configWatcher.Dispose();
         }
 
         // Dispose all session icons

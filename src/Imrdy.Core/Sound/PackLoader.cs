@@ -83,7 +83,12 @@ public sealed class PackLoader
                 continue;
             }
 
-            var eventFolder = Path.Combine(packDir, eventConfig.Folder);
+            var eventFolder = Path.GetFullPath(Path.Combine(packDir, eventConfig.Folder));
+            if (!eventFolder.StartsWith(Path.GetFullPath(packDir), StringComparison.OrdinalIgnoreCase))
+            {
+                continue; // Skip folder references that escape the pack directory
+            }
+
             if (Directory.Exists(eventFolder))
             {
                 var wavs = Directory.GetFiles(eventFolder, "*.wav");
