@@ -1,0 +1,52 @@
+## .NET
+bin/
+obj/
+publish/
+*.user
+*.suo
+*.userprefs
+*.sln.docstates
+*.DotSettings.user
+
+## Build outputs
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+bld/
+[Bb]in/
+[Oo]bj/
+
+## NuGet
+*.nupkg
+*.snupkg
+.nuget/
+packages/
+
+## IDE
+.vs/
+.vscode/
+.idea/
+*.swp
+*~
+
+## OS
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+.DS_Store
+
+## Scratch subrepo
+scratch/
+
+## Local md files
+*.local.md
+
+## just-one working dir
+.just-one/
+
+## brainstorm working dir and server info
+.brainstorm/
+.server-info
