@@ -310,17 +310,7 @@ internal static class PacksCommand
             // Update default
             config = config with { Default = pack.Name };
 
-            // Atomic write
-            var dir = Path.GetDirectoryName(ConfigPath);
-            if (dir is not null && !Directory.Exists(dir))
-            {
-                Directory.CreateDirectory(dir);
-            }
-
-            var tmpPath = ConfigPath + ".tmp";
-            var json = JsonSerializer.SerializeToUtf8Bytes(config, ImrdyJsonContext.Default.SoundConfig);
-            File.WriteAllBytes(tmpPath, json);
-            File.Move(tmpPath, ConfigPath, overwrite: true);
+            SoundConfigWriter.Save(config, ConfigPath);
 
             console.MarkupLine($"Default pack set to [green]{Markup.Escape(pack.Name)}[/]");
             return 0;

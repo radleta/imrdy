@@ -12,4 +12,7 @@ public sealed record SoundConfig
 
     [JsonPropertyName("projectMappings")]
     public Dictionary<string, string> ProjectMappings { get; init; } = new();
+
+    [JsonPropertyName("soundEnabled")]
+    public bool SoundEnabled { get; init; } = true;
 }

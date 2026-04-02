@@ -11,6 +11,7 @@ public sealed class ConfigValidator
     {
         "default",
         "projectMappings",
+        "soundEnabled",
     };
 
     /// <summary>

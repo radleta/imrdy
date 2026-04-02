@@ -75,6 +75,19 @@ public class ConfigValidatorTests : IDisposable
     }
 
     [Fact]
+    public void Validate_SoundEnabledKey_NotWarned()
+    {
+        var path = Path.Combine(_tempDir, "config.json");
+        File.WriteAllText(path,
+            """{"soundEnabled": true}""");
+
+        var result = _validator.Validate(path, AvailablePacks);
+
+        result.IsValid.Should().BeTrue();
+        result.Errors.Should().NotContain(e => e.Message.Contains("soundEnabled"));
+    }
+
+    [Fact]
     public void Validate_DanglingDefaultPackReference_Error()
     {
         var path = Path.Combine(_tempDir, "config.json");

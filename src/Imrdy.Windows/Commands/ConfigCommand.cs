@@ -107,7 +107,7 @@ internal static class ConfigCommand
         if (args.Length < 2)
         {
             console.MarkupLine("[red]Usage:[/] imrdy config set <key> <value>");
-            console.MarkupLine("[dim]Keys: default, projectMappings.<project>[/]");
+            console.MarkupLine("[dim]Keys: default, projectMappings.<project>, soundEnabled[/]");
             return 1;
         }
 
@@ -151,24 +151,24 @@ internal static class ConfigCommand
                 };
                 config = config with { ProjectMappings = mappings };
             }
+            else if (string.Equals(key, "soundEnabled", StringComparison.OrdinalIgnoreCase))
+            {
+                if (!bool.TryParse(value, out var enabled))
+                {
+                    console.MarkupLine($"[red]Invalid value:[/] {Markup.Escape(value)} (expected true or false)");
+                    return 1;
+                }
+
+                config = config with { SoundEnabled = enabled };
+            }
             else
             {
                 console.MarkupLine($"[red]Unknown key:[/] {Markup.Escape(key)}");
-                console.MarkupLine("[dim]Valid keys: default, projectMappings.<project>[/]");
+                console.MarkupLine("[dim]Valid keys: default, projectMappings.<project>, soundEnabled[/]");
                 return 1;
             }
 
-            // Atomic write
-            var dir = Path.GetDirectoryName(ConfigPath);
-            if (dir is not null && !Directory.Exists(dir))
-            {
-                Directory.CreateDirectory(dir);
-            }
-
-            var tmpPath = ConfigPath + ".tmp";
-            var json = JsonSerializer.SerializeToUtf8Bytes(config, ImrdyJsonContext.Default.SoundConfig);
-            File.WriteAllBytes(tmpPath, json);
-            File.Move(tmpPath, ConfigPath, overwrite: true);
+            SoundConfigWriter.Save(config, ConfigPath);
 
             console.MarkupLine($"Set [green]{Markup.Escape(key)}[/] = [bold]{Markup.Escape(value)}[/]");
             return 0;
