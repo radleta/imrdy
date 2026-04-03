@@ -18,7 +18,7 @@ Click a session icon to switch to its virtual desktop and focus the terminal win
 claude plugin add https://github.com/radleta/imrdy
 ```
 
-The plugin auto-installs the binary and default sound pack on first session start via the bootstrap script.
+The plugin auto-installs the binary and default sound pack (`assistant`) on first session start via the bootstrap script. The sound pack is downloaded from the latest `pack-assistant-*` GitHub Release.
 
 ### Manual
 
@@ -88,6 +88,18 @@ Set the default pack:
 imrdy packs set-default my-pack
 ```
 
+### Authoring Sound Packs
+
+To create and distribute a custom sound pack:
+
+1. Create a pack directory under `sounds/` in the repo (e.g., `sounds/my-pack/`) with the standard structure above
+2. Validate and package it:
+   ```bash
+   imrdy packs pack sounds/my-pack/ --output ./dist/
+   ```
+3. Tag a release: `git tag pack-my-pack-v1.0.0 && git push --tags`
+4. The `release-packs.yml` workflow builds the ZIP and creates a GitHub Release with the artifact and SHA256 checksum
+
 Or map packs to specific projects in `~/.claude/sounds/config.json`:
 ```json
 {
@@ -96,6 +108,23 @@ Or map packs to specific projects in `~/.claude/sounds/config.json`:
     "my-project": "retro"
   }
 }
+```
+
+## Controller Tray Icon
+
+A persistent controller icon (headphones) appears in the system tray whenever the monitor is running. Right-click for a context menu:
+
+- **Sounds** — Toggle sound playback on/off (checked = enabled)
+- **Sound Pack** — Switch the active pack from installed packs
+- **Sessions** — View and switch to active sessions
+- **Workspaces** — View and switch to pinned workspaces
+- **Open Config Folder / Open Sounds Folder / View Log** — Quick access to file locations
+- **Exit** — Shut down the monitor
+
+Sound can also be toggled via CLI:
+```bash
+imrdy config set soundEnabled false   # disable sounds
+imrdy config set soundEnabled true    # enable sounds
 ```
 
 ## Virtual Desktops
@@ -133,7 +162,7 @@ dotnet publish src/Imrdy.Windows/Imrdy.Windows.csproj -c Release -r win-x64 --se
 ## Architecture
 
 - **Imrdy.Core** — Platform-independent: state files, sound system, workspace management, validation, DI
-- **Imrdy.Windows** — WinForms tray app, COM virtual desktop interop, CLI commands, hook command
+- **Imrdy.Windows** — WinForms tray app (session icons + controller icon), COM virtual desktop interop, CLI commands, hook command
 
 Single executable via PublishSingleFile + SelfContained (not AOT — WinForms/COM compatibility).
 

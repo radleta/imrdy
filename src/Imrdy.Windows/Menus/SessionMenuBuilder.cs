@@ -15,7 +15,6 @@ internal static class SessionMenuBuilder
     public static ContextMenuStrip Create(
         SessionEntry entry,
         Action onDismiss,
-        Action onExit,
         ILogger? logger = null)
     {
         var menu = new ContextMenuStrip();
@@ -23,7 +22,7 @@ internal static class SessionMenuBuilder
         {
             try
             {
-                Rebuild(menu, entry, onDismiss, onExit);
+                Rebuild(menu, entry, onDismiss);
             }
             catch (Exception ex)
             {
@@ -36,8 +35,7 @@ internal static class SessionMenuBuilder
     private static void Rebuild(
         ContextMenuStrip menu,
         SessionEntry entry,
-        Action onDismiss,
-        Action onExit)
+        Action onDismiss)
     {
         menu.Items.Clear();
 
@@ -54,7 +52,5 @@ internal static class SessionMenuBuilder
         manage.DropDownItems.Add("Dismiss", null, (_, _) => onDismiss());
         menu.Items.Add(manage);
 
-        menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add("Exit", null, (_, _) => onExit());
     }
 }

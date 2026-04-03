@@ -1,0 +1,79 @@
+name: Release Sound Pack
+
+on:
+  push:
+    tags: ["pack-*"]
+
+jobs:
+  build-pack:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+          dotnet-quality: "preview"
+
+      - name: Build solution
+        run: dotnet build Imrdy.sln -c Release
+
+      - name: Parse tag
+        id: tag
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          # Extract name and version from pack-{name}-v{version}
+          NAME="$(echo "$TAG" | sed 's/^pack-//;s/-v[0-9].*$//')"
+          VERSION="$(echo "$TAG" | sed 's/^pack-.*-v//')"
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Pack sound pack
+        run: >
+          dotnet run --project src/Imrdy.Windows --no-build -c Release --
+          packs pack sounds/${{ steps.tag.outputs.name }}/ --output ./dist/
+
+      - name: Generate SHA256
+        run: |
+          cd dist
+          sha256sum pack-${{ steps.tag.outputs.name }}-v${{ steps.tag.outputs.version }}.zip > SHA256SUMS.txt
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: pack-${{ steps.tag.outputs.name }}
+          path: ./dist/
+
+  release:
+    needs: build-pack
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Parse tag
+        id: tag
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          NAME="$(echo "$TAG" | sed 's/^pack-//;s/-v[0-9].*$//')"
+          VERSION="$(echo "$TAG" | sed 's/^pack-.*-v//')"
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: pack-${{ steps.tag.outputs.name }}
+          path: ./artifacts
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@c95fe4860a8d12e4d48a897133e40baa5b7b0e7e # v2.2.1
+        with:
+          name: "Sound Pack: ${{ steps.tag.outputs.name }} v${{ steps.tag.outputs.version }}"
+          generate_release_notes: false
+          files: |
+            ./artifacts/pack-${{ steps.tag.outputs.name }}-v${{ steps.tag.outputs.version }}.zip
+            ./artifacts/SHA256SUMS.txt

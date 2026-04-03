@@ -31,6 +31,8 @@ internal sealed class TrayApp : ApplicationContext
         Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".claude", "sounds");
     private static readonly string SoundsConfigPath = Path.Combine(SoundsDir, "config.json");
     private static readonly string PacksRoot = Path.Combine(SoundsDir, "packs");
+    private static readonly string ConfigDir = TrayDir;
+    private static readonly string LogPath = Path.Combine(TrayDir, "logs", "monitor.log");
     private static readonly TimeSpan GracePeriod = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan StaleThreshold = TimeSpan.FromMinutes(60);
 
@@ -49,6 +51,8 @@ internal sealed class TrayApp : ApplicationContext
     private bool _soundEnabled = true;
     private SoundConfig _soundConfig = new();
     private IReadOnlyList<PackLoader.LoadedPack> _loadedPacks = [];
+
+    private NotifyIcon _controllerIcon = null!;
 
     private readonly Dictionary<string, SessionEntry> _sessions = new();
     private readonly Dictionary<string, WorkspaceSessionEntry> _workspaces = new();
@@ -89,6 +93,14 @@ internal sealed class TrayApp : ApplicationContext
 
         AppDomain.CurrentDomain.ProcessExit += OnProcessExit;
         Application.ApplicationExit += OnApplicationExit;
+
+        _controllerIcon = new NotifyIcon
+        {
+            Icon = new Icon(typeof(TrayApp), "Resources.imrdy.ico"),
+            Text = "imrdy",
+            Visible = true,
+            ContextMenuStrip = ControllerMenuBuilder.Create(GetControllerState, OnConfigChanged, _logger),
+        };
 
         InitializeDirectories();
         LoadSoundConfig();
@@ -251,6 +263,10 @@ internal sealed class TrayApp : ApplicationContext
         try
         {
             PerformSweep();
+
+            // Update controller tooltip with session count
+            var count = _sessions.Count;
+            _controllerIcon.Text = count > 0 ? $"imrdy \u2014 {count} sessions" : "imrdy";
         }
         catch (Exception ex)
         {
@@ -490,8 +506,7 @@ internal sealed class TrayApp : ApplicationContext
             {
                 entry.Dismissed = true;
                 RemoveSession(entry.SessionId);
-            },
-            onExit: () => ExitThread());
+            });
         entry.Icon.ContextMenuStrip = entry.Menu;
 
         entry.Icon.Click += (_, e) =>
@@ -573,8 +588,7 @@ internal sealed class TrayApp : ApplicationContext
             {
                 _workspaceStore.Unpin(path);
                 ReloadWorkspaces();
-            },
-            onExit: () => ExitThread());
+            });
         entry.Icon.ContextMenuStrip = entry.Menu;
 
         entry.Icon.Click += (_, _) =>
@@ -593,6 +607,34 @@ internal sealed class TrayApp : ApplicationContext
             age,
             entry.DesktopIndex,
             entry.SoundPack);
+    }
+
+    // --- Controller State ---
+
+    private ControllerMenuState GetControllerState()
+    {
+        return new ControllerMenuState(
+            Sessions: _sessions.Values.ToList(),
+            Workspaces: _workspaces.Values.ToList(),
+            InstalledPacks: _loadedPacks.Select(p => p.Name).ToList(),
+            Config: _soundConfig,
+            ConfigDir: ConfigDir,
+            SoundsDir: SoundsDir,
+            LogPath: LogPath,
+            OnExit: () => ExitThread());
+    }
+
+    private void OnConfigChanged(SoundConfig config)
+    {
+        _soundConfig = config;
+        _soundEnabled = config.SoundEnabled;
+
+        // Reload packs if default changed
+        _loadedPacks = _packLoader.LoadPacks(PacksRoot);
+        _soundBags.Clear();
+
+        _logger.LogDebug("Config updated from controller menu: enabled={Enabled}, default={Default}",
+            config.SoundEnabled, config.Default);
     }
 
     // --- Sound Triggers (port of PS1:700-750) ---
@@ -768,6 +810,12 @@ internal sealed class TrayApp : ApplicationContext
             _configWatcher.EnableRaisingEvents = false;
             _configWatcher.Dispose();
         }
+
+        // Dispose controller icon
+        _controllerIcon.Visible = false;
+        _controllerIcon.Icon?.Dispose();
+        _controllerIcon.ContextMenuStrip?.Dispose();
+        _controllerIcon.Dispose();
 
         // Dispose all session icons
         foreach (var entry in _sessions.Values)

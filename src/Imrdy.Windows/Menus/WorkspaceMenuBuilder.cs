@@ -15,7 +15,6 @@ internal static class WorkspaceMenuBuilder
     public static ContextMenuStrip Create(
         WorkspaceSessionEntry entry,
         Action<string> onUnpin,
-        Action onExit,
         ILogger? logger = null)
     {
         var menu = new ContextMenuStrip();
@@ -23,7 +22,7 @@ internal static class WorkspaceMenuBuilder
         {
             try
             {
-                Rebuild(menu, entry, onUnpin, onExit);
+                Rebuild(menu, entry, onUnpin);
             }
             catch (Exception ex)
             {
@@ -36,8 +35,7 @@ internal static class WorkspaceMenuBuilder
     private static void Rebuild(
         ContextMenuStrip menu,
         WorkspaceSessionEntry entry,
-        Action<string> onUnpin,
-        Action onExit)
+        Action<string> onUnpin)
     {
         menu.Items.Clear();
 
@@ -54,7 +52,5 @@ internal static class WorkspaceMenuBuilder
         manage.DropDownItems.Add("Unpin", null, (_, _) => onUnpin(entry.Workspace.Path));
         menu.Items.Add(manage);
 
-        menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add("Exit", null, (_, _) => onExit());
     }
 }

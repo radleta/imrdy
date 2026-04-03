@@ -10,6 +10,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <EmbeddedResource Include="Resources\imrdy.ico" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\Imrdy.Core\Imrdy.Core.csproj" />
   </ItemGroup>
 
