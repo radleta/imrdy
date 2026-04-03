@@ -39,6 +39,12 @@ public interface IDesktopManager : IDisposable
     void FocusWindow(IntPtr hwnd);
 
     /// <summary>
+    /// Gets the total number of virtual desktops.
+    /// Returns null if unavailable or COM fails.
+    /// </summary>
+    int? GetDesktopCount();
+
+    /// <summary>
     /// Recreates COM objects from scratch.
     /// Call after Explorer restart or COM failure detection.
     /// </summary>

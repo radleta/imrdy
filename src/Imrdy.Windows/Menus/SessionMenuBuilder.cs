@@ -4,18 +4,25 @@ using Microsoft.Extensions.Logging;
 
 namespace Imrdy.Windows.Menus;
 
-/// <summary>
-/// Builds context menus for session tray icons.
-/// Uses Opening event for dynamic content (desktop list, sound pack list).
-/// </summary>
+internal sealed record SessionMenuCallbacks(
+    Action OnSwitchDesktop,
+    Action OnAssignDesktop,
+    Action<int> OnSetDesktop,
+    Action<string?> OnSetPack,
+    Action OnPinWorkspace,
+    Action OnClear,
+    Action OnClearAll,
+    Action OnDumpState,
+    Action OnExit);
+
 internal static class SessionMenuBuilder
 {
-    /// <summary>
-    /// Creates a context menu for a session entry.
-    /// </summary>
     public static ContextMenuStrip Create(
         SessionEntry entry,
-        Action onDismiss,
+        SessionMenuCallbacks callbacks,
+        Func<IReadOnlyList<string>> getInstalledPacks,
+        Func<int?> getDesktopCount,
+        Func<bool> getDesktopAvailable,
         ILogger? logger = null)
     {
         var menu = new ContextMenuStrip();
@@ -28,9 +35,14 @@ internal static class SessionMenuBuilder
                     SessionId = entry.SessionId,
                     Status = entry.State.Status,
                     Project = entry.State.Project,
+                    DesktopIndex = entry.DesktopIndex,
+                    SoundPack = entry.SoundPack,
+                    InstalledPacks = getInstalledPacks(),
+                    DesktopCount = getDesktopCount(),
+                    DesktopAvailable = getDesktopAvailable(),
                 };
                 var items = SessionMenuModel.Build(state);
-                MenuRenderer.Apply(menu, items, tag => OnClick(tag, onDismiss), logger);
+                MenuRenderer.Apply(menu, items, tag => OnClick(tag, callbacks), logger);
             }
             catch (Exception ex)
             {
@@ -40,11 +52,31 @@ internal static class SessionMenuBuilder
         return menu;
     }
 
-    private static void OnClick(string tag, Action onDismiss)
+    private static void OnClick(string tag, SessionMenuCallbacks callbacks)
     {
-        if (tag == "dismiss")
+        if (tag == "switch-desktop")
+            callbacks.OnSwitchDesktop();
+        else if (tag == "assign-desktop")
+            callbacks.OnAssignDesktop();
+        else if (tag.StartsWith("set-desktop:", StringComparison.Ordinal))
         {
-            onDismiss();
+            if (int.TryParse(tag["set-desktop:".Length..], out var index))
+                callbacks.OnSetDesktop(index);
         }
+        else if (tag.StartsWith("set-pack:", StringComparison.Ordinal))
+        {
+            var packName = tag["set-pack:".Length..];
+            callbacks.OnSetPack(packName == "(none)" ? null : packName);
+        }
+        else if (tag == "pin-workspace")
+            callbacks.OnPinWorkspace();
+        else if (tag == "clear")
+            callbacks.OnClear();
+        else if (tag == "clear-all")
+            callbacks.OnClearAll();
+        else if (tag == "dump-state")
+            callbacks.OnDumpState();
+        else if (tag == "exit")
+            callbacks.OnExit();
     }
 }

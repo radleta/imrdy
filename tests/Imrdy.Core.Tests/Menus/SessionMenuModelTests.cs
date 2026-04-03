@@ -7,49 +7,147 @@ namespace Imrdy.Core.Tests.Menus;
 public class SessionMenuModelTests
 {
     [Fact]
-    public void Build_SingleSession_HeaderShowsProjectAndStatus()
+    public void Build_FullMenu_HasAllTopLevelItems()
     {
         var state = MenuTestHelper.SingleSessionState("my-project", "idle");
 
         var items = SessionMenuModel.Build(state);
 
-        items[0].Label.Should().Be("my-project [idle]");
-        items[0].Enabled.Should().BeFalse();
+        // Switch, Assign, SetDesktop, SoundPack, separator, PinAsWorkspace, separator, Manage, separator, Exit
+        items.Should().HaveCount(10);
     }
 
     [Fact]
-    public void Build_NullProject_HeaderHandlesGracefully()
-    {
-        var state = MenuTestHelper.SingleSessionState(null, "busy");
-
-        var items = SessionMenuModel.Build(state);
-
-        items[0].Label.Should().Be(" [busy]");
-        items[0].Enabled.Should().BeFalse();
-    }
-
-    [Fact]
-    public void Build_SingleSession_HasSeparatorAndManageSubmenu()
+    public void Build_SwitchDesktopTag_Present()
     {
         var state = MenuTestHelper.SingleSessionState("proj", "idle");
 
         var items = SessionMenuModel.Build(state);
 
-        items.Should().HaveCount(3);
-        items[1].Type.Should().Be(MenuItemType.Separator);
-        items[2].Label.Should().Be("Manage");
-        items[2].Type.Should().Be(MenuItemType.Submenu);
+        items.Should().Contain(i => i.Tag == "switch-desktop");
     }
 
     [Fact]
-    public void Build_SingleSession_DismissTagPresent()
+    public void Build_AssignDesktopTag_Present()
+    {
+        var state = MenuTestHelper.SingleSessionState("proj", "idle");
+
+        var items = SessionMenuModel.Build(state);
+
+        items.Should().Contain(i => i.Tag == "assign-desktop");
+    }
+
+    [Fact]
+    public void Build_SetDesktopSubmenu_ListsDesktops()
+    {
+        var state = MenuTestHelper.SingleSessionState("proj", "idle");
+
+        var items = SessionMenuModel.Build(state);
+
+        var setDesktop = items.First(i => i.Label == "Set Desktop");
+        setDesktop.Type.Should().Be(MenuItemType.Submenu);
+        setDesktop.Children.Should().HaveCount(3);
+        setDesktop.Children[0].Tag.Should().Be("set-desktop:0");
+        setDesktop.Children[0].Checked.Should().BeTrue();
+        setDesktop.Children[1].Tag.Should().Be("set-desktop:1");
+        setDesktop.Children[1].Checked.Should().BeFalse();
+        setDesktop.Children[2].Tag.Should().Be("set-desktop:2");
+        setDesktop.Children[2].Checked.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Build_SetDesktopSubmenu_HiddenWhenUnavailable()
+    {
+        var state = MenuTestHelper.SessionNoDesktop();
+
+        var items = SessionMenuModel.Build(state);
+
+        items.Should().NotContain(i => i.Label == "Set Desktop");
+    }
+
+    [Fact]
+    public void Build_SoundPackSubmenu_ListsPacks()
+    {
+        var state = MenuTestHelper.SingleSessionState("proj", "idle");
+
+        var items = SessionMenuModel.Build(state);
+
+        var soundPack = items.First(i => i.Label == "Sound Pack");
+        soundPack.Type.Should().Be(MenuItemType.Submenu);
+        // (None) + assistant + retro = 3
+        soundPack.Children.Should().HaveCount(3);
+        soundPack.Children.Should().Contain(c => c.Tag == "set-pack:assistant" && c.Checked);
+        soundPack.Children.Should().Contain(c => c.Tag == "set-pack:retro" && !c.Checked);
+    }
+
+    [Fact]
+    public void Build_SoundPackSubmenu_NoneInstalledShowsDisabled()
+    {
+        var state = MenuTestHelper.SessionNoPacks();
+
+        var items = SessionMenuModel.Build(state);
+
+        var soundPack = items.First(i => i.Label == "Sound Pack");
+        soundPack.Children.Should().ContainSingle()
+            .Which.Should().Match<MenuItemModel>(c =>
+                c.Label == "(none installed)" && !c.Enabled);
+    }
+
+    [Fact]
+    public void Build_SoundPackSubmenu_NoneOptionPresent()
+    {
+        var state = MenuTestHelper.SingleSessionState("proj", "idle");
+
+        var items = SessionMenuModel.Build(state);
+
+        var soundPack = items.First(i => i.Label == "Sound Pack");
+        soundPack.Children[0].Label.Should().Be("(None)");
+        soundPack.Children[0].Tag.Should().Be("set-pack:(none)");
+    }
+
+    [Fact]
+    public void Build_ManageSubmenu_HasClearDumpClearAll()
     {
         var state = MenuTestHelper.SingleSessionState("proj", "idle");
 
         var items = SessionMenuModel.Build(state);
 
         var manage = items.First(i => i.Label == "Manage");
-        manage.Children.Should().ContainSingle()
-            .Which.Tag.Should().Be("dismiss");
+        manage.Type.Should().Be(MenuItemType.Submenu);
+        manage.Children.Should().HaveCount(3);
+        manage.Children[0].Tag.Should().Be("clear");
+        manage.Children[1].Tag.Should().Be("dump-state");
+        manage.Children[2].Tag.Should().Be("clear-all");
+    }
+
+    [Fact]
+    public void Build_ExitTag_Present()
+    {
+        var state = MenuTestHelper.SingleSessionState("proj", "idle");
+
+        var items = SessionMenuModel.Build(state);
+
+        items.Should().Contain(i => i.Tag == "exit" && i.Label == "Exit Monitor");
+    }
+
+    [Fact]
+    public void Build_PinAsWorkspaceTag_Present()
+    {
+        var state = MenuTestHelper.SingleSessionState("proj", "idle");
+
+        var items = SessionMenuModel.Build(state);
+
+        items.Should().Contain(i => i.Tag == "pin-workspace" && i.Label == "Pin as Workspace");
+    }
+
+    [Fact]
+    public void Build_DesktopUnavailable_DisablesSwitchAndAssign()
+    {
+        var state = MenuTestHelper.SessionNoDesktop();
+
+        var items = SessionMenuModel.Build(state);
+
+        items.First(i => i.Tag == "switch-desktop").Enabled.Should().BeFalse();
+        items.First(i => i.Tag == "assign-desktop").Enabled.Should().BeFalse();
     }
 }

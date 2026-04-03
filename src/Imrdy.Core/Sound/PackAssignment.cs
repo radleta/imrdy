@@ -41,7 +41,8 @@ public sealed class PackAssignment
         }
 
         // Priority 2: Config project mapping
-        if (!string.IsNullOrEmpty(project) && _config.ProjectMappings.TryGetValue(project, out var projectPack)
+        if (!string.IsNullOrEmpty(project) && _config.ProjectMappings is not null
+            && _config.ProjectMappings.TryGetValue(project, out var projectPack)
             && PackExists(projectPack))
         {
             return projectPack;

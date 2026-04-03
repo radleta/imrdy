@@ -35,7 +35,9 @@ public sealed class StateFileReader
     }
 
     /// <summary>
-    /// Writes a state file atomically (tmp + rename). Uses UTF-8 without BOM.
+    /// Writes a state file directly. Uses UTF-8 without BOM.
+    /// Direct write (not temp+rename) ensures FileSystemWatcher fires Changed events.
+    /// The JSON reader handles partial reads gracefully, and files are small (~300 bytes).
     /// </summary>
     public void WriteStateFile(string path, StateFileModel model)
     {
@@ -45,10 +47,8 @@ public sealed class StateFileReader
             Directory.CreateDirectory(dir);
         }
 
-        var tmpPath = path + ".tmp";
         var json = JsonSerializer.SerializeToUtf8Bytes(model, ImrdyJsonContext.Default.StateFileModel);
-        File.WriteAllBytes(tmpPath, json);
-        File.Move(tmpPath, path, overwrite: true);
+        File.WriteAllBytes(path, json);
     }
 
     /// <summary>

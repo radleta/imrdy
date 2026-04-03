@@ -93,6 +93,28 @@ internal sealed class ComVirtualDesktop : IDesktopManager
         }
     }
 
+    public int? GetDesktopCount()
+    {
+        if (!IsAvailable)
+        {
+            return null;
+        }
+
+        try
+        {
+            return WithComRecovery(() =>
+            {
+                var desktops = GetDesktopIds();
+                return desktops.Count > 0 ? desktops.Count : (int?)null;
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to get desktop count");
+            return null;
+        }
+    }
+
     public int? GetDesktopForWindow(IntPtr hwnd)
     {
         if (!IsAvailable || hwnd == IntPtr.Zero)

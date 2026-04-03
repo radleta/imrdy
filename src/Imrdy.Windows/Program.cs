@@ -1,5 +1,6 @@
 using Imrdy.Windows.Commands;
 using Imrdy.Windows.DI;
+using Imrdy.Windows.Models;
 using Microsoft.Extensions.DependencyInjection;
 using Serilog;
 
@@ -39,7 +40,8 @@ internal static class Program
                 return 0;
             }
 
-            using var monitorServices = MonitorServiceBuilder.Build();
+            var monitorOptions = MonitorOptions.Parse(args);
+            using var monitorServices = MonitorServiceBuilder.Build(monitorOptions);
             var trayApp = monitorServices.GetRequiredService<TrayApp>();
             Application.Run(trayApp);
             GC.KeepAlive(mutex);

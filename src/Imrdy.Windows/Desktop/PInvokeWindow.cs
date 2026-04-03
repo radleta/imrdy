@@ -31,8 +31,41 @@ internal static class PInvokeWindow
     [return: MarshalAs(UnmanagedType.Bool)]
     public static extern bool IsWindowVisible(IntPtr hWnd);
 
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool IsIconic(IntPtr hWnd);
+
     [DllImport("kernel32.dll")]
     public static extern uint GetCurrentThreadId();
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool BringWindowToTop(IntPtr hWnd);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool AllowSetForegroundWindow(int dwProcessId);
+
+    public const int ASFW_ANY = -1;
+
+    [DllImport("user32.dll")]
+    public static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo);
+
+    private const byte VK_MENU = 0x12; // Alt key
+    private const uint KEYEVENTF_EXTENDEDKEY = 0x0001;
+    private const uint KEYEVENTF_KEYUP = 0x0002;
+
+    /// <summary>
+    /// Steals foreground activation rights by sending a synthetic Alt key press.
+    /// Windows grants SetForegroundWindow rights to processes that receive keyboard input.
+    /// Call this before ForceForeground when calling from a non-foreground context
+    /// (e.g., balloon tip click, timer callback).
+    /// </summary>
+    public static void StealForegroundRights()
+    {
+        keybd_event(VK_MENU, 0, KEYEVENTF_EXTENDEDKEY, UIntPtr.Zero);
+        keybd_event(VK_MENU, 0, KEYEVENTF_EXTENDEDKEY | KEYEVENTF_KEYUP, UIntPtr.Zero);
+    }
 
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
@@ -65,8 +98,11 @@ internal static class PInvokeWindow
                 attached = AttachThreadInput(currentThreadId, foregroundThreadId, true);
             }
 
-            // Restore if minimized
-            ShowWindow(hWnd, SW_RESTORE);
+            // Only restore if minimized — don't un-maximize already-visible windows
+            if (IsIconic(hWnd))
+            {
+                ShowWindow(hWnd, SW_RESTORE);
+            }
             return SetForegroundWindow(hWnd);
         }
         finally

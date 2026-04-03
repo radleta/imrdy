@@ -67,6 +67,11 @@ internal static class CommandRouter
         console.MarkupLine("  [dim]--json[/]       Output as JSON");
         console.MarkupLine("  [dim]--help, -h[/]   Show help");
         console.MarkupLine("  [dim]--version[/]    Show version");
+        console.WriteLine();
+        console.MarkupLine("[bold]Monitor Flags[/] (when running as tray app):");
+        console.MarkupLine("  [dim]--stale-minutes N[/]  Remove sessions after N minutes without update (default 60)");
+        console.MarkupLine("  [dim]--no-toast[/]         Disable all toast notifications");
+        console.MarkupLine("  [dim]--silent[/]           Disable all sounds");
         return 0;
     }
 

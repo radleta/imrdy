@@ -46,6 +46,28 @@ internal static class MenuTestHelper
         SessionId = "test-session",
         Status = status,
         Project = project,
+        DesktopAvailable = true,
+        DesktopCount = 3,
+        DesktopIndex = 0,
+        InstalledPacks = ["assistant", "retro"],
+        SoundPack = "assistant",
+    };
+
+    public static SessionMenuState SessionNoDesktop(string? project = "proj", string status = "idle") => new()
+    {
+        SessionId = "test-session",
+        Status = status,
+        Project = project,
+        DesktopAvailable = false,
+    };
+
+    public static SessionMenuState SessionNoPacks(string? project = "proj", string status = "idle") => new()
+    {
+        SessionId = "test-session",
+        Status = status,
+        Project = project,
+        DesktopAvailable = true,
+        DesktopCount = 2,
     };
 
     public static WorkspaceMenuState PinnedWorkspaceState(string name, string path) => new()

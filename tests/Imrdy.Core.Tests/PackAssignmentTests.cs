@@ -125,6 +125,25 @@ public class PackAssignmentTests
 
         assignment.Resolve(null, null).Should().Be("has-wavs");
     }
+
+    [Fact]
+    public void NullProjectMappings_DoesNotThrow()
+    {
+        // JSON deserialization can produce null ProjectMappings when config has "projectMappings": null
+        var config = new SoundConfig { Default = "assistant", ProjectMappings = null! };
+        var assignment = new PackAssignment(TwoPacks, config);
+
+        assignment.Resolve(null, "some-project").Should().Be("assistant");
+    }
+
+    [Fact]
+    public void NullProjectMappings_WithProject_FallsToDefault()
+    {
+        var config = new SoundConfig { Default = "retro", ProjectMappings = null! };
+        var assignment = new PackAssignment(TwoPacks, config);
+
+        assignment.Resolve(null, "my-project").Should().Be("retro");
+    }
 }
 
 public class PackAssignmentLoadConfigTests : IDisposable
@@ -177,5 +196,18 @@ public class PackAssignmentLoadConfigTests : IDisposable
 
         config.Default.Should().BeNull();
         config.ProjectMappings.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void LoadConfig_NullProjectMappings_DeserializesWithoutError()
+    {
+        var path = Path.Combine(_tempDir, "config.json");
+        File.WriteAllText(path, """{"default":"assistant","projectMappings":null,"soundEnabled":true}""");
+
+        var config = PackAssignment.LoadConfig(path);
+
+        config.Default.Should().Be("assistant");
+        config.SoundEnabled.Should().BeTrue();
+        // ProjectMappings may be null from JSON — PackAssignment.Resolve handles this
     }
 }

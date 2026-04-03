@@ -35,7 +35,6 @@ internal sealed class TrayApp : ApplicationContext
     private static readonly string ConfigDir = TrayDir;
     private static readonly string LogPath = Path.Combine(TrayDir, "logs", "monitor.log");
     private static readonly TimeSpan GracePeriod = TimeSpan.FromSeconds(5);
-    private static readonly TimeSpan StaleThreshold = TimeSpan.FromMinutes(60);
 
     private readonly ILogger _logger;
     private readonly StateFileReader _stateReader;
@@ -43,8 +42,10 @@ internal sealed class TrayApp : ApplicationContext
     private readonly CooldownTracker _cooldownTracker;
     private readonly PackLoader _packLoader;
     private readonly IDesktopManager _desktopManager;
+    private readonly MonitorOptions _options;
     private readonly AgingCache _agingCache = new();
     private readonly BalloonTipManager _balloonTipManager;
+    private readonly WorkspaceVisibility _workspaceVisibility = new();
     private readonly WinFormsSoundPlayer _soundPlayer = new();
     private readonly CancellationTokenSource _shutdownCts = new();
     private readonly Dictionary<string, ShuffleBag<string>> _soundBags = new();
@@ -67,6 +68,7 @@ internal sealed class TrayApp : ApplicationContext
     private System.Windows.Forms.Timer? _drainTimer;
     private System.Windows.Forms.Timer? _sweepTimer;
     private System.Windows.Forms.Timer? _staleTimer;
+    private System.Windows.Forms.Timer? _agingTimer;
 
     private bool _disposed;
 
@@ -82,7 +84,8 @@ internal sealed class TrayApp : ApplicationContext
         WorkspaceStore workspaceStore,
         CooldownTracker cooldownTracker,
         PackLoader packLoader,
-        IDesktopManager desktopManager)
+        IDesktopManager desktopManager,
+        MonitorOptions options)
     {
         _logger = loggerFactory.CreateLogger<TrayApp>();
         _stateReader = stateReader;
@@ -90,10 +93,21 @@ internal sealed class TrayApp : ApplicationContext
         _cooldownTracker = cooldownTracker;
         _packLoader = packLoader;
         _desktopManager = desktopManager;
-        _balloonTipManager = new BalloonTipManager(loggerFactory);
+        _options = options;
+        _balloonTipManager = new BalloonTipManager(loggerFactory)
+        {
+            Disabled = _options.NoToast,
+        };
+
+        // --silent overrides config
+        if (_options.Silent)
+        {
+            _soundEnabled = false;
+        }
 
         AppDomain.CurrentDomain.ProcessExit += OnProcessExit;
         Application.ApplicationExit += OnApplicationExit;
+        SetConsoleCtrlHandler(OnConsoleCtrl, true);
 
         _controllerIcon = new NotifyIcon
         {
@@ -129,11 +143,14 @@ internal sealed class TrayApp : ApplicationContext
         _sessionWatcher = new FileSystemWatcher(SessionsDir, "*.json")
         {
             NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite | NotifyFilters.Size,
+            InternalBufferSize = 65536, // 64KB — default 8KB can overflow with rapid writes
             EnableRaisingEvents = true,
         };
         _sessionWatcher.Changed += OnSessionFileChanged;
         _sessionWatcher.Created += OnSessionFileChanged;
         _sessionWatcher.Deleted += OnSessionFileDeleted;
+        _sessionWatcher.Error += (_, err) =>
+            _logger.LogWarning(err.GetException(), "Session FileSystemWatcher error");
 
         // Watch workspaces.json
         if (Directory.Exists(TrayDir))
@@ -176,6 +193,11 @@ internal sealed class TrayApp : ApplicationContext
         _staleTimer = new System.Windows.Forms.Timer { Interval = 60_000 };
         _staleTimer.Tick += OnStaleTimerTick;
         _staleTimer.Start();
+
+        // Aging timer: fades icons over time (5s)
+        _agingTimer = new System.Windows.Forms.Timer { Interval = 5000 };
+        _agingTimer.Tick += OnAgingTimerTick;
+        _agingTimer.Start();
     }
 
     // --- Sound Config ---
@@ -185,9 +207,12 @@ internal sealed class TrayApp : ApplicationContext
         try
         {
             _soundConfig = PackAssignment.LoadConfig(SoundsConfigPath);
-            _soundEnabled = _soundConfig.SoundEnabled;
+            _soundEnabled = _options.Silent ? false : _soundConfig.SoundEnabled;
             _loadedPacks = _packLoader.LoadPacks(PacksRoot);
             _soundBags.Clear();
+
+            // Suppress Windows notification sound when packs provide their own audio
+            _balloonTipManager.SuppressSystemSound = _loadedPacks.Count > 0 && _soundEnabled;
 
             _logger.LogDebug("Sound config loaded: enabled={Enabled}, packs={Count}",
                 _soundEnabled, _loadedPacks.Count);
@@ -202,6 +227,7 @@ internal sealed class TrayApp : ApplicationContext
 
     private void OnSessionFileChanged(object sender, FileSystemEventArgs e)
     {
+        _logger.LogInformation("FSW: {ChangeType} {Path}", e.ChangeType, e.Name);
         _pendingChanges.Enqueue(e.FullPath);
     }
 
@@ -287,6 +313,28 @@ internal sealed class TrayApp : ApplicationContext
         }
     }
 
+    private void OnAgingTimerTick(object? sender, EventArgs e)
+    {
+        foreach (var (_, entry) in _sessions)
+        {
+            if (entry.Icon is null) continue;
+
+            var (r, g, b) = StatusMap.ResolveColor(entry.State.Status);
+            var agingSince = DateTimeOffset.UtcNow - entry.LastSeenAt;
+            var newFactor = CircleIconRenderer.GetAgingFactor(agingSince);
+
+            // Only update icon if aging tier changed (avoid GDI churn)
+            if (Math.Abs(newFactor - entry.LastAgingFactor) > 0.001)
+            {
+                entry.LastAgingFactor = newFactor;
+                entry.Icon.Icon = _agingCache.GetOrCreate(r, g, b, newFactor);
+            }
+
+            // Always update tooltip (status age changes every tick)
+            entry.Icon.Text = FormatSessionTooltip(entry);
+        }
+    }
+
     // --- Session Lifecycle ---
 
     private void HandleSessionFileChanged(string filePath)
@@ -308,6 +356,19 @@ internal sealed class TrayApp : ApplicationContext
             if (statusChanged)
             {
                 entry.StatusSince = DateTimeOffset.UtcNow;
+
+                // Auto-restore dismissed sessions on attention-worthy status changes
+                if (entry.Dismissed && state.Status is "busy" or "attention" or "permission")
+                {
+                    entry.Dismissed = false;
+                    if (entry.Icon is not null)
+                    {
+                        entry.Icon.Visible = true;
+                    }
+                    _logger.LogInformation("Restored dismissed session: {SessionId} (status → {Status})",
+                        entry.SessionId, state.Status);
+                }
+
                 _balloonTipManager.OnStatusTransition(
                     entry, previousStatus, state.Status,
                     IsBootstrapping, currentDesktopIndex: _desktopManager.GetCurrentDesktopIndex());
@@ -330,7 +391,8 @@ internal sealed class TrayApp : ApplicationContext
             }
 
             UpdateSessionIcon(entry);
-            _logger.LogDebug("Session updated: {SessionId} → {Status}", state.SessionId, state.Status);
+            var latencyMs = (int)(DateTimeOffset.UtcNow - state.Timestamp).TotalMilliseconds;
+            _logger.LogInformation("Session {SessionId} → {Status} (latency: {Latency}ms)", state.SessionId, state.Status, latencyMs);
         }
         else
         {
@@ -345,9 +407,16 @@ internal sealed class TrayApp : ApplicationContext
 
             _sessions[state.SessionId] = entry;
             CreateSessionIcon(entry);
+
+            // Toast for new session (suppressed during bootstrap)
+            _balloonTipManager.OnNewSession(entry, IsBootstrapping);
+
             _logger.LogInformation("Session started: {SessionId} ({Project})",
                 state.SessionId, state.Project);
         }
+
+        // Update workspace visibility after any session change (D11)
+        UpdateWorkspaceVisibility();
     }
 
     private void HandleSessionFileDeleted(string filePath)
@@ -417,8 +486,15 @@ internal sealed class TrayApp : ApplicationContext
 
         foreach (var (sessionId, entry) in _sessions)
         {
-            if (now - entry.State.Timestamp > StaleThreshold)
+            if (now - entry.State.Timestamp > TimeSpan.FromMinutes(_options.StaleMinutes))
             {
+                // Keep session alive if its state file still exists on disk
+                var stateFile = Path.Combine(SessionsDir, $"{sessionId}.json");
+                if (File.Exists(stateFile))
+                {
+                    continue;
+                }
+
                 toRemove.Add(sessionId);
                 _logger.LogInformation("Removing stale session: {SessionId} (last update {Ago} ago)",
                     sessionId, now - entry.State.Timestamp);
@@ -435,8 +511,71 @@ internal sealed class TrayApp : ApplicationContext
     {
         if (_sessions.Remove(sessionId, out var entry))
         {
+            Commands.ProcessResolver.ClearSession(sessionId);
             entry.Dispose();
             _logger.LogDebug("Session removed: {SessionId}", sessionId);
+
+            // Workspace white dot may reappear now (D11)
+            UpdateWorkspaceVisibility();
+        }
+    }
+
+    private void ClearAllSessions()
+    {
+        var sessionIds = _sessions.Keys.ToList();
+        foreach (var sessionId in sessionIds)
+        {
+            var stateFile = Path.Combine(SessionsDir, $"{sessionId}.json");
+            try { if (File.Exists(stateFile)) File.Delete(stateFile); }
+            catch (Exception ex) { _logger.LogWarning(ex, "Failed to delete state file for {SessionId}", sessionId); }
+            RemoveSession(sessionId);
+        }
+        _logger.LogInformation("Cleared all sessions ({Count} removed)", sessionIds.Count);
+    }
+
+    private void DumpState()
+    {
+        var lines = new List<string>();
+        var ts = DateTimeOffset.UtcNow.ToString("HH:mm:ss.fff");
+        lines.Add($"{ts} [DUMP] ===== State Dump ({_sessions.Count} sessions) =====");
+        foreach (var (sid, entry) in _sessions)
+        {
+            var d = entry.State;
+            var age = (int)(DateTimeOffset.UtcNow - entry.StatusSince).TotalSeconds;
+            var seenAge = (int)(DateTimeOffset.UtcNow - entry.LastSeenAt).TotalSeconds;
+            var agingFactor = entry.LastAgingFactor;
+            lines.Add($"{ts} [DUMP] {sid[..Math.Min(8, sid.Length)]} project={d.Project} status={d.Status} hook={d.HookEvent} desktop={entry.DesktopIndex} pack={entry.SoundPack} dismissed={entry.Dismissed} statusAge={age}s seenAge={seenAge}s aging={agingFactor:F2} pid={d.ClaudePid}");
+
+            // Check state file consistency
+            var stateFile = Path.Combine(SessionsDir, $"{sid}.json");
+            if (File.Exists(stateFile))
+            {
+                try
+                {
+                    var fileState = _stateReader.ReadStateFile(stateFile);
+                    if (fileState is not null && fileState.Status != d.Status)
+                        lines.Add($"{ts} [DUMP] {sid[..Math.Min(8, sid.Length)]}   FILE MISMATCH: file.status={fileState.Status} vs memory.status={d.Status}");
+                }
+                catch (Exception ex)
+                {
+                    lines.Add($"{ts} [DUMP] {sid[..Math.Min(8, sid.Length)]}   FILE READ ERROR: {ex.Message}");
+                }
+            }
+            else
+            {
+                lines.Add($"{ts} [DUMP] {sid[..Math.Min(8, sid.Length)]}   NO STATE FILE");
+            }
+        }
+        lines.Add($"{ts} [DUMP] ===== End Dump =====");
+
+        try
+        {
+            File.AppendAllText(LogPath, string.Join(Environment.NewLine, lines) + Environment.NewLine);
+            _logger.LogInformation("State dumped to {LogPath} ({Count} sessions)", LogPath, _sessions.Count);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to write state dump to {LogPath}", LogPath);
         }
     }
 
@@ -480,10 +619,65 @@ internal sealed class TrayApp : ApplicationContext
                     _logger.LogDebug("Workspace removed: {Name}", wsEntry.Workspace.Name);
                 }
             }
+            UpdateWorkspaceVisibility();
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error reloading workspaces");
+        }
+    }
+
+    /// <summary>
+    /// Evaluates workspace visibility based on active sessions.
+    /// White dots hide when a session is active in that workspace path (D11).
+    /// Desktop auto-tracked from latest session; persisted on hidden→visible transition (D22).
+    /// </summary>
+    private void UpdateWorkspaceVisibility()
+    {
+        if (_workspaces.Count == 0)
+        {
+            return;
+        }
+
+        var workspaceEntries = _workspaces.Values.Select(ws => ws.Workspace).ToList();
+        var activeSessions = _sessions.Values
+            .Where(s => !s.Dismissed && s.State.Status != "end")
+            .Select(s => s.State)
+            .ToList();
+
+        var results = _workspaceVisibility.Evaluate(workspaceEntries, activeSessions);
+
+        foreach (var result in results)
+        {
+            var key = result.Workspace.Path.ToUpperInvariant();
+            if (!_workspaces.TryGetValue(key, out var wsEntry))
+            {
+                continue;
+            }
+
+            var wasVisible = wsEntry.Visible;
+            wsEntry.Visible = result.IsVisible;
+
+            if (wsEntry.Icon is not null)
+            {
+                wsEntry.Icon.Visible = result.IsVisible;
+            }
+
+            // Persist desktop on hidden→visible transition (D22)
+            if (result.DesktopChanged)
+            {
+                wsEntry.Workspace = wsEntry.Workspace with { Desktop = result.TrackedDesktop };
+                try
+                {
+                    _workspaceStore.Pin(result.Workspace.Path, result.Workspace.Name, result.TrackedDesktop);
+                    _logger.LogDebug("Workspace {Name} desktop updated to {Desktop} on reappear",
+                        result.Workspace.Name, result.TrackedDesktop);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to persist workspace desktop for {Name}", result.Workspace.Name);
+                }
+            }
         }
     }
 
@@ -503,16 +697,65 @@ internal sealed class TrayApp : ApplicationContext
 
         entry.Menu = SessionMenuBuilder.Create(
             entry,
-            onDismiss: () =>
-            {
-                entry.Dismissed = true;
-                RemoveSession(entry.SessionId);
-            });
+            new SessionMenuCallbacks(
+                OnSwitchDesktop: () => SwitchToSessionDesktop(entry),
+                OnAssignDesktop: () =>
+                {
+                    var currentDesktop = _desktopManager.GetCurrentDesktopIndex();
+                    if (currentDesktop.HasValue)
+                    {
+                        entry.DesktopIndex = currentDesktop.Value;
+                        _logger.LogDebug("Assigned session {SessionId} to desktop {Desktop}", entry.SessionId, currentDesktop.Value);
+                    }
+                },
+                OnSetDesktop: index =>
+                {
+                    entry.DesktopIndex = index;
+                    _desktopManager.SwitchToDesktop(index);
+                },
+                OnSetPack: packName =>
+                {
+                    entry.SoundPack = packName;
+                    _logger.LogDebug("Set session {SessionId} sound pack to {Pack}", entry.SessionId, packName ?? "(none)");
+                },
+                OnPinWorkspace: () =>
+                {
+                    var cwd = entry.State.Cwd;
+                    if (string.IsNullOrEmpty(cwd)) return;
+                    var name = entry.State.Project ?? Path.GetFileName(cwd) ?? cwd;
+                    var desktop = entry.DesktopIndex ?? _desktopManager.GetCurrentDesktopIndex() ?? 0;
+                    try
+                    {
+                        _workspaceStore.Pin(cwd, name, desktop);
+                        ReloadWorkspaces();
+                        _logger.LogInformation("Pinned workspace from session: {Name} ({Path}) desktop={Desktop}",
+                            name, cwd, desktop);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Failed to pin workspace for session {SessionId}", entry.SessionId);
+                    }
+                },
+                OnClear: () =>
+                {
+                    var stateFile = Path.Combine(SessionsDir, $"{entry.SessionId}.json");
+                    try { if (File.Exists(stateFile)) File.Delete(stateFile); }
+                    catch (Exception ex) { _logger.LogWarning(ex, "Failed to delete state file for {SessionId}", entry.SessionId); }
+                    RemoveSession(entry.SessionId);
+                },
+                OnClearAll: () => ClearAllSessions(),
+                OnDumpState: () => DumpState(),
+                OnExit: () => ExitThread()),
+            getInstalledPacks: () => _loadedPacks.Select(p => p.Name).ToList(),
+            getDesktopCount: () => _desktopManager.GetDesktopCount(),
+            getDesktopAvailable: () => _desktopManager.IsAvailable,
+            logger: _logger);
         entry.Icon.ContextMenuStrip = entry.Menu;
 
         entry.Icon.Click += (_, e) =>
         {
             entry.LastSeenAt = DateTimeOffset.UtcNow;
+            UpdateSessionIcon(entry);
 
             // Left-click: switch to session's desktop and focus terminal window
             if (e is MouseEventArgs me && me.Button == MouseButtons.Left)
@@ -520,30 +763,70 @@ internal sealed class TrayApp : ApplicationContext
                 SwitchToSessionDesktop(entry);
             }
         };
+
+        // Wire balloon click handler at creation time (not deferred to first balloon show).
+        // Matches PS1 reference pattern — handler must exist before any ShowBalloonTip call.
+        entry.Icon.BalloonTipClicked += (_, _) =>
+        {
+            _logger.LogInformation("Balloon tip CLICKED for {SessionId}", entry.SessionId);
+            entry.LastSeenAt = DateTimeOffset.UtcNow;
+            UpdateSessionIcon(entry);
+
+            // Attempt to focus the terminal window.
+            // Note: BalloonTipClicked is unreliable on Windows 10+ — the event may not
+            // fire, and even when it does, SetForegroundWindow is blocked from notification
+            // context. The dot click (Icon.Click) is the reliable focus path.
+            // TODO: Migrate to Windows.UI.Notifications toast API for reliable click handling.
+            PInvokeWindow.StealForegroundRights();
+            SwitchToSessionDesktop(entry);
+        };
     }
 
     private void SwitchToSessionDesktop(SessionEntry entry)
     {
-        if (!_desktopManager.IsAvailable)
-        {
-            return;
-        }
-
         try
         {
-            // Try to find the terminal window for this session's Claude PID
+            // Walk process tree from Claude PID to find the terminal window (cached per session)
             if (entry.State.ClaudePid is int claudePid)
             {
-                var hwnd = PInvokeWindow.FindMainWindowForProcess(claudePid);
-                if (hwnd != IntPtr.Zero)
+                var terminalPid = Commands.ProcessResolver.ResolveTerminalPid(claudePid, entry.SessionId);
+                _logger.LogInformation("Focus: session={Sid} claudePid={Claude} terminalPid={Terminal}",
+                    entry.SessionId[..8], claudePid, terminalPid);
+
+                if (terminalPid.HasValue)
                 {
-                    _desktopManager.FocusWindow(hwnd);
-                    return;
+                    try
+                    {
+                        var proc = System.Diagnostics.Process.GetProcessById(terminalPid.Value);
+                        using (proc)
+                        {
+                            var hwnd = proc.MainWindowHandle;
+                            _logger.LogInformation("Focus: terminal={Name}({Pid}) hwnd={Hwnd}",
+                                proc.ProcessName, terminalPid.Value, hwnd);
+
+                            if (hwnd != IntPtr.Zero)
+                            {
+                                var result = PInvokeWindow.ForceForeground(hwnd);
+                                _logger.LogInformation("Focus: ForceForeground result={Result}", result);
+                                return;
+                            }
+                        }
+                    }
+                    catch (ArgumentException)
+                    {
+                        // Terminal process died — clear cache so next click re-walks
+                        Commands.ProcessResolver.ClearSession(entry.SessionId);
+                        _logger.LogWarning("Focus: terminal process {Pid} died, cache cleared", terminalPid.Value);
+                    }
                 }
+            }
+            else
+            {
+                _logger.LogInformation("Focus: session={Sid} has no ClaudePid", entry.SessionId[..8]);
             }
 
             // Fallback: switch to desktop by stored index
-            if (entry.DesktopIndex.HasValue)
+            if (_desktopManager.IsAvailable && entry.DesktopIndex.HasValue)
             {
                 _desktopManager.SwitchToDesktop(entry.DesktopIndex.Value);
             }
@@ -565,6 +848,7 @@ internal sealed class TrayApp : ApplicationContext
         var (r, g, b) = StatusMap.ResolveColor(entry.State.Status);
         var agingSince = DateTimeOffset.UtcNow - entry.LastSeenAt;
         var factor = CircleIconRenderer.GetAgingFactor(agingSince);
+        entry.LastAgingFactor = factor;
         var icon = _agingCache.GetOrCreate(r, g, b, factor);
 
         entry.Icon.Icon = icon;
@@ -643,6 +927,7 @@ internal sealed class TrayApp : ApplicationContext
         // Reload packs if default changed
         _loadedPacks = _packLoader.LoadPacks(PacksRoot);
         _soundBags.Clear();
+        _balloonTipManager.SuppressSystemSound = _loadedPacks.Count > 0 && _soundEnabled;
 
         _logger.LogDebug("Config updated from controller menu: enabled={Enabled}, default={Default}",
             config.SoundEnabled, config.Default);
@@ -802,6 +1087,8 @@ internal sealed class TrayApp : ApplicationContext
         _sweepTimer?.Dispose();
         _staleTimer?.Stop();
         _staleTimer?.Dispose();
+        _agingTimer?.Stop();
+        _agingTimer?.Dispose();
 
         // Stop watchers
         if (_sessionWatcher is not null)
@@ -861,4 +1148,19 @@ internal sealed class TrayApp : ApplicationContext
 
         base.Dispose(disposing);
     }
+
+    // --- Console Ctrl Handler (catches Ctrl+C, console close, logoff, shutdown) ---
+
+    private delegate bool ConsoleCtrlDelegate(int ctrlType);
+
+    [System.Runtime.InteropServices.DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool SetConsoleCtrlHandler(ConsoleCtrlDelegate? handler, bool add);
+
+    // Must be a static field to prevent GC collection of the delegate
+    private static readonly ConsoleCtrlDelegate OnConsoleCtrl = ctrlType =>
+    {
+        // ctrlType: 0=Ctrl+C, 1=Ctrl+Break, 2=Close, 5=Logoff, 6=Shutdown
+        Application.Exit();
+        return true;
+    };
 }

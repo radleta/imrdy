@@ -10,8 +10,10 @@ public sealed class CliTestFixture
 
     public CliTestFixture()
     {
-        BinaryPath = Environment.GetEnvironmentVariable("IMRDY_BINARY_PATH")
-            ?? Path.GetFullPath(Path.Combine(
+        var envPath = Environment.GetEnvironmentVariable("IMRDY_BINARY_PATH");
+        BinaryPath = envPath is not null
+            ? Path.GetFullPath(envPath)
+            : Path.GetFullPath(Path.Combine(
                 AppContext.BaseDirectory,
                 "..", "..", "..", "..", "..",
                 "src", "Imrdy.Windows", "bin", "Release", "net10.0-windows", "win-x64", "publish", "imrdy.exe"));
