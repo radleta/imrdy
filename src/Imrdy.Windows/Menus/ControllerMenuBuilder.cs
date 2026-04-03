@@ -1,5 +1,5 @@
+using Imrdy.Core.Menus;
 using Imrdy.Core.Sound;
-using Imrdy.Windows.Models;
 using Microsoft.Extensions.Logging;
 
 namespace Imrdy.Windows.Menus;
@@ -13,6 +13,7 @@ internal static class ControllerMenuBuilder
     public static ContextMenuStrip Create(
         Func<ControllerMenuState> stateProvider,
         Action<SoundConfig> onConfigChanged,
+        Action onExit,
         ILogger? logger = null)
     {
         var menu = new ContextMenuStrip();
@@ -20,7 +21,9 @@ internal static class ControllerMenuBuilder
         {
             try
             {
-                Rebuild(menu, stateProvider(), onConfigChanged, logger);
+                var state = stateProvider();
+                var items = ControllerMenuModel.Build(state);
+                MenuRenderer.Apply(menu, items, tag => OnClick(tag, state, onConfigChanged, onExit, logger), logger);
             }
             catch (Exception ex)
             {
@@ -30,129 +33,49 @@ internal static class ControllerMenuBuilder
         return menu;
     }
 
-    private static void Rebuild(
-        ContextMenuStrip menu,
+    private static async void OnClick(
+        string tag,
         ControllerMenuState state,
         Action<SoundConfig> onConfigChanged,
+        Action onExit,
         ILogger? logger)
     {
-        menu.Items.Clear();
-
-        // Sound toggle
-        var soundToggle = new ToolStripMenuItem("Sounds")
+        try
         {
-            CheckOnClick = true,
-            Checked = state.Config.SoundEnabled,
-        };
-        soundToggle.Click += async (_, _) =>
-        {
-            try
+            if (tag == "toggle-sound")
             {
-                var newConfig = state.Config with { SoundEnabled = soundToggle.Checked };
+                var newConfig = state.Config with { SoundEnabled = !state.Config.SoundEnabled };
                 await Task.Run(() => SoundConfigWriter.Save(newConfig, Path.Combine(state.SoundsDir, "config.json")));
                 onConfigChanged(newConfig);
             }
-            catch (Exception ex)
+            else if (tag.StartsWith("switch-pack:", StringComparison.Ordinal))
             {
-                logger?.LogError(ex, "Failed to save sound toggle");
+                var packName = tag["switch-pack:".Length..];
+                var newConfig = state.Config with { Default = packName };
+                await Task.Run(() => SoundConfigWriter.Save(newConfig, Path.Combine(state.SoundsDir, "config.json")));
+                onConfigChanged(newConfig);
             }
-        };
-        menu.Items.Add(soundToggle);
-
-        // Sound Pack submenu
-        var packMenu = new ToolStripMenuItem("Sound Pack");
-        foreach (var pack in state.InstalledPacks)
-        {
-            var packName = pack;
-            var item = new ToolStripMenuItem(packName)
+            else if (tag == "open-config")
             {
-                Checked = string.Equals(packName, state.Config.Default, StringComparison.OrdinalIgnoreCase),
-            };
-            item.Click += async (_, _) =>
+                OpenFolder("explorer.exe", state.ConfigDir, logger);
+            }
+            else if (tag == "open-sounds")
             {
-                try
-                {
-                    var newConfig = state.Config with { Default = packName };
-                    await Task.Run(() => SoundConfigWriter.Save(newConfig, Path.Combine(state.SoundsDir, "config.json")));
-                    onConfigChanged(newConfig);
-                }
-                catch (Exception ex)
-                {
-                    logger?.LogError(ex, "Failed to save pack switch to {Pack}", packName);
-                }
-            };
-            packMenu.DropDownItems.Add(item);
-        }
-
-        if (packMenu.DropDownItems.Count == 0)
-        {
-            packMenu.DropDownItems.Add(new ToolStripMenuItem("(none installed)") { Enabled = false });
-        }
-
-        menu.Items.Add(packMenu);
-
-        menu.Items.Add(new ToolStripSeparator());
-
-        // Sessions submenu
-        var sessionsMenu = new ToolStripMenuItem($"Sessions ({state.Sessions.Count})");
-        foreach (var session in state.Sessions)
-        {
-            var item = new ToolStripMenuItem($"{session.State.Project} [{session.State.Status}]")
+                OpenFolder("explorer.exe", state.SoundsDir, logger);
+            }
+            else if (tag == "open-log")
             {
-                Enabled = false,
-            };
-            sessionsMenu.DropDownItems.Add(item);
-        }
-
-        if (sessionsMenu.DropDownItems.Count == 0)
-        {
-            sessionsMenu.DropDownItems.Add(new ToolStripMenuItem("(no active sessions)") { Enabled = false });
-        }
-
-        menu.Items.Add(sessionsMenu);
-
-        // Workspaces submenu
-        var workspacesMenu = new ToolStripMenuItem("Workspaces");
-        foreach (var ws in state.Workspaces)
-        {
-            var item = new ToolStripMenuItem(ws.Workspace.Name)
+                OpenFolder("explorer.exe", "/select," + state.LogPath, logger);
+            }
+            else if (tag == "exit")
             {
-                Enabled = false,
-            };
-            workspacesMenu.DropDownItems.Add(item);
+                onExit();
+            }
         }
-
-        if (workspacesMenu.DropDownItems.Count == 0)
+        catch (Exception ex)
         {
-            workspacesMenu.DropDownItems.Add(new ToolStripMenuItem("(no workspaces)") { Enabled = false });
+            logger?.LogError(ex, "Error handling menu click: {Tag}", tag);
         }
-
-        menu.Items.Add(workspacesMenu);
-
-        menu.Items.Add(new ToolStripSeparator());
-
-        // Open Config Folder
-        menu.Items.Add("Open Config Folder", null, (_, _) =>
-        {
-            OpenFolder("explorer.exe", state.ConfigDir, logger);
-        });
-
-        // Open Sounds Folder
-        menu.Items.Add("Open Sounds Folder", null, (_, _) =>
-        {
-            OpenFolder("explorer.exe", state.SoundsDir, logger);
-        });
-
-        // View Log
-        menu.Items.Add("View Log", null, (_, _) =>
-        {
-            OpenFolder("explorer.exe", "/select," + state.LogPath, logger);
-        });
-
-        menu.Items.Add(new ToolStripSeparator());
-
-        // Exit
-        menu.Items.Add("Exit", null, (_, _) => state.OnExit());
     }
 
     private static void OpenFolder(string exe, string args, ILogger? logger)

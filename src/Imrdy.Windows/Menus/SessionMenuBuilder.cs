@@ -1,3 +1,4 @@
+using Imrdy.Core.Menus;
 using Imrdy.Windows.Models;
 using Microsoft.Extensions.Logging;
 
@@ -22,7 +23,14 @@ internal static class SessionMenuBuilder
         {
             try
             {
-                Rebuild(menu, entry, onDismiss);
+                var state = new SessionMenuState
+                {
+                    SessionId = entry.SessionId,
+                    Status = entry.State.Status,
+                    Project = entry.State.Project,
+                };
+                var items = SessionMenuModel.Build(state);
+                MenuRenderer.Apply(menu, items, tag => OnClick(tag, onDismiss), logger);
             }
             catch (Exception ex)
             {
@@ -32,25 +40,11 @@ internal static class SessionMenuBuilder
         return menu;
     }
 
-    private static void Rebuild(
-        ContextMenuStrip menu,
-        SessionEntry entry,
-        Action onDismiss)
+    private static void OnClick(string tag, Action onDismiss)
     {
-        menu.Items.Clear();
-
-        // Header: project name + status
-        var header = new ToolStripMenuItem($"{entry.State.Project} [{entry.State.Status}]")
+        if (tag == "dismiss")
         {
-            Enabled = false,
-        };
-        menu.Items.Add(header);
-        menu.Items.Add(new ToolStripSeparator());
-
-        // Manage submenu
-        var manage = new ToolStripMenuItem("Manage");
-        manage.DropDownItems.Add("Dismiss", null, (_, _) => onDismiss());
-        menu.Items.Add(manage);
-
+            onDismiss();
+        }
     }
 }

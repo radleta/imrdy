@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using Imrdy.Core.Desktop;
+using Imrdy.Core.Menus;
 using Imrdy.Core.Sound;
 using Imrdy.Core.State;
 using Imrdy.Core.Status;
@@ -99,7 +100,7 @@ internal sealed class TrayApp : ApplicationContext
             Icon = new Icon(typeof(TrayApp), "Resources.imrdy.ico"),
             Text = "imrdy",
             Visible = true,
-            ContextMenuStrip = ControllerMenuBuilder.Create(GetControllerState, OnConfigChanged, _logger),
+            ContextMenuStrip = ControllerMenuBuilder.Create(GetControllerState, OnConfigChanged, () => ExitThread(), _logger),
         };
 
         InitializeDirectories();
@@ -613,15 +614,25 @@ internal sealed class TrayApp : ApplicationContext
 
     private ControllerMenuState GetControllerState()
     {
-        return new ControllerMenuState(
-            Sessions: _sessions.Values.ToList(),
-            Workspaces: _workspaces.Values.ToList(),
-            InstalledPacks: _loadedPacks.Select(p => p.Name).ToList(),
-            Config: _soundConfig,
-            ConfigDir: ConfigDir,
-            SoundsDir: SoundsDir,
-            LogPath: LogPath,
-            OnExit: () => ExitThread());
+        return new ControllerMenuState
+        {
+            Sessions = _sessions.Values.Select(e => new SessionMenuState
+            {
+                SessionId = e.SessionId,
+                Status = e.State.Status,
+                Project = e.State.Project,
+            }).ToList(),
+            Workspaces = _workspaces.Values.Select(w => new WorkspaceMenuState
+            {
+                WorkspaceName = w.Workspace.Name,
+                WorkspacePath = w.Workspace.Path,
+            }).ToList(),
+            InstalledPacks = _loadedPacks.Select(p => p.Name).ToList(),
+            Config = _soundConfig,
+            ConfigDir = ConfigDir,
+            SoundsDir = SoundsDir,
+            LogPath = LogPath,
+        };
     }
 
     private void OnConfigChanged(SoundConfig config)

@@ -1,4 +1,4 @@
-using Imrdy.Core.Workspace;
+using Imrdy.Core.Menus;
 using Imrdy.Windows.Models;
 using Microsoft.Extensions.Logging;
 
@@ -22,7 +22,13 @@ internal static class WorkspaceMenuBuilder
         {
             try
             {
-                Rebuild(menu, entry, onUnpin);
+                var state = new WorkspaceMenuState
+                {
+                    WorkspaceName = entry.Workspace.Name,
+                    WorkspacePath = entry.Workspace.Path,
+                };
+                var items = WorkspaceMenuModel.Build(state);
+                MenuRenderer.Apply(menu, items, tag => OnClick(tag, onUnpin), logger);
             }
             catch (Exception ex)
             {
@@ -32,25 +38,11 @@ internal static class WorkspaceMenuBuilder
         return menu;
     }
 
-    private static void Rebuild(
-        ContextMenuStrip menu,
-        WorkspaceSessionEntry entry,
-        Action<string> onUnpin)
+    private static void OnClick(string tag, Action<string> onUnpin)
     {
-        menu.Items.Clear();
-
-        // Header: workspace name
-        var header = new ToolStripMenuItem($"{entry.Workspace.Name} [workspace]")
+        if (tag.StartsWith("unpin:", StringComparison.Ordinal))
         {
-            Enabled = false,
-        };
-        menu.Items.Add(header);
-        menu.Items.Add(new ToolStripSeparator());
-
-        // Manage submenu
-        var manage = new ToolStripMenuItem("Manage");
-        manage.DropDownItems.Add("Unpin", null, (_, _) => onUnpin(entry.Workspace.Path));
-        menu.Items.Add(manage);
-
+            onUnpin(tag["unpin:".Length..]);
+        }
     }
 }

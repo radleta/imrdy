@@ -161,8 +161,8 @@ dotnet publish src/Imrdy.Windows/Imrdy.Windows.csproj -c Release -r win-x64 --se
 
 ## Architecture
 
-- **Imrdy.Core** — Platform-independent: state files, sound system, workspace management, validation, DI
-- **Imrdy.Windows** — WinForms tray app (session icons + controller icon), COM virtual desktop interop, CLI commands, hook command
+- **Imrdy.Core** — Platform-independent: state files, sound system, workspace management, menu models (Build/Apply pattern), validation, DI
+- **Imrdy.Windows** — WinForms tray app (session icons + controller icon), menu rendering, COM virtual desktop interop, CLI commands, hook command
 
 Single executable via PublishSingleFile + SelfContained (not AOT — WinForms/COM compatibility).
 
