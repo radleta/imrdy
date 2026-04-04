@@ -6,6 +6,13 @@
     <UseWindowsForms>true</UseWindowsForms>
     <PublishSingleFile>true</PublishSingleFile>
     <SelfContained>true</SelfContained>
+    <PublishTrimmed>true</PublishTrimmed>
+    <TrimMode>partial</TrimMode>
+    <!-- WinForms not officially trim-supported, but our usage is minimal (NotifyIcon + ContextMenuStrip).
+         TrimMode=partial only trims framework assemblies that opted in — our code is untouched.
+         IL2026/IL2072 warnings are informational only with partial mode. -->
+    <_SuppressWinFormsTrimError>true</_SuppressWinFormsTrimError>
+    <NoWarn>$(NoWarn);IL2026;IL2072</NoWarn>
     <AssemblyName>imrdy</AssemblyName>
   </PropertyGroup>
 

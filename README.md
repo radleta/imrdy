@@ -156,7 +156,7 @@ Requires [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0) (previ
 ```bash
 dotnet build
 dotnet test
-dotnet publish src/Imrdy.Windows/Imrdy.Windows.csproj -c Release -r win-x64 --self-contained -p:PublishSingleFile=true
+dotnet publish src/Imrdy.Windows/Imrdy.Windows.csproj -c Release -r win-x64
 ```
 
 ## Architecture
@@ -164,7 +164,7 @@ dotnet publish src/Imrdy.Windows/Imrdy.Windows.csproj -c Release -r win-x64 --se
 - **Imrdy.Core** — Platform-independent: state files, sound system, workspace management, menu models (Build/Apply pattern), validation, DI
 - **Imrdy.Windows** — WinForms tray app (session icons + controller icon), menu rendering, COM virtual desktop interop, CLI commands, hook command
 
-Single executable via PublishSingleFile + SelfContained (not AOT — WinForms/COM compatibility).
+Single executable via PublishSingleFile + SelfContained + PublishTrimmed (partial trim mode, not AOT — WinForms/COM compatibility).
 
 ## License
 

@@ -115,7 +115,7 @@ internal static class CommandRouter
             case "workspace":
                 console.MarkupLine("[bold]imrdy workspace[/] <subcommand>");
                 console.MarkupLine("  [green]list[/]              List pinned workspaces");
-                console.MarkupLine("  [green]pin[/] <path> [--name N] [--desktop D]  Pin a workspace");
+                console.MarkupLine("  [green]pin[/] <path> [[--name N]] [[--desktop D]]  Pin a workspace");
                 console.MarkupLine("  [green]unpin[/] <path>      Unpin a workspace");
                 break;
             default:
