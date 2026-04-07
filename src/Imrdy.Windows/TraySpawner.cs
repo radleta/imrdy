@@ -18,10 +18,12 @@ internal static class TraySpawner
     /// </summary>
     public static bool EnsureRunning(ILogger logger)
     {
-        // Never spawn the tray in CI — no desktop, and the child process
-        // prevents the test runner from exiting.
-        if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("CI")))
+        // IMRDY_NO_TRAY=1 suppresses tray spawn (headless CI, containers, SSH).
+        if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("IMRDY_NO_TRAY")))
+        {
+            logger.LogDebug("Tray spawn suppressed by IMRDY_NO_TRAY");
             return false;
+        }
 
         try
         {

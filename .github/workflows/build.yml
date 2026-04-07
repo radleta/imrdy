@@ -34,3 +34,4 @@ jobs:
         run: dotnet test tests/Imrdy.Integration.Tests -c Release --verbosity normal
         env:
           IMRDY_BINARY_PATH: ${{ github.workspace }}/src/Imrdy.Windows/bin/Release/net10.0-windows/win-x64/publish/imrdy.exe
+          IMRDY_NO_TRAY: "1"
