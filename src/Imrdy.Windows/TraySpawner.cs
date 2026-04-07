@@ -18,6 +18,11 @@ internal static class TraySpawner
     /// </summary>
     public static bool EnsureRunning(ILogger logger)
     {
+        // Never spawn the tray in CI — no desktop, and the child process
+        // prevents the test runner from exiting.
+        if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("CI")))
+            return false;
+
         try
         {
             // Probe the mutex — if it exists, tray is already running
