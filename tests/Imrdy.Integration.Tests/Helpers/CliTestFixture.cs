@@ -16,7 +16,7 @@ public sealed class CliTestFixture
             : Path.GetFullPath(Path.Combine(
                 AppContext.BaseDirectory,
                 "..", "..", "..", "..", "..",
-                "src", "Imrdy.Windows", "bin", "Release", "net10.0-windows", "win-x64", "publish", "imrdy.exe"));
+                "src", "Imrdy.Windows", "bin", "Release", "net10.0-windows10.0.17763.0", "win-x64", "publish", "imrdy.exe"));
 
         if (!File.Exists(BinaryPath))
             throw new FileNotFoundException(
