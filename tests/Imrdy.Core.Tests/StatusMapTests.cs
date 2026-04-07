@@ -19,9 +19,9 @@ public class StatusMapTests
     }
 
     [Fact]
-    public void ResolveColor_Start_MapsToBusyRed()
+    public void ResolveColor_Start_MapsToIdleGreen()
     {
-        StatusMap.ResolveColor("start").Should().Be((230, 40, 40));
+        StatusMap.ResolveColor("start").Should().Be((40, 200, 40));
     }
 
     [Fact]
@@ -37,7 +37,7 @@ public class StatusMapTests
     }
 
     [Theory]
-    [InlineData("start", "busy")]
+    [InlineData("start", "idle")]
     [InlineData("end", "unknown")]
     public void ResolveBaseStatus_HookStatuses_MapToBase(string hook, string expected)
     {

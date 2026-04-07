@@ -8,7 +8,7 @@ public static class StatusMap
 {
     private static readonly Dictionary<string, string> HookToBase = new(StringComparer.OrdinalIgnoreCase)
     {
-        ["start"] = "busy",
+        ["start"] = "idle",
         ["end"] = "unknown",
     };
 
