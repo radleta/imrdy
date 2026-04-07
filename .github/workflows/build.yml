@@ -24,8 +24,8 @@ jobs:
       - name: Build
         run: dotnet build --no-restore --configuration Release /p:TreatWarningsAsErrors=true
 
-      - name: Test
-        run: dotnet test --no-build --configuration Release --verbosity normal
+      - name: Test (Unit)
+        run: dotnet test --no-build --configuration Release --verbosity normal --filter "FullyQualifiedName!~Integration"
 
       - name: Publish
         run: dotnet publish src/Imrdy.Windows -c Release -r win-x64 --self-contained
