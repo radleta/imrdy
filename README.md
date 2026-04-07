@@ -155,6 +155,13 @@ Supports Windows 10 (20H1+) and Windows 11 (all versions through 24H2).
 }
 ```
 
+**Environment variables:**
+| Variable | Purpose |
+|----------|---------|
+| `IMRDY_HOME` | Override config/data directory (default: `~/.imrdy/`) |
+| `IMRDY_NO_TRAY` | Set to `1` to suppress tray auto-spawn (headless CI, containers, SSH) |
+| `IMRDY_LOG` | Set to `1` to enable debug logging |
+
 Run `imrdy config path` to see full paths on your system.
 
 ## Building from Source
