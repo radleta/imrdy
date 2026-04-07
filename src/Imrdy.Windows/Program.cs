@@ -23,7 +23,7 @@ internal static class Program
 
             // Management commands — Spectre.Console for rich output
             if (args.Length > 0 && args[0] is "status" or "packs" or "config" or "workspace"
-                    or "--help" or "-h" or "--version")
+                    or "stop" or "--help" or "-h" or "--version")
             {
                 using var services = CliServiceBuilder.Build();
                 return CommandRouter.Route(services, args);

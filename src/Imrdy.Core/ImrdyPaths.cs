@@ -17,6 +17,7 @@ public static class ImrdyPaths
     public static string MonitorLog { get; }
 
     public const string MutexName = @"Global\ImrdyMonitor";
+    public const string StopEventName = @"Local\ImrdyStop";
 
     static ImrdyPaths()
     {

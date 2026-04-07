@@ -48,6 +48,7 @@ internal static class CommandRouter
             "packs" => PacksCommand.Run(services, cleanArgs, json),
             "config" => ConfigCommand.Run(services, cleanArgs, json),
             "workspace" => WorkspaceCommand.Run(services, cleanArgs, json),
+            "stop" => StopCommand.Run(services),
             _ => ShowHelp(services),
         };
     }
@@ -62,6 +63,7 @@ internal static class CommandRouter
         console.MarkupLine("  [green]packs[/]       Manage sound packs");
         console.MarkupLine("  [green]config[/]      Manage configuration");
         console.MarkupLine("  [green]workspace[/]   Manage pinned workspaces");
+        console.MarkupLine("  [green]stop[/]        Stop the running tray app");
         console.WriteLine();
         console.MarkupLine("[bold]Global Flags:[/]");
         console.MarkupLine("  [dim]--json[/]       Output as JSON");
@@ -117,6 +119,11 @@ internal static class CommandRouter
                 console.MarkupLine("  [green]list[/]              List pinned workspaces");
                 console.MarkupLine("  [green]pin[/] <path> [[--name N]] [[--desktop D]]  Pin a workspace");
                 console.MarkupLine("  [green]unpin[/] <path>      Unpin a workspace");
+                break;
+            case "stop":
+                console.MarkupLine("[bold]imrdy stop[/]");
+                console.MarkupLine("  Signal the running tray app to exit gracefully.");
+                console.MarkupLine("  The tray auto-restarts on the next hook event.");
                 break;
             default:
                 return ShowHelp(services);

@@ -64,6 +64,8 @@ imrdy workspace list      List pinned workspaces
 imrdy workspace pin <p>   Pin a workspace (auto-derives name)
 imrdy workspace unpin <p> Unpin a workspace
 
+imrdy stop                Stop the tray app (auto-restarts on next hook)
+
 imrdy --help              Show help
 imrdy --version           Show version
 ```
@@ -131,7 +133,7 @@ imrdy config set sound.enabled true    # enable sounds
 
 imrdy integrates with Windows virtual desktops:
 - Left-click a session icon to switch to its desktop and focus the terminal
-- Balloon tip notifications are suppressed for sessions on the current desktop
+- Toast notifications are suppressed for sessions on the current desktop
 - Pin workspaces to specific desktops via `imrdy workspace pin <path> --desktop 2`
 
 Supports Windows 10 (20H1+) and Windows 11 (all versions through 24H2).
@@ -171,7 +173,22 @@ Requires [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0) (previ
 ```bash
 dotnet build
 dotnet test
-dotnet publish src/Imrdy.Windows/Imrdy.Windows.csproj -c Release -r win-x64
+```
+
+### Local Development
+
+Build, deploy to `~/.local/bin/`, and restart the tray app in one step:
+
+```bash
+./build-dev.sh
+```
+
+This publishes the binary, copies it to `~/.local/bin/imrdy.exe`, and signals the running tray to stop. The next Claude Code hook event auto-spawns the updated binary.
+
+For a publish-only build without local deploy:
+
+```bash
+dotnet publish src/Imrdy.Windows/Imrdy.Windows.csproj -c Release
 ```
 
 ## Architecture

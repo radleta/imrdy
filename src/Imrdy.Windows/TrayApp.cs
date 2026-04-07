@@ -60,7 +60,7 @@ internal sealed class TrayApp : ApplicationContext
     private System.Windows.Forms.Timer? _staleTimer;
     private System.Windows.Forms.Timer? _agingTimer;
 
-    private bool _disposed;
+    private volatile bool _disposed;
 
     /// <summary>
     /// True during initial sweep — suppresses toasts and sounds until first sweep completes.
@@ -87,6 +87,7 @@ internal sealed class TrayApp : ApplicationContext
         _balloonTipManager = new BalloonTipManager(loggerFactory)
         {
             Disabled = _options.NoToast,
+            OnToastClicked = OnToastClicked,
         };
 
         // --silent overrides config
@@ -98,6 +99,7 @@ internal sealed class TrayApp : ApplicationContext
         AppDomain.CurrentDomain.ProcessExit += OnProcessExit;
         Application.ApplicationExit += OnApplicationExit;
         SetConsoleCtrlHandler(OnConsoleCtrl, true);
+        ListenForStopSignal();
 
         _controllerIcon = new NotifyIcon
         {
@@ -745,22 +747,32 @@ internal sealed class TrayApp : ApplicationContext
             }
         };
 
-        // Wire balloon click handler at creation time (not deferred to first balloon show).
-        // Matches PS1 reference pattern — handler must exist before any ShowBalloonTip call.
-        entry.Icon.BalloonTipClicked += (_, _) =>
-        {
-            _logger.LogInformation("Balloon tip CLICKED for {SessionId}", entry.SessionId);
-            entry.LastSeenAt = DateTimeOffset.UtcNow;
-            UpdateSessionIcon(entry);
+    }
 
-            // Attempt to focus the terminal window.
-            // Note: BalloonTipClicked is unreliable on Windows 10+ — the event may not
-            // fire, and even when it does, SetForegroundWindow is blocked from notification
-            // context. The dot click (Icon.Click) is the reliable focus path.
-            // TODO: Migrate to Windows.UI.Notifications toast API for reliable click handling.
-            PInvokeWindow.StealForegroundRights();
-            SwitchToSessionDesktop(entry);
-        };
+    /// <summary>
+    /// Called from the toast activation background thread — marshals to UI thread.
+    /// </summary>
+    private void OnToastClicked(string sessionId)
+    {
+        if (_disposed) return;
+
+        // Toast activation fires on a background thread — marshal to UI
+        if (_controllerIcon.ContextMenuStrip?.InvokeRequired == true)
+        {
+            try
+            {
+                _controllerIcon.ContextMenuStrip.BeginInvoke(() => OnToastClicked(sessionId));
+            }
+            catch (ObjectDisposedException) { }
+            catch (InvalidOperationException) { }
+            return;
+        }
+
+        if (!_sessions.TryGetValue(sessionId, out var entry)) return;
+
+        entry.LastSeenAt = DateTimeOffset.UtcNow;
+        UpdateSessionIcon(entry);
+        SwitchToSessionDesktop(entry);
     }
 
     private void SwitchToSessionDesktop(SessionEntry entry)
@@ -789,7 +801,13 @@ internal sealed class TrayApp : ApplicationContext
                             {
                                 var result = PInvokeWindow.ForceForeground(hwnd);
                                 _logger.LogInformation("Focus: ForceForeground result={Result}", result);
-                                return;
+                                if (result)
+                                {
+                                    return;
+                                }
+                                // ForceForeground fails from balloon-tip notification context
+                                // (Windows blocks SetForegroundWindow). Fall through to desktop
+                                // switch so the user at least lands on the right desktop.
                             }
                         }
                     }
@@ -1026,6 +1044,39 @@ internal sealed class TrayApp : ApplicationContext
             effectiveEvent, packName, Path.GetFileName(wavPath));
     }
 
+    // --- Stop signal ---
+
+    private void ListenForStopSignal()
+    {
+        var stopEvent = new EventWaitHandle(false, EventResetMode.ManualReset, ImrdyPaths.StopEventName);
+        var token = _shutdownCts.Token;
+        Task.Run(() =>
+        {
+            try
+            {
+                WaitHandle.WaitAny([stopEvent, token.WaitHandle]);
+                if (!token.IsCancellationRequested)
+                {
+                    _logger.LogInformation("Stop signal received — exiting");
+                    try
+                    {
+                        _controllerIcon.ContextMenuStrip?.BeginInvoke(ExitThread);
+                    }
+                    catch (ObjectDisposedException) { }
+                    catch (InvalidOperationException) { }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Stop listener failed");
+            }
+            finally
+            {
+                stopEvent.Dispose();
+            }
+        }, token);
+    }
+
     // --- Shutdown ---
 
     protected override void ExitThreadCore()
@@ -1108,6 +1159,7 @@ internal sealed class TrayApp : ApplicationContext
         _workspaces.Clear();
 
         _agingCache.Dispose();
+        _balloonTipManager.Dispose();
         _soundPlayer.Dispose();
         _desktopManager.Dispose();
         _shutdownCts.Dispose();
