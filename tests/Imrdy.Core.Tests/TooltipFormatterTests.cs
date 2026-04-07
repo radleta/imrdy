@@ -9,7 +9,7 @@ public class TooltipFormatterTests
     public void FormatSession_Unnamed_CorrectFormat()
     {
         var result = TooltipFormatter.FormatSession(
-            "my-project", null, "busy", TimeSpan.FromMinutes(2), 1, "scv");
+            "my-project", null, "busy", TimeSpan.FromMinutes(2), 0, "scv");
 
         result.Should().Be("my-project [busy 2m] (d1) ~scv");
     }
@@ -18,7 +18,7 @@ public class TooltipFormatterTests
     public void FormatSession_Named_IncludesSessionName()
     {
         var result = TooltipFormatter.FormatSession(
-            "my-project", "refactor-auth", "idle", TimeSpan.FromMinutes(5), 2, "retro");
+            "my-project", "refactor-auth", "idle", TimeSpan.FromMinutes(5), 1, "retro");
 
         result.Should().Be("my-project: refactor-auth [idle 5m] (d2) ~retro");
     }
@@ -36,7 +36,7 @@ public class TooltipFormatterTests
     public void FormatSession_NoPack_OmitsPack()
     {
         var result = TooltipFormatter.FormatSession(
-            "project", null, "busy", TimeSpan.FromMinutes(1), 1, null);
+            "project", null, "busy", TimeSpan.FromMinutes(1), 0, null);
 
         result.Should().Be("project [busy 1m] (d1)");
     }
@@ -45,7 +45,7 @@ public class TooltipFormatterTests
     public void FormatSession_EmptyPack_OmitsPack()
     {
         var result = TooltipFormatter.FormatSession(
-            "project", null, "busy", TimeSpan.FromMinutes(1), 1, "");
+            "project", null, "busy", TimeSpan.FromMinutes(1), 0, "");
 
         result.Should().Be("project [busy 1m] (d1)");
     }
@@ -75,7 +75,7 @@ public class TooltipFormatterTests
         // Build a string that's exactly 63 chars
         // "project [busy 2m] (d1) ~scv" = 28 chars; pad project to get 63
         var result = TooltipFormatter.FormatSession(
-            "project", null, "busy", TimeSpan.FromMinutes(2), 1, "scv");
+            "project", null, "busy", TimeSpan.FromMinutes(2), 0, "scv");
 
         result.Length.Should().BeLessThanOrEqualTo(63);
     }
@@ -84,7 +84,7 @@ public class TooltipFormatterTests
     public void FormatSession_TildePrefix_OnPackName()
     {
         var result = TooltipFormatter.FormatSession(
-            "proj", null, "busy", TimeSpan.FromMinutes(1), 1, "assistant");
+            "proj", null, "busy", TimeSpan.FromMinutes(1), 0, "assistant");
 
         result.Should().Contain("~assistant");
     }
@@ -92,7 +92,7 @@ public class TooltipFormatterTests
     [Fact]
     public void FormatWorkspace_CorrectFormat()
     {
-        var result = TooltipFormatter.FormatWorkspace("claude-code-ref", 1);
+        var result = TooltipFormatter.FormatWorkspace("claude-code-ref", 0);
 
         result.Should().Be("claude-code-ref [workspace] (d1)");
     }
@@ -101,7 +101,7 @@ public class TooltipFormatterTests
     public void FormatWorkspace_TruncatesAt63Chars()
     {
         var longName = new string('w', 60);
-        var result = TooltipFormatter.FormatWorkspace(longName, 1);
+        var result = TooltipFormatter.FormatWorkspace(longName, 0);
 
         result.Length.Should().Be(63);
     }
@@ -150,7 +150,7 @@ public class TooltipFormatterTests
     public void FormatSession_EmptySessionName_TreatedAsUnnamed()
     {
         var result = TooltipFormatter.FormatSession(
-            "project", "", "busy", TimeSpan.FromMinutes(1), 1, null);
+            "project", "", "busy", TimeSpan.FromMinutes(1), 0, null);
 
         result.Should().Be("project [busy 1m] (d1)");
     }

@@ -1,6 +1,7 @@
 using System.Runtime.InteropServices;
 using Imrdy.Core.Desktop;
 using Microsoft.Extensions.Logging;
+using Microsoft.Win32;
 
 namespace Imrdy.Windows.Desktop;
 
@@ -29,6 +30,8 @@ internal sealed class ComVirtualDesktop : IDesktopManager
     private IntPtr _internalPtr;
 
     public bool IsAvailable => _available && !_disposed;
+
+    private bool IsWindows11 => _buildNumber >= 22000;
 
     public ComVirtualDesktop(ILoggerFactory loggerFactory)
     {
@@ -75,6 +78,11 @@ internal sealed class ComVirtualDesktop : IDesktopManager
                 }
 
                 var desktops = GetDesktopIds();
+                if (desktops.Count == 0)
+                {
+                    desktops = GetDesktopIdsFromRegistry();
+                }
+
                 for (var i = 0; i < desktops.Count; i++)
                 {
                     if (desktops[i] == currentId)
@@ -105,6 +113,11 @@ internal sealed class ComVirtualDesktop : IDesktopManager
             return WithComRecovery(() =>
             {
                 var desktops = GetDesktopIds();
+                if (desktops.Count == 0)
+                {
+                    desktops = GetDesktopIdsFromRegistry();
+                }
+
                 return desktops.Count > 0 ? desktops.Count : (int?)null;
             });
         }
@@ -138,6 +151,11 @@ internal sealed class ComVirtualDesktop : IDesktopManager
                 }
 
                 var desktops = GetDesktopIds();
+                if (desktops.Count == 0)
+                {
+                    desktops = GetDesktopIdsFromRegistry();
+                }
+
                 for (var i = 0; i < desktops.Count; i++)
                 {
                     if (desktops[i] == desktopId)
@@ -168,6 +186,17 @@ internal sealed class ComVirtualDesktop : IDesktopManager
             WithComRecovery(() =>
             {
                 var desktops = GetDesktopIds();
+                if (desktops.Count == 0)
+                {
+                    desktops = GetDesktopIdsFromRegistry();
+                }
+
+                if (desktops.Count == 0)
+                {
+                    _logger.LogDebug("No desktops found for SwitchToDesktop");
+                    return;
+                }
+
                 if (index >= desktops.Count)
                 {
                     _logger.LogDebug("Desktop index {Index} out of range (count: {Count})",
@@ -176,7 +205,7 @@ internal sealed class ComVirtualDesktop : IDesktopManager
                 }
 
                 SwitchDesktopById(desktops[index]);
-                _logger.LogDebug("Switched to desktop {Index}", index);
+                _logger.LogDebug("Switched to desktop {Index} via COM", index);
             });
         }
         catch (Exception ex)
@@ -374,6 +403,18 @@ internal sealed class ComVirtualDesktop : IDesktopManager
             Reinitialize();
             return action();
         }
+        catch (AccessViolationException ex)
+        {
+            _logger.LogError(ex, "COM access violation — disabling virtual desktop support");
+            _available = false;
+            return default!;
+        }
+        catch (SEHException ex)
+        {
+            _logger.LogError(ex, "COM SEH exception — disabling virtual desktop support");
+            _available = false;
+            return default!;
+        }
     }
 
     private void WithComRecovery(Action action)
@@ -418,8 +459,18 @@ internal sealed class ComVirtualDesktop : IDesktopManager
         }
 
         // IVirtualDesktopManagerInternal::GetCurrentDesktop — vtable slot 6
-        var fn = GetVtableDelegate<GetCurrentDesktopDelegate>(_internalPtr, 6);
-        var hr = fn(_internalPtr, IntPtr.Zero, out var desktopPtr);
+        int hr;
+        IntPtr desktopPtr;
+        if (IsWindows11)
+        {
+            var fn = GetVtableDelegate<GetCurrentDesktopDelegate_Win11>(_internalPtr, 6);
+            hr = fn(_internalPtr, IntPtr.Zero, out desktopPtr);
+        }
+        else
+        {
+            var fn = GetVtableDelegate<GetCurrentDesktopDelegate_Win10>(_internalPtr, 6);
+            hr = fn(_internalPtr, out desktopPtr);
+        }
         if (hr < 0 || desktopPtr == IntPtr.Zero)
         {
             return Guid.Empty;
@@ -443,10 +494,21 @@ internal sealed class ComVirtualDesktop : IDesktopManager
         }
 
         // IVirtualDesktopManagerInternal::GetDesktops — vtable slot 7
-        var fn = GetVtableDelegate<GetDesktopsDelegate>(_internalPtr, 7);
-        var hr = fn(_internalPtr, IntPtr.Zero, out var arrayPtr);
+        int hr;
+        IntPtr arrayPtr;
+        if (IsWindows11)
+        {
+            var fn = GetVtableDelegate<GetDesktopsDelegate_Win11>(_internalPtr, 7);
+            hr = fn(_internalPtr, IntPtr.Zero, out arrayPtr);
+        }
+        else
+        {
+            var fn = GetVtableDelegate<GetDesktopsDelegate_Win10>(_internalPtr, 7);
+            hr = fn(_internalPtr, out arrayPtr);
+        }
         if (hr < 0 || arrayPtr == IntPtr.Zero)
         {
+            _logger.LogDebug("GetDesktopIds failed: hr=0x{Hr:X8}", hr);
             return Array.Empty<Guid>();
         }
 
@@ -460,6 +522,41 @@ internal sealed class ComVirtualDesktop : IDesktopManager
         }
     }
 
+    /// <summary>
+    /// Reads virtual desktop GUIDs from the registry. Fallback for when the
+    /// undocumented COM GetDesktops vtable slot fails (e.g., RPC_S_CANNOT_SUPPORT on build 19045).
+    /// The VirtualDesktopIDs value is a binary blob of 16-byte GUIDs.
+    /// </summary>
+    private IReadOnlyList<Guid> GetDesktopIdsFromRegistry()
+    {
+        try
+        {
+            using var key = Registry.CurrentUser.OpenSubKey(
+                @"SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\VirtualDesktops");
+            if (key?.GetValue("VirtualDesktopIDs") is not byte[] blob || blob.Length < 16)
+            {
+                return Array.Empty<Guid>();
+            }
+
+            var count = blob.Length / 16;
+            var guids = new List<Guid>(count);
+            for (var i = 0; i < count; i++)
+            {
+                var guidBytes = new byte[16];
+                Buffer.BlockCopy(blob, i * 16, guidBytes, 0, 16);
+                guids.Add(new Guid(guidBytes));
+            }
+
+            _logger.LogDebug("GetDesktopIds from registry: {Count} desktops", count);
+            return guids;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Failed to read desktop IDs from registry");
+            return Array.Empty<Guid>();
+        }
+    }
+
     private void SwitchDesktopById(Guid desktopId)
     {
         if (_internalPtr == IntPtr.Zero)
@@ -467,8 +564,10 @@ internal sealed class ComVirtualDesktop : IDesktopManager
             return;
         }
 
-        // IVirtualDesktopManagerInternal::FindDesktop — vtable slot 4
-        var findFn = GetVtableDelegate<FindDesktopDelegate>(_internalPtr, 4);
+        // IVirtualDesktopManagerInternal::FindDesktop
+        // Win10: slot 12 (F31574D6), Win11: slot 13 (B2F925B9)
+        var findSlot = IsWindows11 ? 13 : 12;
+        var findFn = GetVtableDelegate<FindDesktopDelegate>(_internalPtr, findSlot);
         var hr = findFn(_internalPtr, ref desktopId, out var desktopPtr);
         if (hr < 0 || desktopPtr == IntPtr.Zero)
         {
@@ -480,8 +579,17 @@ internal sealed class ComVirtualDesktop : IDesktopManager
         try
         {
             // IVirtualDesktopManagerInternal::SwitchDesktop — vtable slot 9
-            var switchFn = GetVtableDelegate<SwitchDesktopDelegate>(_internalPtr, 9);
-            hr = switchFn(_internalPtr, IntPtr.Zero, desktopPtr);
+            if (IsWindows11)
+            {
+                var switchFn = GetVtableDelegate<SwitchDesktopDelegate_Win11>(_internalPtr, 9);
+                hr = switchFn(_internalPtr, IntPtr.Zero, desktopPtr);
+            }
+            else
+            {
+                var switchFn = GetVtableDelegate<SwitchDesktopDelegate_Win10>(_internalPtr, 9);
+                hr = switchFn(_internalPtr, desktopPtr);
+            }
+
             if (hr < 0)
             {
                 _logger.LogDebug("SwitchDesktop failed (HRESULT: 0x{Hr:X8})", hr);
@@ -495,8 +603,9 @@ internal sealed class ComVirtualDesktop : IDesktopManager
 
     private static Guid GetDesktopId(IntPtr desktopPtr)
     {
-        // IVirtualDesktop::GetID — vtable slot 3 on all known builds
-        var fn = GetVtableDelegate<GetIdDelegate>(desktopPtr, 3);
+        // IVirtualDesktop::GetID — vtable slot 4
+        // Slot 3 is IsViewVisible on both Win10 and Win11; GetID is always slot 4.
+        var fn = GetVtableDelegate<GetIdDelegate>(desktopPtr, 4);
         var hr = fn(desktopPtr, out var id);
         return hr < 0 ? Guid.Empty : id;
     }
@@ -542,22 +651,36 @@ internal sealed class ComVirtualDesktop : IDesktopManager
     }
 
     // --- COM Delegates (vtable function signatures) ---
+    // Windows 10 (builds <22000): no hWndOrMonitor parameter
+    // Windows 11 (builds >=22000): added hWndOrMonitor parameter to GetCurrentDesktop, GetDesktops, SwitchDesktop
+
+    // Windows 10 signatures
+    [UnmanagedFunctionPointer(CallingConvention.StdCall)]
+    private delegate int GetCurrentDesktopDelegate_Win10(IntPtr @this, out IntPtr desktop);
 
     [UnmanagedFunctionPointer(CallingConvention.StdCall)]
-    private delegate int GetCurrentDesktopDelegate(IntPtr @this, IntPtr hWndOrMonitor,
+    private delegate int GetDesktopsDelegate_Win10(IntPtr @this, out IntPtr objectArray);
+
+    [UnmanagedFunctionPointer(CallingConvention.StdCall)]
+    private delegate int SwitchDesktopDelegate_Win10(IntPtr @this, IntPtr desktop);
+
+    // Windows 11 signatures
+    [UnmanagedFunctionPointer(CallingConvention.StdCall)]
+    private delegate int GetCurrentDesktopDelegate_Win11(IntPtr @this, IntPtr hWndOrMonitor,
         out IntPtr desktop);
 
     [UnmanagedFunctionPointer(CallingConvention.StdCall)]
-    private delegate int GetDesktopsDelegate(IntPtr @this, IntPtr hWndOrMonitor,
+    private delegate int GetDesktopsDelegate_Win11(IntPtr @this, IntPtr hWndOrMonitor,
         out IntPtr objectArray);
 
     [UnmanagedFunctionPointer(CallingConvention.StdCall)]
+    private delegate int SwitchDesktopDelegate_Win11(IntPtr @this, IntPtr hWndOrMonitor,
+        IntPtr desktop);
+
+    // Shared across builds
+    [UnmanagedFunctionPointer(CallingConvention.StdCall)]
     private delegate int FindDesktopDelegate(IntPtr @this, ref Guid desktopId,
         out IntPtr desktop);
-
-    [UnmanagedFunctionPointer(CallingConvention.StdCall)]
-    private delegate int SwitchDesktopDelegate(IntPtr @this, IntPtr hWndOrMonitor,
-        IntPtr desktop);
 
     [UnmanagedFunctionPointer(CallingConvention.StdCall)]
     private delegate int GetIdDelegate(IntPtr @this, out Guid id);

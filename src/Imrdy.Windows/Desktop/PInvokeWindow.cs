@@ -48,6 +48,18 @@ internal static class PInvokeWindow
 
     public const int ASFW_ANY = -1;
 
+    private const uint MONITOR_DEFAULTTOPRIMARY = 1;
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr MonitorFromWindow(IntPtr hwnd, uint dwFlags);
+
+    /// <summary>
+    /// Returns the HMONITOR for the primary display. Used by undocumented
+    /// IVirtualDesktopManagerInternal methods that require a monitor handle
+    /// (GetDesktops, GetCurrentDesktop) on some Windows builds.
+    /// </summary>
+    public static IntPtr GetPrimaryMonitor() => MonitorFromWindow(IntPtr.Zero, MONITOR_DEFAULTTOPRIMARY);
+
     [DllImport("user32.dll")]
     public static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo);
 

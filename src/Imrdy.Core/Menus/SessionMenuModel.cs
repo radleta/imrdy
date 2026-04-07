@@ -27,7 +27,7 @@ internal static class SessionMenuModel
             {
                 desktopChildren.Add(new MenuItemModel
                 {
-                    Label = $"Desktop {i}",
+                    Label = $"Desktop {i + 1}",
                     Tag = $"set-desktop:{i}",
                     Checked = i == state.DesktopIndex,
                 });

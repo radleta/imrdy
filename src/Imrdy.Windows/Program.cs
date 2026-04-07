@@ -1,3 +1,4 @@
+using System.Runtime.ExceptionServices;
 using Imrdy.Core;
 using Imrdy.Windows.Commands;
 using Imrdy.Windows.DI;
@@ -12,6 +13,25 @@ internal static class Program
     [STAThread]
     static int Main(string[] args)
     {
+        // Last-resort handler — catches AccessViolationException, SEHException, and other
+        // corrupted-state exceptions that bypass managed try/catch and Application.ThreadException.
+        // These commonly originate from undocumented COM vtable calls.
+        AppDomain.CurrentDomain.UnhandledException += (_, e) =>
+        {
+            if (e.ExceptionObject is Exception ex)
+            {
+                Log.Fatal(ex, "AppDomain unhandled exception (IsTerminating={IsTerminating})",
+                    e.IsTerminating);
+            }
+            else
+            {
+                Log.Fatal("AppDomain unhandled exception (non-Exception): {Object}",
+                    e.ExceptionObject);
+            }
+
+            Log.CloseAndFlush();
+        };
+
         try
         {
             // Fast path — hook runs hundreds of times, minimal DI, bypass WinForms
@@ -40,6 +60,13 @@ internal static class Program
                 // Already running
                 return 0;
             }
+
+            // Catch WinForms UI thread exceptions and log instead of crashing
+            Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
+            Application.ThreadException += (_, e) =>
+            {
+                Log.Error(e.Exception, "WinForms thread exception (swallowed)");
+            };
 
             var monitorOptions = MonitorOptions.Parse(args);
             using var monitorServices = MonitorServiceBuilder.Build(monitorOptions);

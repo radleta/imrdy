@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Reflection;
 using Imrdy.Core;
 using Imrdy.Core.Desktop;
 using Imrdy.Core.Menus;
@@ -25,6 +26,14 @@ namespace Imrdy.Windows;
 internal sealed class TrayApp : ApplicationContext
 {
     private static readonly TimeSpan GracePeriod = TimeSpan.FromSeconds(5);
+
+    /// <summary>
+    /// Cached reflection accessor for NotifyIcon's private ShowContextMenu method.
+    /// Calling this directly handles SetForegroundWindow + menu positioning, fixing
+    /// the well-known "first right-click eaten" bug on tray icons.
+    /// </summary>
+    private static readonly MethodInfo? s_showContextMenu =
+        typeof(NotifyIcon).GetMethod("ShowContextMenu", BindingFlags.Instance | BindingFlags.NonPublic);
 
     private readonly ILogger _logger;
     private readonly StateFileReader _stateReader;
@@ -363,10 +372,10 @@ internal sealed class TrayApp : ApplicationContext
             // Notification-type sounds (every write, not just status change)
             TriggerNotificationSound(entry, state.NotificationType);
 
-            // SessionEnd → start grace period
+            // SessionEnd → start grace period (only once; sweep re-reads must not reset it)
             if (string.Equals(state.HookEvent, "SessionEnd", StringComparison.OrdinalIgnoreCase))
             {
-                entry.RemoveAfter = DateTimeOffset.UtcNow + GracePeriod;
+                entry.RemoveAfter ??= DateTimeOffset.UtcNow + GracePeriod;
             }
             else
             {
@@ -496,6 +505,18 @@ internal sealed class TrayApp : ApplicationContext
         {
             Commands.ProcessResolver.ClearSession(sessionId);
             entry.Dispose();
+
+            // Delete state file so sweep doesn't resurrect the session
+            var statePath = Path.Combine(ImrdyPaths.Sessions, $"{sessionId}.json");
+            try
+            {
+                File.Delete(statePath);
+            }
+            catch (IOException ex)
+            {
+                _logger.LogDebug(ex, "Could not delete state file: {Path}", statePath);
+            }
+
             _logger.LogDebug("Session removed: {SessionId}", sessionId);
 
             // Workspace white dot may reappear now (D11)
@@ -735,15 +756,18 @@ internal sealed class TrayApp : ApplicationContext
             logger: _logger);
         entry.Icon.ContextMenuStrip = entry.Menu;
 
-        entry.Icon.Click += (_, e) =>
+        entry.Icon.MouseClick += (_, e) =>
         {
             entry.LastSeenAt = DateTimeOffset.UtcNow;
             UpdateSessionIcon(entry);
 
-            // Left-click: switch to session's desktop and focus terminal window
-            if (e is MouseEventArgs me && me.Button == MouseButtons.Left)
+            if (e.Button == MouseButtons.Left)
             {
                 SwitchToSessionDesktop(entry);
+            }
+            else if (e.Button == MouseButtons.Right)
+            {
+                s_showContextMenu?.Invoke(entry.Icon, null);
             }
         };
 
@@ -837,6 +861,22 @@ internal sealed class TrayApp : ApplicationContext
         }
     }
 
+    private void SwitchToWorkspaceDesktop(WorkspaceSessionEntry entry)
+    {
+        try
+        {
+            if (_desktopManager.IsAvailable)
+            {
+                _desktopManager.SwitchToDesktop(entry.Workspace.Desktop);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to switch to desktop for workspace {Name}",
+                entry.Workspace.Name);
+        }
+    }
+
     private void UpdateSessionIcon(SessionEntry entry)
     {
         if (entry.Icon is null)
@@ -872,12 +912,38 @@ internal sealed class TrayApp : ApplicationContext
             {
                 _workspaceStore.Unpin(path);
                 ReloadWorkspaces();
-            });
+            },
+            onAssignDesktop: () =>
+            {
+                var currentDesktop = _desktopManager.GetCurrentDesktopIndex();
+                if (currentDesktop.HasValue)
+                {
+                    _workspaceStore.SetDesktop(entry.Workspace.Path, currentDesktop.Value);
+                    ReloadWorkspaces();
+                }
+            },
+            onSetDesktop: desktop =>
+            {
+                _workspaceStore.SetDesktop(entry.Workspace.Path, desktop);
+                ReloadWorkspaces();
+            },
+            getDesktopCount: () => _desktopManager.GetDesktopCount(),
+            getDesktopAvailable: () => _desktopManager.IsAvailable,
+            logger: _logger);
         entry.Icon.ContextMenuStrip = entry.Menu;
 
-        entry.Icon.Click += (_, _) =>
+        entry.Icon.MouseClick += (_, e) =>
         {
             entry.LastSeenAt = DateTimeOffset.UtcNow;
+
+            if (e.Button == MouseButtons.Left)
+            {
+                SwitchToWorkspaceDesktop(entry);
+            }
+            else if (e.Button == MouseButtons.Right)
+            {
+                s_showContextMenu?.Invoke(entry.Icon, null);
+            }
         };
     }
 

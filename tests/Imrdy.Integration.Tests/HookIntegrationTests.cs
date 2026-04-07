@@ -5,6 +5,7 @@ using Xunit;
 
 namespace Imrdy.Integration.Tests;
 
+[Trait("Category", "Integration")]
 public class HookIntegrationTests : IDisposable
 {
     private readonly CliTestFixture _cli = new();

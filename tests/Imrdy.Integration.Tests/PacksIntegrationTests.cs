@@ -4,6 +4,7 @@ using Xunit;
 
 namespace Imrdy.Integration.Tests;
 
+[Trait("Category", "Integration")]
 public class PacksIntegrationTests : IDisposable
 {
     private readonly CliTestFixture _cli = new();

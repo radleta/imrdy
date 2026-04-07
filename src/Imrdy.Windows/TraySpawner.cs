@@ -55,11 +55,10 @@ internal static class TraySpawner
             {
                 FileName = processPath,
                 Arguments = "",
-                UseShellExecute = false,
-                CreateNoWindow = true,
-                RedirectStandardInput = false,
-                RedirectStandardOutput = false,
-                RedirectStandardError = false,
+                // ShellExecuteEx fully detaches the child — no handle inheritance.
+                // CreateProcess (UseShellExecute=false) inherits all handles even
+                // with redirected streams, which keeps Claude Code's hook pipe open.
+                UseShellExecute = true,
                 WindowStyle = ProcessWindowStyle.Hidden,
             };
 

@@ -22,7 +22,7 @@ public static class TooltipFormatter
         string? packName)
     {
         var ageStr = FormatAge(age);
-        var desktopStr = desktopIndex.HasValue ? $" (d{desktopIndex.Value})" : "";
+        var desktopStr = desktopIndex.HasValue ? $" (d{desktopIndex.Value + 1})" : "";
         var packStr = !string.IsNullOrEmpty(packName) ? $" ~{packName}" : "";
 
         var tooltip = string.IsNullOrEmpty(sessionName)
@@ -37,7 +37,7 @@ public static class TooltipFormatter
     /// </summary>
     public static string FormatWorkspace(string name, int desktopIndex)
     {
-        var tooltip = $"{name} [workspace] (d{desktopIndex})";
+        var tooltip = $"{name} [workspace] (d{desktopIndex + 1})";
         return Truncate(tooltip);
     }
 
