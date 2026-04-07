@@ -10,11 +10,14 @@ public class HookIntegrationTests : IDisposable
     private readonly CliTestFixture _cli = new();
     private readonly TempDirectoryFixture _temp = new();
     private readonly string _sessionId = $"inttest-{Guid.NewGuid():N}"[..32];
-    private readonly List<string> _createdStateFiles = new();
+
+    private Dictionary<string, string> EnvWithHome() => new()
+    {
+        ["IMRDY_HOME"] = _temp.Path,
+    };
 
     private string SessionFilePath => Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-        ".imrdy", "sessions", $"{_sessionId}.json");
+        _temp.Path, "sessions", $"{_sessionId}.json");
 
     [Fact]
     public async Task Hook_StopEvent_ExitsZero()
@@ -26,8 +29,8 @@ public class HookIntegrationTests : IDisposable
             cwd = "/d/dev/test",
         });
 
-        var (exitCode, _, _) = await _cli.RunAsync("hook", stdin: hookJson, workingDirectory: _temp.Path);
-        _createdStateFiles.Add(SessionFilePath);
+        var (exitCode, _, _) = await _cli.RunAsync("hook", stdin: hookJson,
+            workingDirectory: _temp.Path, environmentVariables: EnvWithHome());
 
         exitCode.Should().Be(0);
     }
@@ -42,8 +45,8 @@ public class HookIntegrationTests : IDisposable
             cwd = "/d/dev/test",
         });
 
-        await _cli.RunAsync("hook", stdin: hookJson, workingDirectory: _temp.Path);
-        _createdStateFiles.Add(SessionFilePath);
+        await _cli.RunAsync("hook", stdin: hookJson,
+            workingDirectory: _temp.Path, environmentVariables: EnvWithHome());
 
         File.Exists(SessionFilePath).Should().BeTrue("hook should write a state file");
 
@@ -62,10 +65,11 @@ public class HookIntegrationTests : IDisposable
             cwd = "/d/dev/test",
         });
 
-        await _cli.RunAsync("hook", stdin: hookJson, workingDirectory: _temp.Path);
-        _createdStateFiles.Add(SessionFilePath);
+        await _cli.RunAsync("hook", stdin: hookJson,
+            workingDirectory: _temp.Path, environmentVariables: EnvWithHome());
 
-        var (exitCode, stdout, _) = await _cli.RunAsync("status --json", workingDirectory: _temp.Path);
+        var (exitCode, stdout, _) = await _cli.RunAsync("status --json",
+            workingDirectory: _temp.Path, environmentVariables: EnvWithHome());
 
         exitCode.Should().Be(0);
         stdout.Should().Contain(_sessionId);
@@ -74,6 +78,8 @@ public class HookIntegrationTests : IDisposable
     [Fact]
     public async Task Hook_LifecycleSequence_ReflectsLatestState()
     {
+        var env = EnvWithHome();
+
         // First: Stop event
         var stop1 = JsonSerializer.Serialize(new
         {
@@ -82,8 +88,8 @@ public class HookIntegrationTests : IDisposable
             cwd = "/d/dev/test",
             notification_type = "user",
         });
-        await _cli.RunAsync("hook", stdin: stop1, workingDirectory: _temp.Path);
-        _createdStateFiles.Add(SessionFilePath);
+        await _cli.RunAsync("hook", stdin: stop1,
+            workingDirectory: _temp.Path, environmentVariables: env);
 
         // Second: another Stop with different notification_type
         var stop2 = JsonSerializer.Serialize(new
@@ -93,7 +99,8 @@ public class HookIntegrationTests : IDisposable
             cwd = "/d/dev/test",
             notification_type = "assistant",
         });
-        await _cli.RunAsync("hook", stdin: stop2, workingDirectory: _temp.Path);
+        await _cli.RunAsync("hook", stdin: stop2,
+            workingDirectory: _temp.Path, environmentVariables: env);
 
         // Third: Start event
         var start = JsonSerializer.Serialize(new
@@ -102,7 +109,8 @@ public class HookIntegrationTests : IDisposable
             hook_event_name = "Start",
             cwd = "/d/dev/test",
         });
-        await _cli.RunAsync("hook", stdin: start, workingDirectory: _temp.Path);
+        await _cli.RunAsync("hook", stdin: start,
+            workingDirectory: _temp.Path, environmentVariables: env);
 
         // Verify state reflects the latest event
         var content = await File.ReadAllTextAsync(SessionFilePath);
@@ -112,19 +120,6 @@ public class HookIntegrationTests : IDisposable
 
     public void Dispose()
     {
-        foreach (var path in _createdStateFiles)
-        {
-            try
-            {
-                if (File.Exists(path))
-                    File.Delete(path);
-            }
-            catch
-            {
-                // Best-effort cleanup
-            }
-        }
-
         _temp.Dispose();
     }
 }

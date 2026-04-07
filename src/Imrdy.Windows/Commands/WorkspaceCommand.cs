@@ -1,4 +1,6 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
+using Imrdy.Core;
 using Imrdy.Core.Desktop;
 using Imrdy.Core.State;
 using Imrdy.Core.Workspace;
@@ -12,8 +14,6 @@ namespace Imrdy.Windows.Commands;
 /// </summary>
 internal static class WorkspaceCommand
 {
-    private static readonly string SessionsDir = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".imrdy", "sessions");
 
     public static int Run(ServiceProvider services, string[] args, bool json)
     {
@@ -40,24 +40,24 @@ internal static class WorkspaceCommand
         try
         {
             var config = workspaceStore.Load();
-            var sessions = Directory.Exists(SessionsDir)
-                ? stateReader.ReadAllStateFiles(SessionsDir)
+            var sessions = Directory.Exists(ImrdyPaths.Sessions)
+                ? stateReader.ReadAllStateFiles(ImrdyPaths.Sessions)
                 : [];
 
             if (json)
             {
-                var output = config.Workspaces.Select(w =>
+                var output = new JsonArray(config.Workspaces.Select(w =>
                 {
                     var activeSessions = CountActiveSessions(w, sessions);
-                    return new
+                    return (JsonNode)new JsonObject
                     {
-                        name = w.Name,
-                        path = w.Path,
-                        desktop = w.Desktop,
-                        active_sessions = activeSessions,
+                        ["name"] = w.Name,
+                        ["path"] = w.Path,
+                        ["desktop"] = w.Desktop,
+                        ["active_sessions"] = activeSessions,
                     };
-                });
-                Console.WriteLine(JsonSerializer.Serialize(output, new JsonSerializerOptions { WriteIndented = true }));
+                }).ToArray());
+                Console.WriteLine(output.ToJsonString(ImrdyJsonContext.Indented));
                 return 0;
             }
 

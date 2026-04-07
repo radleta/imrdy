@@ -5,7 +5,7 @@
 # Environment overrides (for testing):
 #   IMRDY_RELEASE_DIR  — local directory with release assets (skip download)
 #   IMRDY_INSTALL_DIR  — override install target (default: ~/.local/bin)
-#   IMRDY_SOUNDS_DIR   — override sounds base dir (default: ~/.claude/sounds)
+#   IMRDY_SOUNDS_DIR   — override sounds base dir (default: ~/.imrdy/sounds)
 set -euo pipefail
 
 # Override: local release directory skips all downloads
@@ -107,9 +107,10 @@ echo "imrdy: installed to ${INSTALL_PATH}" >&2
 
 # --- Download default sound pack (graceful — failure does not abort) ---
 (
-    SOUNDS_DIR="${IMRDY_SOUNDS_DIR:-${HOME}/.claude/sounds}"
+    IMRDY_HOME="${IMRDY_SOUNDS_DIR:-${HOME}/.imrdy}"
+    SOUNDS_DIR="${IMRDY_SOUNDS_DIR:-${IMRDY_HOME}/sounds}"
     PACKS_DIR="${SOUNDS_DIR}/packs"
-    CONFIG_PATH="${SOUNDS_DIR}/config.json"
+    CONFIG_PATH="${IMRDY_HOME}/config.json"
 
     if [ -n "${RELEASE_DIR}" ]; then
         # Local mode — copy pack zip from release dir
@@ -264,13 +265,21 @@ zf.extractall(sys.argv[2])
     fi
     echo "imrdy: sound pack installed to ${PACKS_DIR}" >&2
 
-    # Create default config.json if it doesn't exist
+    # Create default config.json if it doesn't exist (atomic write: temp + mv)
     if [ ! -f "${CONFIG_PATH}" ]; then
-        mkdir -p "${SOUNDS_DIR}"
-        echo '{"default":"assistant","soundEnabled":true}' > "${CONFIG_PATH}"
-        echo "imrdy: created default sound config" >&2
+        mkdir -p "${IMRDY_HOME}"
+        CONFIG_TMP=$(mktemp "${IMRDY_HOME}/config.json.XXXXXX")
+        echo '{"tray":{"enabled":true},"sound":{"enabled":true,"defaultPack":"assistant"}}' > "${CONFIG_TMP}"
+        mv "${CONFIG_TMP}" "${CONFIG_PATH}"
+        echo "imrdy: created default config" >&2
     fi
 ) || echo "imrdy: warning: sound pack download failed, continuing without sounds" >&2
+
+# Print tray auto-start hints
+echo "" >&2
+echo "  The system tray monitor starts automatically with your next Claude session." >&2
+echo "  To start it manually:  imrdy" >&2
+echo "  To disable auto-start: imrdy config set tray.enabled false" >&2
 
 # Re-run the hook with the cached SessionStart payload (skip in test mode)
 if [ -z "${RELEASE_DIR}" ]; then

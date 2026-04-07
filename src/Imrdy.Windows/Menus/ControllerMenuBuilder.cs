@@ -1,5 +1,5 @@
+using Imrdy.Core;
 using Imrdy.Core.Menus;
-using Imrdy.Core.Sound;
 using Microsoft.Extensions.Logging;
 
 namespace Imrdy.Windows.Menus;
@@ -12,7 +12,7 @@ internal static class ControllerMenuBuilder
 {
     public static ContextMenuStrip Create(
         Func<ControllerMenuState> stateProvider,
-        Action<SoundConfig> onConfigChanged,
+        Action<ImrdyConfig> onConfigChanged,
         Action onExit,
         ILogger? logger = null)
     {
@@ -36,7 +36,7 @@ internal static class ControllerMenuBuilder
     private static async void OnClick(
         string tag,
         ControllerMenuState state,
-        Action<SoundConfig> onConfigChanged,
+        Action<ImrdyConfig> onConfigChanged,
         Action onExit,
         ILogger? logger)
     {
@@ -44,24 +44,22 @@ internal static class ControllerMenuBuilder
         {
             if (tag == "toggle-sound")
             {
-                var newConfig = state.Config with { SoundEnabled = !state.Config.SoundEnabled };
-                await Task.Run(() => SoundConfigWriter.Save(newConfig, Path.Combine(state.SoundsDir, "config.json")));
-                onConfigChanged(newConfig);
+                await Task.Run(() => ConfigReader.Update(c => c with { Sound = c.Sound with { Enabled = !state.Config.Sound.Enabled } }));
+                onConfigChanged(ConfigReader.Read());
             }
             else if (tag.StartsWith("switch-pack:", StringComparison.Ordinal))
             {
                 var packName = tag["switch-pack:".Length..];
-                var newConfig = state.Config with { Default = packName };
-                await Task.Run(() => SoundConfigWriter.Save(newConfig, Path.Combine(state.SoundsDir, "config.json")));
-                onConfigChanged(newConfig);
+                await Task.Run(() => ConfigReader.Update(c => c with { Sound = c.Sound with { DefaultPack = packName } }));
+                onConfigChanged(ConfigReader.Read());
             }
             else if (tag == "open-config")
             {
-                OpenFolder("explorer.exe", state.ConfigDir, logger);
+                OpenFolder("explorer.exe", ImrdyPaths.Home, logger);
             }
             else if (tag == "open-sounds")
             {
-                OpenFolder("explorer.exe", state.SoundsDir, logger);
+                OpenFolder("explorer.exe", ImrdyPaths.SoundsDir, logger);
             }
             else if (tag == "open-log")
             {

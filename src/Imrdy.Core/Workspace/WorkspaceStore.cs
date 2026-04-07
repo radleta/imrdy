@@ -49,16 +49,8 @@ public sealed class WorkspaceStore
     /// </summary>
     public void Save(WorkspaceConfig config)
     {
-        var dir = Path.GetDirectoryName(_filePath);
-        if (dir is not null && !Directory.Exists(dir))
-        {
-            Directory.CreateDirectory(dir);
-        }
-
-        var tmpPath = _filePath + ".tmp";
         var json = JsonSerializer.SerializeToUtf8Bytes(config, ImrdyJsonContext.Default.WorkspaceConfig);
-        File.WriteAllBytes(tmpPath, json);
-        File.Move(tmpPath, _filePath, overwrite: true);
+        AtomicFileWriter.Write(_filePath, json);
     }
 
     /// <summary>

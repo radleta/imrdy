@@ -28,7 +28,8 @@ public sealed class CliTestFixture
     public async Task<(int ExitCode, string StdOut, string StdErr)> RunAsync(
         string args,
         string? stdin = null,
-        string? workingDirectory = null)
+        string? workingDirectory = null,
+        Dictionary<string, string>? environmentVariables = null)
     {
         workingDirectory ??= Path.GetTempPath();
 
@@ -43,6 +44,14 @@ public sealed class CliTestFixture
             UseShellExecute = false,
             CreateNoWindow = true,
         };
+
+        if (environmentVariables is not null)
+        {
+            foreach (var (key, value) in environmentVariables)
+            {
+                psi.Environment[key] = value;
+            }
+        }
 
         using var process = Process.Start(psi)
             ?? throw new InvalidOperationException($"Failed to start process: {BinaryPath} {args}");

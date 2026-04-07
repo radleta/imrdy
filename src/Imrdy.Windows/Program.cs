@@ -1,3 +1,4 @@
+using Imrdy.Core;
 using Imrdy.Windows.Commands;
 using Imrdy.Windows.DI;
 using Imrdy.Windows.Models;
@@ -33,7 +34,7 @@ internal static class Program
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
 
-            using var mutex = new Mutex(true, @"Global\ImrdyMonitor", out bool created);
+            using var mutex = new Mutex(true, ImrdyPaths.MutexName, out bool created);
             if (!created)
             {
                 // Already running

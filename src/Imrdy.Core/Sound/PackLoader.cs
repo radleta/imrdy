@@ -3,7 +3,7 @@ using System.Text.Json;
 namespace Imrdy.Core.Sound;
 
 /// <summary>
-/// Discovers and loads sound packs from ~/.claude/sounds/packs/.
+/// Discovers and loads sound packs from ~/.imrdy/sounds/packs/.
 /// </summary>
 public sealed class PackLoader
 {
@@ -20,7 +20,7 @@ public sealed class PackLoader
 
     /// <summary>
     /// Discovers all packs at the given packs root directory.
-    /// Default: ~/.claude/sounds/packs/
+    /// Default: ~/.imrdy/sounds/packs/
     /// </summary>
     public IReadOnlyList<LoadedPack> LoadPacks(string packsRoot)
     {

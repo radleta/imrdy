@@ -1,6 +1,7 @@
 using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Imrdy.Core;
 using Imrdy.Core.Sound;
 using Imrdy.Core.Validation;
@@ -14,12 +15,6 @@ namespace Imrdy.Windows.Commands;
 /// </summary>
 internal static class PacksCommand
 {
-    private static readonly string PacksRoot = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".claude", "sounds", "packs");
-
-    private static readonly string ConfigPath = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".claude", "sounds", "config.json");
-
     public static int Run(ServiceProvider services, string[] args, bool json)
     {
         if (args.Length == 0)
@@ -46,28 +41,32 @@ internal static class PacksCommand
 
         try
         {
-            var packs = packLoader.LoadPacks(PacksRoot);
+            var packs = packLoader.LoadPacks(ImrdyPaths.PacksDir);
 
             if (json)
             {
-                var output = packs.Select(p => new
+                var output = new JsonArray(packs.Select(p =>
                 {
-                    name = p.Name,
-                    description = p.Description,
-                    version = p.Version,
-                    directory = p.PackDirectory,
-                    events = p.WavFiles.ToDictionary(
-                        kv => kv.Key.ToString(),
-                        kv => kv.Value.Length),
-                });
-                Console.WriteLine(JsonSerializer.Serialize(output, new JsonSerializerOptions { WriteIndented = true }));
+                    var events = new JsonObject();
+                    foreach (var kv in p.WavFiles)
+                        events[kv.Key.ToString()] = kv.Value.Length;
+                    return (JsonNode)new JsonObject
+                    {
+                        ["name"] = p.Name,
+                        ["description"] = p.Description,
+                        ["version"] = p.Version,
+                        ["directory"] = p.PackDirectory,
+                        ["events"] = events,
+                    };
+                }).ToArray());
+                Console.WriteLine(output.ToJsonString(ImrdyJsonContext.Indented));
                 return 0;
             }
 
             if (packs.Count == 0)
             {
                 console.MarkupLine("[dim]No sound packs installed.[/]");
-                console.MarkupLine($"[dim]Pack directory: {Markup.Escape(PacksRoot)}[/]");
+                console.MarkupLine($"[dim]Pack directory: {Markup.Escape(ImrdyPaths.PacksDir)}[/]");
                 return 0;
             }
 
@@ -114,7 +113,7 @@ internal static class PacksCommand
 
         try
         {
-            var packs = packLoader.LoadPacks(PacksRoot);
+            var packs = packLoader.LoadPacks(ImrdyPaths.PacksDir);
             var pack = packs.FirstOrDefault(p =>
                 string.Equals(p.Name, packName, StringComparison.OrdinalIgnoreCase));
 
@@ -182,8 +181,8 @@ internal static class PacksCommand
             var packDirs = new List<string>();
             if (args.Length > 0)
             {
-                var specificDir = Path.GetFullPath(Path.Combine(PacksRoot, args[0]));
-                if (!specificDir.StartsWith(Path.GetFullPath(PacksRoot) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+                var specificDir = Path.GetFullPath(Path.Combine(ImrdyPaths.PacksDir, args[0]));
+                if (!specificDir.StartsWith(Path.GetFullPath(ImrdyPaths.PacksDir) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
                 {
                     console.MarkupLine($"[red]Invalid pack name:[/] {Markup.Escape(args[0])}");
                     return 1;
@@ -197,9 +196,9 @@ internal static class PacksCommand
 
                 packDirs.Add(specificDir);
             }
-            else if (Directory.Exists(PacksRoot))
+            else if (Directory.Exists(ImrdyPaths.PacksDir))
             {
-                packDirs.AddRange(Directory.GetDirectories(PacksRoot));
+                packDirs.AddRange(Directory.GetDirectories(ImrdyPaths.PacksDir));
             }
 
             if (packDirs.Count == 0)
@@ -209,7 +208,7 @@ internal static class PacksCommand
             }
 
             var allValid = true;
-            var results = new List<object>();
+            var jsonResults = json ? new JsonArray() : null;
 
             foreach (var packDir in packDirs)
             {
@@ -218,16 +217,16 @@ internal static class PacksCommand
 
                 if (json)
                 {
-                    results.Add(new
+                    jsonResults!.Add(new JsonObject
                     {
-                        name = packName,
-                        valid = result.IsValid,
-                        errors = result.Errors.Select(e => new
+                        ["name"] = packName,
+                        ["valid"] = result.IsValid,
+                        ["errors"] = new JsonArray(result.Errors.Select(e => (JsonNode)new JsonObject
                         {
-                            path = e.Path,
-                            message = e.Message,
-                            severity = e.Severity.ToString().ToLowerInvariant(),
-                        }),
+                            ["path"] = e.Path,
+                            ["message"] = e.Message,
+                            ["severity"] = e.Severity.ToString().ToLowerInvariant(),
+                        }).ToArray()),
                     });
                 }
                 else
@@ -258,7 +257,7 @@ internal static class PacksCommand
 
             if (json)
             {
-                Console.WriteLine(JsonSerializer.Serialize(results, new JsonSerializerOptions { WriteIndented = true }));
+                Console.WriteLine(jsonResults!.ToJsonString(ImrdyJsonContext.Indented));
             }
 
             return allValid ? 0 : 1;
@@ -286,7 +285,7 @@ internal static class PacksCommand
         try
         {
             // Verify pack exists
-            var packs = packLoader.LoadPacks(PacksRoot);
+            var packs = packLoader.LoadPacks(ImrdyPaths.PacksDir);
             var pack = packs.FirstOrDefault(p =>
                 string.Equals(p.Name, packName, StringComparison.OrdinalIgnoreCase));
 
@@ -296,31 +295,10 @@ internal static class PacksCommand
                 return 1;
             }
 
-            // Read existing config or create new
-            SoundConfig config;
-            if (File.Exists(ConfigPath))
+            ConfigReader.Update(c => c with
             {
-                try
-                {
-                    var bytes = File.ReadAllBytes(ConfigPath);
-                    config = JsonSerializer.Deserialize(bytes, ImrdyJsonContext.Default.SoundConfig)
-                             ?? new SoundConfig();
-                }
-                catch (Exception ex)
-                {
-                    console.MarkupLine($"[yellow]Warning: existing config unreadable ({Markup.Escape(ex.Message)}), using defaults[/]");
-                    config = new SoundConfig();
-                }
-            }
-            else
-            {
-                config = new SoundConfig();
-            }
-
-            // Update default
-            config = config with { Default = pack.Name };
-
-            SoundConfigWriter.Save(config, ConfigPath);
+                Sound = c.Sound with { DefaultPack = pack.Name }
+            });
 
             console.MarkupLine($"Default pack set to [green]{Markup.Escape(pack.Name)}[/]");
             return 0;
@@ -343,10 +321,10 @@ internal static class PacksCommand
         }
 
         var name = args[0];
-        var packDir = Path.GetFullPath(Path.Combine(PacksRoot, name));
+        var packDir = Path.GetFullPath(Path.Combine(ImrdyPaths.PacksDir, name));
 
         // Path containment guard — prevent traversal outside packs directory
-        if (!packDir.StartsWith(Path.GetFullPath(PacksRoot) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+        if (!packDir.StartsWith(Path.GetFullPath(ImrdyPaths.PacksDir) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
         {
             console.MarkupLine($"[red]Invalid pack name:[/] {Markup.Escape(name)}");
             return 1;
@@ -358,7 +336,7 @@ internal static class PacksCommand
             {
                 if (json)
                 {
-                    Console.WriteLine(JsonSerializer.Serialize(new { error = $"Pack not found: {name}" }));
+                    Console.WriteLine(JsonSerializer.Serialize(new Dictionary<string, string> { ["error"] = $"Pack not found: {name}" }, ImrdyJsonContext.Indented));
                 }
                 else
                 {
@@ -371,30 +349,26 @@ internal static class PacksCommand
             Directory.Delete(packDir, recursive: true);
 
             var defaultCleared = false;
-            if (File.Exists(ConfigPath))
+            try
             {
-                try
+                var config = ConfigReader.Read();
+                if (string.Equals(config.Sound.DefaultPack, name, StringComparison.OrdinalIgnoreCase))
                 {
-                    var bytes = File.ReadAllBytes(ConfigPath);
-                    var config = JsonSerializer.Deserialize(bytes, ImrdyJsonContext.Default.SoundConfig)
-                                 ?? new SoundConfig();
-
-                    if (string.Equals(config.Default, name, StringComparison.OrdinalIgnoreCase))
+                    ConfigReader.Update(c => c with
                     {
-                        config = config with { Default = null };
-                        SoundConfigWriter.Save(config, ConfigPath);
-                        defaultCleared = true;
-                    }
+                        Sound = c.Sound with { DefaultPack = "assistant" }
+                    });
+                    defaultCleared = true;
                 }
-                catch (Exception ex)
-                {
-                    console.MarkupLine($"[yellow]Warning: could not update config ({Markup.Escape(ex.Message)})[/]");
-                }
+            }
+            catch (Exception ex)
+            {
+                console.MarkupLine($"[yellow]Warning: could not update config ({Markup.Escape(ex.Message)})[/]");
             }
 
             if (json)
             {
-                Console.WriteLine(JsonSerializer.Serialize(new { removed = name }));
+                Console.WriteLine(JsonSerializer.Serialize(new Dictionary<string, string> { ["removed"] = name }, ImrdyJsonContext.Indented));
             }
             else
             {
@@ -411,7 +385,7 @@ internal static class PacksCommand
         {
             if (json)
             {
-                Console.WriteLine(JsonSerializer.Serialize(new { error = ex.Message }));
+                Console.WriteLine(JsonSerializer.Serialize(new Dictionary<string, string> { ["error"] = ex.Message }, ImrdyJsonContext.Indented));
             }
             else
             {
@@ -487,17 +461,17 @@ internal static class PacksCommand
             {
                 if (json)
                 {
-                    var validationOutput = new
+                    var validationOutput = new JsonObject
                     {
-                        error = "Validation failed",
-                        errors = validationResult.Errors.Select(e => new
+                        ["error"] = "Validation failed",
+                        ["errors"] = new JsonArray(validationResult.Errors.Select(e => (JsonNode)new JsonObject
                         {
-                            path = e.Path,
-                            message = e.Message,
-                            severity = e.Severity.ToString().ToLowerInvariant(),
-                        }),
+                            ["path"] = e.Path,
+                            ["message"] = e.Message,
+                            ["severity"] = e.Severity.ToString().ToLowerInvariant(),
+                        }).ToArray()),
                     };
-                    Console.WriteLine(JsonSerializer.Serialize(validationOutput, new JsonSerializerOptions { WriteIndented = true }));
+                    Console.WriteLine(validationOutput.ToJsonString(ImrdyJsonContext.Indented));
                 }
                 else
                 {
@@ -548,13 +522,13 @@ internal static class PacksCommand
 
             if (json)
             {
-                var output = new
+                var output = new JsonObject
                 {
-                    path = zipPath,
-                    sha256 = sha256Hash,
-                    size = fileSize,
+                    ["path"] = zipPath,
+                    ["sha256"] = sha256Hash,
+                    ["size"] = fileSize,
                 };
-                Console.WriteLine(JsonSerializer.Serialize(output, new JsonSerializerOptions { WriteIndented = true }));
+                Console.WriteLine(output.ToJsonString(ImrdyJsonContext.Indented));
             }
             else
             {
@@ -568,7 +542,7 @@ internal static class PacksCommand
         {
             if (json)
             {
-                Console.WriteLine(JsonSerializer.Serialize(new { error = ex.Message }));
+                Console.WriteLine(JsonSerializer.Serialize(new Dictionary<string, string> { ["error"] = ex.Message }, ImrdyJsonContext.Indented));
             }
             else
             {

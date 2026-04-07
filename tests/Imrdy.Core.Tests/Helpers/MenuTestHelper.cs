@@ -1,5 +1,4 @@
 using Imrdy.Core.Menus;
-using Imrdy.Core.Sound;
 
 namespace Imrdy.Core.Tests.Helpers;
 
@@ -10,9 +9,7 @@ internal static class MenuTestHelper
         Sessions = [],
         Workspaces = [],
         InstalledPacks = [],
-        Config = new SoundConfig { SoundEnabled = true },
-        ConfigDir = @"C:\test\.imrdy",
-        SoundsDir = @"C:\test\.claude\sounds",
+        Config = new ImrdyConfig(),
         LogPath = @"C:\test\.imrdy\logs\monitor.log",
     };
 
@@ -29,16 +26,14 @@ internal static class MenuTestHelper
             new WorkspaceMenuState { WorkspaceName = "Dev", WorkspacePath = @"C:\dev" },
         ],
         InstalledPacks = ["assistant", "retro"],
-        Config = new SoundConfig { SoundEnabled = true, Default = "assistant" },
-        ConfigDir = @"C:\test\.imrdy",
-        SoundsDir = @"C:\test\.claude\sounds",
+        Config = new ImrdyConfig { Sound = new SoundConfig { Enabled = true, DefaultPack = "assistant" } },
         LogPath = @"C:\test\.imrdy\logs\monitor.log",
     };
 
     public static ControllerMenuState SoundDisabledControllerState()
     {
         var active = ActiveControllerState();
-        return active with { Config = active.Config with { SoundEnabled = false } };
+        return active with { Config = new ImrdyConfig { Sound = active.Config.Sound with { Enabled = false } } };
     }
 
     public static SessionMenuState SingleSessionState(string? project, string status) => new()

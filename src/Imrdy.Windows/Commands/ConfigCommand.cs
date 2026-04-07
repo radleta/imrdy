@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Imrdy.Core;
 using Imrdy.Core.Sound;
 using Imrdy.Core.Validation;
@@ -14,19 +15,6 @@ namespace Imrdy.Windows.Commands;
 /// </summary>
 internal static class ConfigCommand
 {
-    private static readonly string TrayDir = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".imrdy");
-
-    private static readonly string SessionsDir = Path.Combine(TrayDir, "sessions");
-    private static readonly string WorkspacesPath = Path.Combine(TrayDir, "workspaces.json");
-    private static readonly string LogsDir = Path.Combine(TrayDir, "logs");
-
-    private static readonly string SoundsDir = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".claude", "sounds");
-
-    private static readonly string ConfigPath = Path.Combine(SoundsDir, "config.json");
-    private static readonly string PacksDir = Path.Combine(SoundsDir, "packs");
-
     public static int Run(ServiceProvider services, string[] args, bool json)
     {
         if (args.Length == 0)
@@ -50,7 +38,7 @@ internal static class ConfigCommand
 
         try
         {
-            if (!File.Exists(ConfigPath))
+            if (!File.Exists(ImrdyPaths.Config))
             {
                 if (json)
                 {
@@ -59,13 +47,13 @@ internal static class ConfigCommand
                 else
                 {
                     console.MarkupLine("[dim]No config file found.[/]");
-                    console.MarkupLine($"[dim]Expected at: {Markup.Escape(ConfigPath)}[/]");
+                    console.MarkupLine($"[dim]Expected at: {Markup.Escape(ImrdyPaths.Config)}[/]");
                 }
 
                 return 0;
             }
 
-            var content = File.ReadAllText(ConfigPath);
+            var content = File.ReadAllText(ImrdyPaths.Config);
 
             if (json)
             {
@@ -77,9 +65,9 @@ internal static class ConfigCommand
             try
             {
                 var doc = JsonDocument.Parse(content);
-                var formatted = JsonSerializer.Serialize(doc, new JsonSerializerOptions { WriteIndented = true });
-                console.MarkupLine("[bold]Sound Configuration[/]");
-                console.MarkupLine($"[dim]{Markup.Escape(ConfigPath)}[/]");
+                var formatted = JsonSerializer.Serialize(doc, ImrdyJsonContext.Indented);
+                console.MarkupLine("[bold]Configuration[/]");
+                console.MarkupLine($"[dim]{Markup.Escape(ImrdyPaths.Config)}[/]");
                 console.WriteLine();
                 console.Write(new Panel(Markup.Escape(formatted))
                     .Header("config.json")
@@ -107,7 +95,7 @@ internal static class ConfigCommand
         if (args.Length < 2)
         {
             console.MarkupLine("[red]Usage:[/] imrdy config set <key> <value>");
-            console.MarkupLine("[dim]Keys: default, projectMappings.<project>, soundEnabled[/]");
+            console.MarkupLine("[dim]Keys: tray.enabled, sound.enabled, sound.defaultPack, sound.projects.<project>[/]");
             return 1;
         }
 
@@ -116,59 +104,49 @@ internal static class ConfigCommand
 
         try
         {
-            // Read existing config
-            SoundConfig config;
-            if (File.Exists(ConfigPath))
-            {
-                try
-                {
-                    var bytes = File.ReadAllBytes(ConfigPath);
-                    config = JsonSerializer.Deserialize(bytes, ImrdyJsonContext.Default.SoundConfig)
-                             ?? new SoundConfig();
-                }
-                catch (Exception ex)
-                {
-                    console.MarkupLine($"[yellow]Warning: existing config unreadable ({Markup.Escape(ex.Message)}), using defaults[/]");
-                    config = new SoundConfig();
-                }
-            }
-            else
-            {
-                config = new SoundConfig();
-            }
-
-            // Apply update
-            if (string.Equals(key, "default", StringComparison.OrdinalIgnoreCase))
-            {
-                config = config with { Default = value };
-            }
-            else if (key.StartsWith("projectMappings.", StringComparison.OrdinalIgnoreCase) && key.Length > 16)
-            {
-                var project = key[16..]; // After "projectMappings."
-                var mappings = new Dictionary<string, string>(config.ProjectMappings)
-                {
-                    [project] = value,
-                };
-                config = config with { ProjectMappings = mappings };
-            }
-            else if (string.Equals(key, "soundEnabled", StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(key, "tray.enabled", StringComparison.OrdinalIgnoreCase))
             {
                 if (!bool.TryParse(value, out var enabled))
                 {
-                    console.MarkupLine($"[red]Invalid value:[/] {Markup.Escape(value)} (expected true or false)");
+                    console.MarkupLine($"[red]Invalid value for '{Markup.Escape(key)}':[/] expected true/false, got '{Markup.Escape(value)}'");
                     return 1;
                 }
 
-                config = config with { SoundEnabled = enabled };
+                ConfigReader.Update(c => c with { Tray = c.Tray with { Enabled = enabled } });
+            }
+            else if (string.Equals(key, "sound.enabled", StringComparison.OrdinalIgnoreCase))
+            {
+                if (!bool.TryParse(value, out var enabled))
+                {
+                    console.MarkupLine($"[red]Invalid value for '{Markup.Escape(key)}':[/] expected true/false, got '{Markup.Escape(value)}'");
+                    return 1;
+                }
+
+                ConfigReader.Update(c => c with { Sound = c.Sound with { Enabled = enabled } });
+            }
+            else if (string.Equals(key, "sound.defaultPack", StringComparison.OrdinalIgnoreCase))
+            {
+                ConfigReader.Update(c => c with { Sound = c.Sound with { DefaultPack = value } });
+            }
+            else if (key.StartsWith("sound.projects.", StringComparison.OrdinalIgnoreCase) && key.Length > 15)
+            {
+                var project = key[15..]; // After "sound.projects."
+                ConfigReader.Update(c => c with
+                {
+                    Sound = c.Sound with
+                    {
+                        Projects = new Dictionary<string, string>(c.Sound.Projects)
+                        {
+                            [project] = value,
+                        }
+                    }
+                });
             }
             else
             {
-                console.MarkupLine($"[red]Unknown key:[/] {Markup.Escape(key)}");
-                console.MarkupLine("[dim]Valid keys: default, projectMappings.<project>, soundEnabled[/]");
+                console.MarkupLine($"[red]Unknown key: '{Markup.Escape(key)}'.[/] Valid keys: tray.enabled, sound.enabled, sound.defaultPack, sound.projects.<path>");
                 return 1;
             }
-
-            SoundConfigWriter.Save(config, ConfigPath);
 
             console.MarkupLine($"Set [green]{Markup.Escape(key)}[/] = [bold]{Markup.Escape(value)}[/]");
             return 0;
@@ -186,18 +164,18 @@ internal static class ConfigCommand
 
         var paths = new Dictionary<string, string>
         {
-            ["sessions"] = SessionsDir,
-            ["workspaces"] = WorkspacesPath,
-            ["config"] = ConfigPath,
-            ["packs"] = PacksDir,
-            ["logs"] = LogsDir,
-            ["tray_dir"] = TrayDir,
-            ["sounds_dir"] = SoundsDir,
+            ["home"] = ImrdyPaths.Home,
+            ["config"] = ImrdyPaths.Config,
+            ["sessions"] = ImrdyPaths.Sessions,
+            ["workspaces"] = ImrdyPaths.Workspaces,
+            ["sounds"] = ImrdyPaths.SoundsDir,
+            ["packs"] = ImrdyPaths.PacksDir,
+            ["logs"] = ImrdyPaths.LogsDir,
         };
 
         if (json)
         {
-            Console.WriteLine(JsonSerializer.Serialize(paths, new JsonSerializerOptions { WriteIndented = true }));
+            Console.WriteLine(JsonSerializer.Serialize(paths, ImrdyJsonContext.Indented));
             return 0;
         }
 
@@ -232,38 +210,38 @@ internal static class ConfigCommand
 
         try
         {
-            var packs = packLoader.LoadPacks(PacksDir);
+            var packs = packLoader.LoadPacks(ImrdyPaths.PacksDir);
             var packNames = packs.Select(p => p.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-            var configResult = configValidator.Validate(ConfigPath, packNames);
-            var workspaceResult = workspaceValidator.Validate(WorkspacesPath);
+            var configResult = configValidator.Validate(ImrdyPaths.Config, packNames);
+            var workspaceResult = workspaceValidator.Validate(ImrdyPaths.Workspaces);
 
             if (json)
             {
-                var output = new
+                var output = new JsonObject
                 {
-                    config = new
+                    ["config"] = new JsonObject
                     {
-                        valid = configResult.IsValid,
-                        errors = configResult.Errors.Select(e => new
+                        ["valid"] = configResult.IsValid,
+                        ["errors"] = new JsonArray(configResult.Errors.Select(e => (JsonNode)new JsonObject
                         {
-                            path = e.Path,
-                            message = e.Message,
-                            severity = e.Severity.ToString().ToLowerInvariant(),
-                        }),
+                            ["path"] = e.Path,
+                            ["message"] = e.Message,
+                            ["severity"] = e.Severity.ToString().ToLowerInvariant(),
+                        }).ToArray()),
                     },
-                    workspaces = new
+                    ["workspaces"] = new JsonObject
                     {
-                        valid = workspaceResult.IsValid,
-                        errors = workspaceResult.Errors.Select(e => new
+                        ["valid"] = workspaceResult.IsValid,
+                        ["errors"] = new JsonArray(workspaceResult.Errors.Select(e => (JsonNode)new JsonObject
                         {
-                            path = e.Path,
-                            message = e.Message,
-                            severity = e.Severity.ToString().ToLowerInvariant(),
-                        }),
+                            ["path"] = e.Path,
+                            ["message"] = e.Message,
+                            ["severity"] = e.Severity.ToString().ToLowerInvariant(),
+                        }).ToArray()),
                     },
                 };
-                Console.WriteLine(JsonSerializer.Serialize(output, new JsonSerializerOptions { WriteIndented = true }));
+                Console.WriteLine(output.ToJsonString(ImrdyJsonContext.Indented));
                 return (configResult.IsValid && workspaceResult.IsValid) ? 0 : 1;
             }
 

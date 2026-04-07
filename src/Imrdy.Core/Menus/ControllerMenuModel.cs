@@ -10,7 +10,7 @@ internal static class ControllerMenuModel
         items.Add(new MenuItemModel
         {
             Label = "Sounds",
-            Checked = state.Config.SoundEnabled,
+            Checked = state.Config.Sound.Enabled,
             Tag = "toggle-sound",
         });
 
@@ -21,7 +21,7 @@ internal static class ControllerMenuModel
             packChildren.Add(new MenuItemModel
             {
                 Label = pack,
-                Checked = string.Equals(pack, state.Config.Default, StringComparison.OrdinalIgnoreCase),
+                Checked = string.Equals(pack, state.Config.Sound.DefaultPack, StringComparison.OrdinalIgnoreCase),
                 Tag = $"switch-pack:{pack}",
             });
         }

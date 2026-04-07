@@ -28,7 +28,7 @@ public class ConfigValidatorTests : IDisposable
     {
         var path = Path.Combine(_tempDir, "config.json");
         File.WriteAllText(path,
-            """{"default": "assistant", "projectMappings": {"my-proj": "retro"}}""");
+            """{"sound": {"defaultPack": "assistant", "projects": {"my-proj": "retro"}}}""");
 
         var result = _validator.Validate(path, AvailablePacks);
 
@@ -61,11 +61,11 @@ public class ConfigValidatorTests : IDisposable
     }
 
     [Fact]
-    public void Validate_UnknownKey_Warning()
+    public void Validate_UnknownTopLevelKey_Warning()
     {
         var path = Path.Combine(_tempDir, "config.json");
         File.WriteAllText(path,
-            """{"default": "assistant", "unknownKey": "value"}""");
+            """{"sound": {"defaultPack": "assistant"}, "unknownKey": "value"}""");
 
         var result = _validator.Validate(path, AvailablePacks);
 
@@ -79,19 +79,19 @@ public class ConfigValidatorTests : IDisposable
     {
         var path = Path.Combine(_tempDir, "config.json");
         File.WriteAllText(path,
-            """{"soundEnabled": true}""");
+            """{"sound": {"enabled": true}}""");
 
         var result = _validator.Validate(path, AvailablePacks);
 
         result.IsValid.Should().BeTrue();
-        result.Errors.Should().NotContain(e => e.Message.Contains("soundEnabled"));
+        result.Errors.Should().NotContain(e => e.Message.Contains("enabled"));
     }
 
     [Fact]
     public void Validate_DanglingDefaultPackReference_Error()
     {
         var path = Path.Combine(_tempDir, "config.json");
-        File.WriteAllText(path, """{"default": "deleted-pack"}""");
+        File.WriteAllText(path, """{"sound": {"defaultPack": "deleted-pack"}}""");
 
         var result = _validator.Validate(path, AvailablePacks);
 
@@ -101,11 +101,11 @@ public class ConfigValidatorTests : IDisposable
     }
 
     [Fact]
-    public void Validate_DanglingProjectMappingPackReference_Error()
+    public void Validate_DanglingProjectPackReference_Error()
     {
         var path = Path.Combine(_tempDir, "config.json");
         File.WriteAllText(path,
-            """{"projectMappings": {"my-proj": "nonexistent-pack"}}""");
+            """{"sound": {"projects": {"my-proj": "nonexistent-pack"}}}""");
 
         var result = _validator.Validate(path, AvailablePacks);
 
@@ -118,7 +118,7 @@ public class ConfigValidatorTests : IDisposable
     public void Validate_CaseInsensitivePackLookup()
     {
         var path = Path.Combine(_tempDir, "config.json");
-        File.WriteAllText(path, """{"default": "ASSISTANT"}""");
+        File.WriteAllText(path, """{"sound": {"defaultPack": "ASSISTANT"}}""");
 
         var result = _validator.Validate(path, AvailablePacks);
 
@@ -146,5 +146,70 @@ public class ConfigValidatorTests : IDisposable
 
         result.IsValid.Should().BeFalse();
         result.Errors.Should().Contain(e => e.Message.Contains("JSON object"));
+    }
+
+    [Fact]
+    public void Validate_UnknownSoundSubKey_Warning()
+    {
+        var path = Path.Combine(_tempDir, "config.json");
+        File.WriteAllText(path,
+            """{"sound": {"enabled": true, "badKey": 42}}""");
+
+        var result = _validator.Validate(path, AvailablePacks);
+
+        result.IsValid.Should().BeTrue();
+        result.Errors.Should().Contain(e =>
+            e.Severity == ValidationSeverity.Warning && e.Message.Contains("sound.badKey"));
+    }
+
+    [Fact]
+    public void Validate_UnknownTraySubKey_Warning()
+    {
+        var path = Path.Combine(_tempDir, "config.json");
+        File.WriteAllText(path,
+            """{"tray": {"enabled": true, "badKey": 42}}""");
+
+        var result = _validator.Validate(path, AvailablePacks);
+
+        result.IsValid.Should().BeTrue();
+        result.Errors.Should().Contain(e =>
+            e.Severity == ValidationSeverity.Warning && e.Message.Contains("tray.badKey"));
+    }
+
+    [Fact]
+    public void Validate_TrayNotObject_Error()
+    {
+        var path = Path.Combine(_tempDir, "config.json");
+        File.WriteAllText(path, """{"tray": "invalid"}""");
+
+        var result = _validator.Validate(path, AvailablePacks);
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(e => e.Message.Contains("'tray' must be a JSON object"));
+    }
+
+    [Fact]
+    public void Validate_SoundNotObject_Error()
+    {
+        var path = Path.Combine(_tempDir, "config.json");
+        File.WriteAllText(path, """{"sound": "invalid"}""");
+
+        var result = _validator.Validate(path, AvailablePacks);
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(e => e.Message.Contains("'sound' must be a JSON object"));
+    }
+
+    [Fact]
+    public void Validate_OldFlatKeys_AreUnknown()
+    {
+        var path = Path.Combine(_tempDir, "config.json");
+        File.WriteAllText(path,
+            """{"default": "assistant", "projectMappings": {}, "soundEnabled": true}""");
+
+        var result = _validator.Validate(path, AvailablePacks);
+
+        result.IsValid.Should().BeTrue(); // warnings only
+        result.Errors.Where(e => e.Severity == ValidationSeverity.Warning).Should().HaveCount(3);
     }
 }

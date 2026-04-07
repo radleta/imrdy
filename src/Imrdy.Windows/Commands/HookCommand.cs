@@ -15,10 +15,6 @@ namespace Imrdy.Windows.Commands;
 /// </summary>
 internal static class HookCommand
 {
-    private static readonly string SessionsDir = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-        ".imrdy", "sessions");
-
     /// <summary>
     /// Runs the hook command. Reads JSON from the provided TextReader (stdin),
     /// processes the hook event, and writes the state file.
@@ -97,7 +93,7 @@ internal static class HookCommand
 
         // Read existing state file for field preservation
         var reader = services.GetRequiredService<StateFileReader>();
-        var statePath = Path.Combine(SessionsDir, $"{hookEvent.SessionId}.json");
+        var statePath = Path.Combine(ImrdyPaths.Sessions, $"{hookEvent.SessionId}.json");
         var existing = reader.ReadStateFile(statePath);
 
         // Resolve last message
@@ -134,6 +130,18 @@ internal static class HookCommand
         {
             logger.LogError(ex, "Failed to write state file: {Path}", statePath);
             return 1;
+        }
+
+        // Auto-spawn tray if not running (mutex-gated, config-disablable)
+        try
+        {
+            var config = ConfigReader.Read();
+            if (config.Tray.Enabled)
+                TraySpawner.EnsureRunning(logger);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Tray auto-spawn failed");
         }
 
         // Clean up session end

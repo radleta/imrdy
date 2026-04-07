@@ -1,4 +1,6 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
+using Imrdy.Core;
 using Imrdy.Core.State;
 using Imrdy.Core.Workspace;
 using Microsoft.Extensions.DependencyInjection;
@@ -12,8 +14,6 @@ namespace Imrdy.Windows.Commands;
 /// </summary>
 internal static class StatusCommand
 {
-    private static readonly string SessionsDir = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".imrdy", "sessions");
 
     public static int Run(ServiceProvider services, bool json)
     {
@@ -23,8 +23,8 @@ internal static class StatusCommand
 
         try
         {
-            var sessions = Directory.Exists(SessionsDir)
-                ? stateReader.ReadAllStateFiles(SessionsDir)
+            var sessions = Directory.Exists(ImrdyPaths.Sessions)
+                ? stateReader.ReadAllStateFiles(ImrdyPaths.Sessions)
                 : [];
             var workspaces = workspaceStore.Load();
 
@@ -44,28 +44,28 @@ internal static class StatusCommand
 
     private static int OutputJson(IReadOnlyList<StateFileModel> sessions, WorkspaceConfig workspaces)
     {
-        var output = new
+        var output = new JsonObject
         {
-            sessions = sessions.Select(s => new
+            ["sessions"] = new JsonArray(sessions.Select(s => (JsonNode)new JsonObject
             {
-                session_id = s.SessionId,
-                status = s.Status,
-                project = s.Project,
-                cwd = s.Cwd,
-                desktop_index = s.DesktopIndex,
-                sound_pack = s.SoundPack,
-                session_name = s.SessionName,
-                timestamp = s.Timestamp,
-            }),
-            workspaces = workspaces.Workspaces.Select(w => new
+                ["session_id"] = s.SessionId,
+                ["status"] = s.Status,
+                ["project"] = s.Project,
+                ["cwd"] = s.Cwd,
+                ["desktop_index"] = s.DesktopIndex,
+                ["sound_pack"] = s.SoundPack,
+                ["session_name"] = s.SessionName,
+                ["timestamp"] = s.Timestamp,
+            }).ToArray()),
+            ["workspaces"] = new JsonArray(workspaces.Workspaces.Select(w => (JsonNode)new JsonObject
             {
-                name = w.Name,
-                path = w.Path,
-                desktop = w.Desktop,
-            }),
+                ["name"] = w.Name,
+                ["path"] = w.Path,
+                ["desktop"] = w.Desktop,
+            }).ToArray()),
         };
 
-        Console.WriteLine(JsonSerializer.Serialize(output, new JsonSerializerOptions { WriteIndented = true }));
+        Console.WriteLine(output.ToJsonString(ImrdyJsonContext.Indented));
         return 0;
     }
 

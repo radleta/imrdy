@@ -3,19 +3,30 @@ using System.Text.Json;
 namespace Imrdy.Core.Validation;
 
 /// <summary>
-/// Validates ~/.claude/sounds/config.json: valid JSON, known keys, pack references resolve.
+/// Validates ~/.imrdy/config.json: valid JSON, known keys, pack references resolve.
 /// </summary>
 public sealed class ConfigValidator
 {
-    private static readonly HashSet<string> KnownKeys = new(StringComparer.OrdinalIgnoreCase)
+    private static readonly HashSet<string> KnownRootKeys = new(StringComparer.OrdinalIgnoreCase)
     {
-        "default",
-        "projectMappings",
-        "soundEnabled",
+        "tray",
+        "sound",
+    };
+
+    private static readonly HashSet<string> KnownTrayKeys = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "enabled",
+    };
+
+    private static readonly HashSet<string> KnownSoundKeys = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "enabled",
+        "defaultPack",
+        "projects",
     };
 
     /// <summary>
-    /// Validates a sound config file.
+    /// Validates a config file.
     /// </summary>
     /// <param name="configPath">Path to config.json.</param>
     /// <param name="availablePackNames">Names of installed packs (for reference checking).</param>
@@ -51,9 +62,10 @@ public sealed class ConfigValidator
 
             var packNameSet = new HashSet<string>(availablePackNames, StringComparer.OrdinalIgnoreCase);
 
+            // Check for unknown top-level keys
             foreach (var property in doc.RootElement.EnumerateObject())
             {
-                if (!KnownKeys.Contains(property.Name))
+                if (!KnownRootKeys.Contains(property.Name))
                 {
                     errors.Add(new ValidationError(
                         $"{configPath} → {property.Name}",
@@ -62,35 +74,85 @@ public sealed class ConfigValidator
                 }
             }
 
-            // Validate default pack reference
-            if (doc.RootElement.TryGetProperty("default", out var defaultProp)
-                && defaultProp.ValueKind == JsonValueKind.String)
+            // Validate "tray" section
+            if (doc.RootElement.TryGetProperty("tray", out var trayProp))
             {
-                var defaultPack = defaultProp.GetString();
-                if (!string.IsNullOrEmpty(defaultPack) && !packNameSet.Contains(defaultPack))
+                if (trayProp.ValueKind != JsonValueKind.Object)
                 {
                     errors.Add(new ValidationError(
-                        $"{configPath} → default",
-                        $"Default pack '{defaultPack}' is not installed.",
+                        $"{configPath} → tray",
+                        "'tray' must be a JSON object.",
                         ValidationSeverity.Error));
+                }
+                else
+                {
+                    foreach (var prop in trayProp.EnumerateObject())
+                    {
+                        if (!KnownTrayKeys.Contains(prop.Name))
+                        {
+                            errors.Add(new ValidationError(
+                                $"{configPath} → tray.{prop.Name}",
+                                $"Unknown key: 'tray.{prop.Name}' (possible typo).",
+                                ValidationSeverity.Warning));
+                        }
+                    }
                 }
             }
 
-            // Validate project mapping pack references
-            if (doc.RootElement.TryGetProperty("projectMappings", out var mappingsProp)
-                && mappingsProp.ValueKind == JsonValueKind.Object)
+            // Validate "sound" section
+            if (doc.RootElement.TryGetProperty("sound", out var soundProp))
             {
-                foreach (var mapping in mappingsProp.EnumerateObject())
+                if (soundProp.ValueKind != JsonValueKind.Object)
                 {
-                    if (mapping.Value.ValueKind == JsonValueKind.String)
+                    errors.Add(new ValidationError(
+                        $"{configPath} → sound",
+                        "'sound' must be a JSON object.",
+                        ValidationSeverity.Error));
+                }
+                else
+                {
+                    foreach (var prop in soundProp.EnumerateObject())
                     {
-                        var packName = mapping.Value.GetString();
-                        if (!string.IsNullOrEmpty(packName) && !packNameSet.Contains(packName))
+                        if (!KnownSoundKeys.Contains(prop.Name))
                         {
                             errors.Add(new ValidationError(
-                                $"{configPath} → projectMappings.{mapping.Name}",
-                                $"Pack '{packName}' referenced by project '{mapping.Name}' is not installed.",
+                                $"{configPath} → sound.{prop.Name}",
+                                $"Unknown key: 'sound.{prop.Name}' (possible typo).",
+                                ValidationSeverity.Warning));
+                        }
+                    }
+
+                    // Validate defaultPack reference
+                    if (soundProp.TryGetProperty("defaultPack", out var defaultProp)
+                        && defaultProp.ValueKind == JsonValueKind.String)
+                    {
+                        var defaultPack = defaultProp.GetString();
+                        if (!string.IsNullOrEmpty(defaultPack) && !packNameSet.Contains(defaultPack))
+                        {
+                            errors.Add(new ValidationError(
+                                $"{configPath} → sound.defaultPack",
+                                $"Default pack '{defaultPack}' is not installed.",
                                 ValidationSeverity.Error));
+                        }
+                    }
+
+                    // Validate projects pack references
+                    if (soundProp.TryGetProperty("projects", out var projectsProp)
+                        && projectsProp.ValueKind == JsonValueKind.Object)
+                    {
+                        foreach (var mapping in projectsProp.EnumerateObject())
+                        {
+                            if (mapping.Value.ValueKind == JsonValueKind.String)
+                            {
+                                var packName = mapping.Value.GetString();
+                                if (!string.IsNullOrEmpty(packName) && !packNameSet.Contains(packName))
+                                {
+                                    errors.Add(new ValidationError(
+                                        $"{configPath} → sound.projects.{mapping.Name}",
+                                        $"Pack '{packName}' referenced by project '{mapping.Name}' is not installed.",
+                                        ValidationSeverity.Error));
+                                }
+                            }
                         }
                     }
                 }

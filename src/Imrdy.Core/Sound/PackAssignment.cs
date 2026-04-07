@@ -1,5 +1,3 @@
-using System.Text.Json;
-
 namespace Imrdy.Core.Sound;
 
 /// <summary>
@@ -41,17 +39,17 @@ public sealed class PackAssignment
         }
 
         // Priority 2: Config project mapping
-        if (!string.IsNullOrEmpty(project) && _config.ProjectMappings is not null
-            && _config.ProjectMappings.TryGetValue(project, out var projectPack)
+        if (!string.IsNullOrEmpty(project) && _config.Projects is not null
+            && _config.Projects.TryGetValue(project, out var projectPack)
             && PackExists(projectPack))
         {
             return projectPack;
         }
 
         // Priority 3: Config default
-        if (!string.IsNullOrEmpty(_config.Default) && PackExists(_config.Default))
+        if (!string.IsNullOrEmpty(_config.DefaultPack) && PackExists(_config.DefaultPack))
         {
-            return _config.Default;
+            return _config.DefaultPack;
         }
 
         // Priority 4: CLI --sound-pack param
@@ -68,32 +66,6 @@ public sealed class PackAssignment
         }
 
         return null;
-    }
-
-    /// <summary>
-    /// Loads a SoundConfig from a config.json file path.
-    /// Returns an empty config if the file doesn't exist or is invalid.
-    /// </summary>
-    public static SoundConfig LoadConfig(string configPath)
-    {
-        if (!File.Exists(configPath))
-        {
-            return new SoundConfig();
-        }
-
-        try
-        {
-            var bytes = File.ReadAllBytes(configPath);
-            return JsonSerializer.Deserialize(bytes, ImrdyJsonContext.Default.SoundConfig) ?? new SoundConfig();
-        }
-        catch (JsonException)
-        {
-            return new SoundConfig();
-        }
-        catch (IOException)
-        {
-            return new SoundConfig();
-        }
     }
 
     private bool PackExists(string name)

@@ -37,6 +37,11 @@ irm https://raw.githubusercontent.com/radleta/imrdy/main/install.ps1 | iex
 
 3. **CLI** (`imrdy status|packs|config|workspace`): Management commands for checking status, managing sound packs, editing config, and pinning workspaces.
 
+The tray monitor auto-starts on the first hook event (mutex-gated — only one instance runs). To disable auto-start:
+```bash
+imrdy config set tray.enabled false
+```
+
 ## CLI Commands
 
 ```
@@ -67,13 +72,13 @@ All commands support `--json` for machine consumption.
 
 ## Sound Packs
 
-Sound packs live in `~/.claude/sounds/packs/<pack-name>/`. Each pack has a `pack.json` manifest and event folders containing `.wav` files.
+Sound packs live in `~/.imrdy/sounds/packs/<pack-name>/`. Each pack has a `pack.json` manifest and event folders containing `.wav` files.
 
 **Events:** GettingToWork, Finished, SessionEnd, NeedsYou, Forgotten
 
 **Pack structure:**
 ```
-~/.claude/sounds/packs/my-pack/
+~/.imrdy/sounds/packs/my-pack/
   pack.json
   getting-to-work/
     clip1.wav
@@ -100,14 +105,9 @@ To create and distribute a custom sound pack:
 3. Tag a release: `git tag pack-my-pack-v1.0.0 && git push --tags`
 4. The `release-packs.yml` workflow builds the ZIP and creates a GitHub Release with the artifact and SHA256 checksum
 
-Or map packs to specific projects in `~/.claude/sounds/config.json`:
-```json
-{
-  "default": "assistant",
-  "projectMappings": {
-    "my-project": "retro"
-  }
-}
+Or map packs to specific projects via config:
+```bash
+imrdy config set sound.defaultPack my-pack
 ```
 
 ## Controller Tray Icon
@@ -123,8 +123,8 @@ A persistent controller icon (headphones) appears in the system tray whenever th
 
 Sound can also be toggled via CLI:
 ```bash
-imrdy config set soundEnabled false   # disable sounds
-imrdy config set soundEnabled true    # enable sounds
+imrdy config set sound.enabled false   # disable sounds
+imrdy config set sound.enabled true    # enable sounds
 ```
 
 ## Virtual Desktops
@@ -141,11 +141,19 @@ Supports Windows 10 (20H1+) and Windows 11 (all versions through 24H2).
 **File paths:**
 | File | Location |
 |------|----------|
+| Config | `~/.imrdy/config.json` |
 | Session state files | `~/.imrdy/sessions/*.json` |
 | Workspace config | `~/.imrdy/workspaces.json` |
-| Sound config | `~/.claude/sounds/config.json` |
-| Sound packs | `~/.claude/sounds/packs/` |
+| Sound packs | `~/.imrdy/sounds/packs/` |
 | Logs | `~/.imrdy/logs/monitor.log` |
+
+**Config schema (`~/.imrdy/config.json`):**
+```json
+{
+  "tray": { "enabled": true },
+  "sound": { "enabled": true, "defaultPack": "assistant" }
+}
+```
 
 Run `imrdy config path` to see full paths on your system.
 
@@ -164,7 +172,7 @@ dotnet publish src/Imrdy.Windows/Imrdy.Windows.csproj -c Release -r win-x64
 - **Imrdy.Core** — Platform-independent: state files, sound system, workspace management, menu models (Build/Apply pattern), validation, DI
 - **Imrdy.Windows** — WinForms tray app (session icons + controller icon), menu rendering, COM virtual desktop interop, CLI commands, hook command
 
-Single executable via PublishSingleFile + SelfContained + PublishTrimmed (partial trim mode, not AOT — WinForms/COM compatibility).
+Single executable via PublishSingleFile + SelfContained (no IL trimming — WinForms/COM incompatibility).
 
 ## License
 

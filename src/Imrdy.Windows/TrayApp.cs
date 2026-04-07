@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using Imrdy.Core;
 using Imrdy.Core.Desktop;
 using Imrdy.Core.Menus;
 using Imrdy.Core.Sound;
@@ -23,17 +24,6 @@ namespace Imrdy.Windows;
 /// </summary>
 internal sealed class TrayApp : ApplicationContext
 {
-    private static readonly string TrayDir = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".imrdy");
-
-    private static readonly string SessionsDir = Path.Combine(TrayDir, "sessions");
-    private static readonly string WorkspacesPath = Path.Combine(TrayDir, "workspaces.json");
-    private static readonly string SoundsDir = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".claude", "sounds");
-    private static readonly string SoundsConfigPath = Path.Combine(SoundsDir, "config.json");
-    private static readonly string PacksRoot = Path.Combine(SoundsDir, "packs");
-    private static readonly string ConfigDir = TrayDir;
-    private static readonly string LogPath = Path.Combine(TrayDir, "logs", "monitor.log");
     private static readonly TimeSpan GracePeriod = TimeSpan.FromSeconds(5);
 
     private readonly ILogger _logger;
@@ -126,21 +116,18 @@ internal sealed class TrayApp : ApplicationContext
         PerformSweep();
         IsBootstrapping = false;
 
-        _logger.LogInformation("TrayApp started — monitoring {Dir}", SessionsDir);
+        _logger.LogInformation("TrayApp started — monitoring {Dir}", ImrdyPaths.Sessions);
     }
 
     private void InitializeDirectories()
     {
-        if (!Directory.Exists(SessionsDir))
-        {
-            Directory.CreateDirectory(SessionsDir);
-        }
+        Directory.CreateDirectory(ImrdyPaths.Sessions);
     }
 
     private void InitializeWatchers()
     {
         // Watch session state files
-        _sessionWatcher = new FileSystemWatcher(SessionsDir, "*.json")
+        _sessionWatcher = new FileSystemWatcher(ImrdyPaths.Sessions, "*.json")
         {
             NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite | NotifyFilters.Size,
             InternalBufferSize = 65536, // 64KB — default 8KB can overflow with rapid writes
@@ -153,28 +140,24 @@ internal sealed class TrayApp : ApplicationContext
             _logger.LogWarning(err.GetException(), "Session FileSystemWatcher error");
 
         // Watch workspaces.json
-        if (Directory.Exists(TrayDir))
+        _workspaceWatcher = new FileSystemWatcher(ImrdyPaths.Home, "workspaces.json")
         {
-            _workspaceWatcher = new FileSystemWatcher(TrayDir, "workspaces.json")
-            {
-                NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite | NotifyFilters.Size,
-                EnableRaisingEvents = true,
-            };
-            _workspaceWatcher.Changed += OnWorkspaceFileChanged;
-            _workspaceWatcher.Created += OnWorkspaceFileChanged;
-        }
+            NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite | NotifyFilters.Size,
+            EnableRaisingEvents = true,
+        };
+        _workspaceWatcher.Changed += OnWorkspaceFileChanged;
+        _workspaceWatcher.Created += OnWorkspaceFileChanged;
 
-        // Watch sounds config.json for live reload
-        if (Directory.Exists(SoundsDir))
+        // Watch config.json for live reload (Created+Changed only — NOT Deleted)
+        Directory.CreateDirectory(ImrdyPaths.Home);
+        _configWatcher = new FileSystemWatcher(ImrdyPaths.Home, "config.json")
         {
-            _configWatcher = new FileSystemWatcher(SoundsDir, "config.json")
-            {
-                NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite | NotifyFilters.Size,
-                EnableRaisingEvents = true,
-            };
-            _configWatcher.Changed += OnSoundConfigFileChanged;
-            _configWatcher.Created += OnSoundConfigFileChanged;
-        }
+            NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.CreationTime,
+            EnableRaisingEvents = true,
+        };
+        _configWatcher.Changed += OnSoundConfigFileChanged;
+        _configWatcher.Created += OnSoundConfigFileChanged;
+        // NO _configWatcher.Deleted subscription — atomic write briefly deletes the file
     }
 
     private void InitializeTimers()
@@ -206,14 +189,12 @@ internal sealed class TrayApp : ApplicationContext
     {
         try
         {
-            _soundConfig = PackAssignment.LoadConfig(SoundsConfigPath);
-            _soundEnabled = _options.Silent ? false : _soundConfig.SoundEnabled;
-            _loadedPacks = _packLoader.LoadPacks(PacksRoot);
+            var config = ConfigReader.Read();
+            _soundConfig = config.Sound;
+            _soundEnabled = _options.Silent ? false : _soundConfig.Enabled;
+            _loadedPacks = _packLoader.LoadPacks(ImrdyPaths.PacksDir);
             _soundBags.Clear();
-
-            // Suppress Windows notification sound when packs provide their own audio
             _balloonTipManager.SuppressSystemSound = _loadedPacks.Count > 0 && _soundEnabled;
-
             _logger.LogDebug("Sound config loaded: enabled={Enabled}, packs={Count}",
                 _soundEnabled, _loadedPacks.Count);
         }
@@ -431,18 +412,18 @@ internal sealed class TrayApp : ApplicationContext
 
     private void PerformSweep()
     {
-        if (!Directory.Exists(SessionsDir))
+        if (!Directory.Exists(ImrdyPaths.Sessions))
         {
             return;
         }
 
-        var stateFiles = _stateReader.ReadAllStateFiles(SessionsDir);
+        var stateFiles = _stateReader.ReadAllStateFiles(ImrdyPaths.Sessions);
         var activeIds = new HashSet<string>();
 
         foreach (var state in stateFiles)
         {
             activeIds.Add(state.SessionId);
-            HandleSessionFileChanged(Path.Combine(SessionsDir, $"{state.SessionId}.json"));
+            HandleSessionFileChanged(Path.Combine(ImrdyPaths.Sessions, $"{state.SessionId}.json"));
         }
 
         // Remove sessions whose state files no longer exist (and grace period expired)
@@ -489,7 +470,7 @@ internal sealed class TrayApp : ApplicationContext
             if (now - entry.State.Timestamp > TimeSpan.FromMinutes(_options.StaleMinutes))
             {
                 // Keep session alive if its state file still exists on disk
-                var stateFile = Path.Combine(SessionsDir, $"{sessionId}.json");
+                var stateFile = Path.Combine(ImrdyPaths.Sessions, $"{sessionId}.json");
                 if (File.Exists(stateFile))
                 {
                     continue;
@@ -525,7 +506,7 @@ internal sealed class TrayApp : ApplicationContext
         var sessionIds = _sessions.Keys.ToList();
         foreach (var sessionId in sessionIds)
         {
-            var stateFile = Path.Combine(SessionsDir, $"{sessionId}.json");
+            var stateFile = Path.Combine(ImrdyPaths.Sessions, $"{sessionId}.json");
             try { if (File.Exists(stateFile)) File.Delete(stateFile); }
             catch (Exception ex) { _logger.LogWarning(ex, "Failed to delete state file for {SessionId}", sessionId); }
             RemoveSession(sessionId);
@@ -547,7 +528,7 @@ internal sealed class TrayApp : ApplicationContext
             lines.Add($"{ts} [DUMP] {sid[..Math.Min(8, sid.Length)]} project={d.Project} status={d.Status} hook={d.HookEvent} desktop={entry.DesktopIndex} pack={entry.SoundPack} dismissed={entry.Dismissed} statusAge={age}s seenAge={seenAge}s aging={agingFactor:F2} pid={d.ClaudePid}");
 
             // Check state file consistency
-            var stateFile = Path.Combine(SessionsDir, $"{sid}.json");
+            var stateFile = Path.Combine(ImrdyPaths.Sessions, $"{sid}.json");
             if (File.Exists(stateFile))
             {
                 try
@@ -570,12 +551,12 @@ internal sealed class TrayApp : ApplicationContext
 
         try
         {
-            File.AppendAllText(LogPath, string.Join(Environment.NewLine, lines) + Environment.NewLine);
-            _logger.LogInformation("State dumped to {LogPath} ({Count} sessions)", LogPath, _sessions.Count);
+            File.AppendAllText(ImrdyPaths.MonitorLog, string.Join(Environment.NewLine, lines) + Environment.NewLine);
+            _logger.LogInformation("State dumped to {LogPath} ({Count} sessions)", ImrdyPaths.MonitorLog, _sessions.Count);
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to write state dump to {LogPath}", LogPath);
+            _logger.LogWarning(ex, "Failed to write state dump to {LogPath}", ImrdyPaths.MonitorLog);
         }
     }
 
@@ -738,7 +719,7 @@ internal sealed class TrayApp : ApplicationContext
                 },
                 OnClear: () =>
                 {
-                    var stateFile = Path.Combine(SessionsDir, $"{entry.SessionId}.json");
+                    var stateFile = Path.Combine(ImrdyPaths.Sessions, $"{entry.SessionId}.json");
                     try { if (File.Exists(stateFile)) File.Delete(stateFile); }
                     catch (Exception ex) { _logger.LogWarning(ex, "Failed to delete state file for {SessionId}", entry.SessionId); }
                     RemoveSession(entry.SessionId);
@@ -912,25 +893,20 @@ internal sealed class TrayApp : ApplicationContext
                 WorkspacePath = w.Workspace.Path,
             }).ToList(),
             InstalledPacks = _loadedPacks.Select(p => p.Name).ToList(),
-            Config = _soundConfig,
-            ConfigDir = ConfigDir,
-            SoundsDir = SoundsDir,
-            LogPath = LogPath,
+            Config = new ImrdyConfig { Sound = _soundConfig },
+            LogPath = ImrdyPaths.MonitorLog,
         };
     }
 
-    private void OnConfigChanged(SoundConfig config)
+    private void OnConfigChanged(ImrdyConfig config)
     {
-        _soundConfig = config;
-        _soundEnabled = config.SoundEnabled;
-
-        // Reload packs if default changed
-        _loadedPacks = _packLoader.LoadPacks(PacksRoot);
+        _soundConfig = config.Sound;
+        _soundEnabled = _options.Silent ? false : config.Sound.Enabled;
+        _loadedPacks = _packLoader.LoadPacks(ImrdyPaths.PacksDir);
         _soundBags.Clear();
         _balloonTipManager.SuppressSystemSound = _loadedPacks.Count > 0 && _soundEnabled;
-
         _logger.LogDebug("Config updated from controller menu: enabled={Enabled}, default={Default}",
-            config.SoundEnabled, config.Default);
+            config.Sound.Enabled, config.Sound.DefaultPack);
     }
 
     // --- Sound Triggers (port of PS1:700-750) ---

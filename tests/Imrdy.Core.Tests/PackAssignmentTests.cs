@@ -22,7 +22,7 @@ public class PackAssignmentTests
     [Fact]
     public void Priority1_StateFileOverride_TakesPrecedence()
     {
-        var assignment = new PackAssignment(TwoPacks, new SoundConfig { Default = "retro" }, "assistant");
+        var assignment = new PackAssignment(TwoPacks, new SoundConfig { DefaultPack = "retro" }, "assistant");
 
         assignment.Resolve("retro", "some-project").Should().Be("retro");
     }
@@ -32,7 +32,7 @@ public class PackAssignmentTests
     {
         var config = new SoundConfig
         {
-            ProjectMappings = new() { ["my-project"] = "retro" }
+            Projects = new() { ["my-project"] = "retro" }
         };
         var assignment = new PackAssignment(TwoPacks, config);
 
@@ -42,7 +42,7 @@ public class PackAssignmentTests
     [Fact]
     public void Priority3_ConfigDefault()
     {
-        var config = new SoundConfig { Default = "assistant" };
+        var config = new SoundConfig { DefaultPack = "assistant" };
         var assignment = new PackAssignment(TwoPacks, config);
 
         assignment.Resolve(null, "other-project").Should().Be("assistant");
@@ -51,7 +51,8 @@ public class PackAssignmentTests
     [Fact]
     public void Priority4_CliDefault()
     {
-        var assignment = new PackAssignment(TwoPacks, cliDefault: "retro");
+        var config = new SoundConfig { DefaultPack = "" };
+        var assignment = new PackAssignment(TwoPacks, config, cliDefault: "retro");
 
         assignment.Resolve(null, null).Should().Be("retro");
     }
@@ -68,7 +69,8 @@ public class PackAssignmentTests
     [Fact]
     public void Priority5_AutoDetect_MultiplePacks_ReturnsNull()
     {
-        var assignment = new PackAssignment(TwoPacks);
+        var config = new SoundConfig { DefaultPack = "" };
+        var assignment = new PackAssignment(TwoPacks, config);
 
         assignment.Resolve(null, null).Should().BeNull();
     }
@@ -76,7 +78,7 @@ public class PackAssignmentTests
     [Fact]
     public void StateFileOverride_NonExistentPack_FallsThrough()
     {
-        var config = new SoundConfig { Default = "assistant" };
+        var config = new SoundConfig { DefaultPack = "assistant" };
         var assignment = new PackAssignment(TwoPacks, config);
 
         assignment.Resolve("nonexistent", "some-project").Should().Be("assistant");
@@ -87,8 +89,8 @@ public class PackAssignmentTests
     {
         var config = new SoundConfig
         {
-            Default = "retro",
-            ProjectMappings = new() { ["my-project"] = "deleted-pack" }
+            DefaultPack = "retro",
+            Projects = new() { ["my-project"] = "deleted-pack" }
         };
         var assignment = new PackAssignment(TwoPacks, config);
 
@@ -106,7 +108,8 @@ public class PackAssignmentTests
     public void PriorityChain_FullFallthrough()
     {
         // No state override, no project mapping, no default, no CLI, multiple packs
-        var assignment = new PackAssignment(TwoPacks);
+        var config = new SoundConfig { DefaultPack = "" };
+        var assignment = new PackAssignment(TwoPacks, config);
         assignment.Resolve(null, null).Should().BeNull();
     }
 
@@ -129,8 +132,8 @@ public class PackAssignmentTests
     [Fact]
     public void NullProjectMappings_DoesNotThrow()
     {
-        // JSON deserialization can produce null ProjectMappings when config has "projectMappings": null
-        var config = new SoundConfig { Default = "assistant", ProjectMappings = null! };
+        // JSON deserialization can produce null Projects when config has "projects": null
+        var config = new SoundConfig { DefaultPack = "assistant", Projects = null! };
         var assignment = new PackAssignment(TwoPacks, config);
 
         assignment.Resolve(null, "some-project").Should().Be("assistant");
@@ -139,75 +142,9 @@ public class PackAssignmentTests
     [Fact]
     public void NullProjectMappings_WithProject_FallsToDefault()
     {
-        var config = new SoundConfig { Default = "retro", ProjectMappings = null! };
+        var config = new SoundConfig { DefaultPack = "retro", Projects = null! };
         var assignment = new PackAssignment(TwoPacks, config);
 
         assignment.Resolve(null, "my-project").Should().Be("retro");
-    }
-}
-
-public class PackAssignmentLoadConfigTests : IDisposable
-{
-    private readonly string _tempDir;
-
-    public PackAssignmentLoadConfigTests()
-    {
-        _tempDir = Path.Combine(Path.GetTempPath(), "imrdy-config-tests", Guid.NewGuid().ToString());
-        Directory.CreateDirectory(_tempDir);
-    }
-
-    public void Dispose()
-    {
-        if (Directory.Exists(_tempDir))
-        {
-            Directory.Delete(_tempDir, recursive: true);
-        }
-    }
-
-    [Fact]
-    public void LoadConfig_ValidFile_ReturnsParsedConfig()
-    {
-        var path = Path.Combine(_tempDir, "config.json");
-        File.WriteAllText(path, """{"default": "assistant", "projectMappings": {"my-proj": "retro"}}""");
-
-        var config = PackAssignment.LoadConfig(path);
-
-        config.Default.Should().Be("assistant");
-        config.ProjectMappings.Should().ContainKey("my-proj");
-        config.ProjectMappings["my-proj"].Should().Be("retro");
-    }
-
-    [Fact]
-    public void LoadConfig_MissingFile_ReturnsEmptyConfig()
-    {
-        var config = PackAssignment.LoadConfig(Path.Combine(_tempDir, "nope.json"));
-
-        config.Default.Should().BeNull();
-        config.ProjectMappings.Should().BeEmpty();
-    }
-
-    [Fact]
-    public void LoadConfig_CorruptJson_ReturnsEmptyConfig()
-    {
-        var path = Path.Combine(_tempDir, "bad.json");
-        File.WriteAllText(path, "not json");
-
-        var config = PackAssignment.LoadConfig(path);
-
-        config.Default.Should().BeNull();
-        config.ProjectMappings.Should().BeEmpty();
-    }
-
-    [Fact]
-    public void LoadConfig_NullProjectMappings_DeserializesWithoutError()
-    {
-        var path = Path.Combine(_tempDir, "config.json");
-        File.WriteAllText(path, """{"default":"assistant","projectMappings":null,"soundEnabled":true}""");
-
-        var config = PackAssignment.LoadConfig(path);
-
-        config.Default.Should().Be("assistant");
-        config.SoundEnabled.Should().BeTrue();
-        // ProjectMappings may be null from JSON — PackAssignment.Resolve handles this
     }
 }

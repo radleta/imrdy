@@ -5,7 +5,7 @@
 #
 # Builds the project, creates mock release artifacts, runs both install scripts
 # (bash + PowerShell) against them, then verifies everything.
-# Fully isolated — uses temp directories, never touches ~/.local/bin or ~/.claude/sounds.
+# Fully isolated — uses temp directories, never touches ~/.local/bin or ~/.imrdy.
 
 set -euo pipefail
 
@@ -291,8 +291,8 @@ done
 
 # Verify config.json created
 assert_file_exists "$BASH_SOUNDS_DIR/config.json" "bash: config.json created"
-assert_file_contains "$BASH_SOUNDS_DIR/config.json" '"default":"assistant"' "bash: config has correct default pack"
-assert_file_contains "$BASH_SOUNDS_DIR/config.json" '"soundEnabled":true' "bash: config has soundEnabled=true"
+assert_file_contains "$BASH_SOUNDS_DIR/config.json" '"defaultPack":"assistant"' "bash: config has correct default pack"
+assert_file_contains "$BASH_SOUNDS_DIR/config.json" '"enabled":true' "bash: config has enabled=true"
 
 # Verify no temp files leaked
 TEMP_FILES=$(find "$BASH_INSTALL_DIR" -name "SHA256SUMS.txt" 2>/dev/null | wc -l)
@@ -347,7 +347,7 @@ if command -v pwsh &>/dev/null; then
 
     # Verify config.json created
     assert_file_exists "$PS1_SOUNDS_DIR/config.json" "ps1: config.json created"
-    assert_file_contains "$PS1_SOUNDS_DIR/config.json" '"default":"assistant"' "ps1: config has correct default pack"
+    assert_file_contains "$PS1_SOUNDS_DIR/config.json" '"defaultPack":"assistant"' "ps1: config has correct default pack"
 else
     skip "ps1 install" "pwsh not found"
 fi

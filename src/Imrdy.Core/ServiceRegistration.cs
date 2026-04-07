@@ -28,10 +28,7 @@ public static class ServiceRegistration
         services.AddSingleton<WorkspaceValidator>();
 
         // WorkspaceStore needs a file path — default to ~/.imrdy/workspaces.json
-        var wsPath = workspacesPath
-                     ?? Path.Combine(
-                         Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-                         ".imrdy", "workspaces.json");
+        var wsPath = workspacesPath ?? ImrdyPaths.Workspaces;
         services.AddSingleton(new WorkspaceStore(wsPath));
 
         return services;
@@ -77,9 +74,7 @@ public static class ServiceRegistration
 
         if (fileSink)
         {
-            var logPath = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-                ".imrdy", "logs", "monitor.log");
+            var logPath = ImrdyPaths.MonitorLog;
             config.WriteTo.File(
                 logPath,
                 fileSizeLimitBytes: 1_048_576, // 1MB

@@ -6,7 +6,7 @@
 # Environment overrides (for testing):
 #   IMRDY_RELEASE_DIR  — local directory with release assets (skip download)
 #   IMRDY_INSTALL_DIR  — override install target (default: ~/.local/bin)
-#   IMRDY_SOUNDS_DIR   — override sounds base dir (default: ~/.claude/sounds)
+#   IMRDY_SOUNDS_DIR   — override sounds base dir (default: ~/.imrdy/sounds)
 
 $ErrorActionPreference = "Stop"
 
@@ -108,9 +108,10 @@ Write-Host "Installed imrdy to $InstallPath" -ForegroundColor Green
 
 # --- Download default sound pack (graceful — failure does not abort) ---
 try {
-    $SoundsDir = if ($env:IMRDY_SOUNDS_DIR) { $env:IMRDY_SOUNDS_DIR } else { Join-Path $env:USERPROFILE ".claude\sounds" }
+    $ImrdyHome = if ($env:IMRDY_SOUNDS_DIR) { $env:IMRDY_SOUNDS_DIR } else { Join-Path $env:USERPROFILE ".imrdy" }
+    $SoundsDir = if ($env:IMRDY_SOUNDS_DIR) { $env:IMRDY_SOUNDS_DIR } else { Join-Path $ImrdyHome "sounds" }
     $PacksDir = Join-Path $SoundsDir "packs"
-    $ConfigPath = Join-Path $SoundsDir "config.json"
+    $ConfigPath = Join-Path $ImrdyHome "config.json"
 
     $PackZipPath = $null
 
@@ -222,11 +223,12 @@ try {
 
             # Create default config.json if it doesn't exist
             if (-not (Test-Path $ConfigPath)) {
-                if (-not (Test-Path $SoundsDir)) {
-                    New-Item -ItemType Directory -Path $SoundsDir -Force | Out-Null
+                if (-not (Test-Path $ImrdyHome)) {
+                    New-Item -ItemType Directory -Path $ImrdyHome -Force | Out-Null
                 }
-                '{"default":"assistant","soundEnabled":true}' | Set-Content -Path $ConfigPath -Encoding UTF8
-                Write-Host "Created default sound config" -ForegroundColor Green
+                $json = '{"tray":{"enabled":true},"sound":{"enabled":true,"defaultPack":"assistant"}}'
+                [IO.File]::WriteAllText($ConfigPath, $json, (New-Object System.Text.UTF8Encoding $false))
+                Write-Host "Created default config" -ForegroundColor Green
             }
         } finally {
             # Clean up temp directory
@@ -254,3 +256,8 @@ Write-Host "  claude plugin add https://github.com/$Repo" -ForegroundColor White
 Write-Host ""
 Write-Host "Or start the monitor manually:" -ForegroundColor Cyan
 Write-Host "  imrdy" -ForegroundColor White
+
+Write-Host ""
+Write-Host "  The system tray monitor starts automatically with your next Claude session."
+Write-Host "  To start it manually:  imrdy"
+Write-Host "  To disable auto-start: imrdy config set tray.enabled false"
