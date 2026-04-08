@@ -14,6 +14,11 @@ public class PerformanceBenchmarks : IDisposable
     private readonly TempDirectoryFixture _temp = new();
     private readonly ITestOutputHelper _output;
 
+    private Dictionary<string, string> EnvWithHome() => new()
+    {
+        ["IMRDY_HOME"] = _temp.Path,
+    };
+
     public PerformanceBenchmarks(ITestOutputHelper output)
     {
         _output = output;
@@ -53,6 +58,7 @@ public class PerformanceBenchmarks : IDisposable
         const int runs = 3;
         const long thresholdMs = 100;
         var timings = new long[runs];
+        var env = EnvWithHome();
 
         var hookJson = JsonSerializer.Serialize(new
         {
@@ -61,37 +67,33 @@ public class PerformanceBenchmarks : IDisposable
             cwd = "/d/dev/test",
         });
 
-        // Clean up state files after benchmark
-        var sessionId = JsonDocument.Parse(hookJson).RootElement.GetProperty("session_id").GetString()!;
-        var statePath = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-            ".imrdy", "sessions", $"{sessionId}.json");
-
-        try
+        for (var i = 0; i < runs; i++)
         {
-            for (var i = 0; i < runs; i++)
+            var sw = Stopwatch.StartNew();
+            var (exitCode, stdout, stderr) = await _cli.RunAsync("hook", stdin: hookJson,
+                workingDirectory: _temp.Path, environmentVariables: env);
+            sw.Stop();
+            timings[i] = sw.ElapsedMilliseconds;
+
+            if (exitCode != 0)
             {
-                var sw = Stopwatch.StartNew();
-                var (exitCode, _, _) = await _cli.RunAsync("hook", stdin: hookJson, workingDirectory: _temp.Path);
-                sw.Stop();
-                timings[i] = sw.ElapsedMilliseconds;
-                exitCode.Should().Be(0);
+                _output.WriteLine($"Run {i}: exit code {exitCode}");
+                if (!string.IsNullOrEmpty(stdout)) _output.WriteLine($"  stdout: {stdout}");
+                if (!string.IsNullOrEmpty(stderr)) _output.WriteLine($"  stderr: {stderr}");
             }
 
-            Array.Sort(timings);
-            var median = timings[runs / 2];
-
-            _output.WriteLine($"Hook time: {median}ms (threshold: {thresholdMs}ms)");
-            _output.WriteLine($"  All runs: {string.Join(", ", timings.Select(t => $"{t}ms"))}");
-
-            if (median > thresholdMs)
-            {
-                _output.WriteLine($"  WARNING: Hook time {median}ms exceeds {thresholdMs}ms threshold");
-            }
+            exitCode.Should().Be(0, $"hook run {i} failed (stderr: {stderr})");
         }
-        finally
+
+        Array.Sort(timings);
+        var median = timings[runs / 2];
+
+        _output.WriteLine($"Hook time: {median}ms (threshold: {thresholdMs}ms)");
+        _output.WriteLine($"  All runs: {string.Join(", ", timings.Select(t => $"{t}ms"))}");
+
+        if (median > thresholdMs)
         {
-            try { if (File.Exists(statePath)) File.Delete(statePath); } catch { }
+            _output.WriteLine($"  WARNING: Hook time {median}ms exceeds {thresholdMs}ms threshold");
         }
     }
 
