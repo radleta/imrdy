@@ -169,4 +169,35 @@ public class WorkspaceStoreTests : IDisposable
         var config = _store.Load();
         config.Workspaces[0].Desktop.Should().Be(1);
     }
+
+    [Fact]
+    public void IsPinned_PinnedPath_ReturnsTrue()
+    {
+        _store.Pin(@"D:\dev\project", "project", 1);
+
+        _store.IsPinned(@"D:\dev\project").Should().BeTrue();
+    }
+
+    [Fact]
+    public void IsPinned_UnpinnedPath_ReturnsFalse()
+    {
+        _store.Pin(@"D:\dev\project-a", "a", 1);
+
+        _store.IsPinned(@"D:\dev\project-b").Should().BeFalse();
+    }
+
+    [Fact]
+    public void IsPinned_EmptyStore_ReturnsFalse()
+    {
+        _store.IsPinned(@"D:\dev\project").Should().BeFalse();
+    }
+
+    [Fact]
+    public void IsPinned_AfterUnpin_ReturnsFalse()
+    {
+        _store.Pin(@"D:\dev\project", "project", 1);
+        _store.Unpin(@"D:\dev\project");
+
+        _store.IsPinned(@"D:\dev\project").Should().BeFalse();
+    }
 }

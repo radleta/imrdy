@@ -133,13 +133,66 @@ public class SessionMenuModelTests
     }
 
     [Fact]
-    public void Build_PinAsWorkspaceTag_Present()
+    public void Build_Header_ShowsProjectAndStatus()
+    {
+        var state = MenuTestHelper.SingleSessionState("my-project", "idle");
+
+        var items = SessionMenuModel.Build(state);
+
+        items[0].Label.Should().Be("my-project [idle]");
+        items[0].Enabled.Should().BeFalse();
+        items[1].Type.Should().Be(MenuItemType.Separator);
+    }
+
+    [Fact]
+    public void Build_Header_FallsBackToSessionId()
+    {
+        var state = new SessionMenuState
+        {
+            SessionId = "abc-123",
+            Status = "busy",
+            Project = null,
+            DesktopAvailable = false,
+        };
+
+        var items = SessionMenuModel.Build(state);
+
+        items[0].Label.Should().Be("abc-123 [busy]");
+    }
+
+    [Fact]
+    public void Build_NotPinned_ShowsPinAsWorkspace()
     {
         var state = MenuTestHelper.SingleSessionState("proj", "idle");
 
         var items = SessionMenuModel.Build(state);
 
         items.Should().Contain(i => i.Tag == "pin-workspace" && i.Label == "Pin as Workspace");
+        items.Should().NotContain(i => i.Tag == "unpin-workspace");
+    }
+
+    [Fact]
+    public void Build_Pinned_ShowsUnpinWorkspace()
+    {
+        var state = MenuTestHelper.SingleSessionState("proj", "idle") with { IsPinned = true };
+
+        var items = SessionMenuModel.Build(state);
+
+        items.Should().Contain(i => i.Tag == "unpin-workspace" && i.Label == "Unpin Workspace");
+        items.Should().NotContain(i => i.Tag == "pin-workspace");
+    }
+
+    [Fact]
+    public void Build_SetDesktop_AutoCheckedWhenNull()
+    {
+        var state = MenuTestHelper.SingleSessionState("proj", "idle") with { DesktopIndex = null };
+
+        var items = SessionMenuModel.Build(state);
+
+        var setDesktop = items.First(i => i.Label == "Set Desktop");
+        setDesktop.Children[0].Tag.Should().Be("set-desktop:auto");
+        setDesktop.Children[0].Checked.Should().BeTrue();
+        setDesktop.Children.Skip(1).Should().OnlyContain(c => c.Type == MenuItemType.Item && !c.Checked);
     }
 
     [Fact]

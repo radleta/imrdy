@@ -18,6 +18,18 @@ public class ControllerMenuModelTests
     }
 
     [Fact]
+    public void Build_Header_ShowsImrdy()
+    {
+        var state = MenuTestHelper.EmptyControllerState();
+
+        var items = ControllerMenuModel.Build(state);
+
+        items[0].Label.Should().Be("imrdy");
+        items[0].Enabled.Should().BeFalse();
+        items[1].Type.Should().Be(MenuItemType.Separator);
+    }
+
+    [Fact]
     public void Build_EmptyState_SessionsSubmenuShowsNoActiveSessions()
     {
         var state = MenuTestHelper.EmptyControllerState();
