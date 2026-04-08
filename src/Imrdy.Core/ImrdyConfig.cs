@@ -18,6 +18,7 @@ public record TrayConfig
 public record SoundConfig
 {
     public bool Enabled { get; init; } = true;
-    public string DefaultPack { get; init; } = "assistant";
+    public string DefaultPack { get; init; } = "random";
+    public List<string> DisabledPacks { get; init; } = [];
     public Dictionary<string, string> Projects { get; init; } = new();
 }

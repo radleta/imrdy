@@ -54,6 +54,15 @@ public sealed class WorkspaceStore
     }
 
     /// <summary>
+    /// Returns true if the given path is pinned as a workspace.
+    /// </summary>
+    public bool IsPinned(string path)
+    {
+        var config = Load();
+        return config.Workspaces.Any(w => PathNormalizer.AreEqual(w.Path, path));
+    }
+
+    /// <summary>
     /// Pins a workspace. If the path is already pinned, updates name and desktop.
     /// </summary>
     public void Pin(string path, string name, int desktop)

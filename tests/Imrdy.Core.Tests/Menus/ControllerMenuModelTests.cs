@@ -30,16 +30,30 @@ public class ControllerMenuModelTests
     }
 
     [Fact]
-    public void Build_EmptyState_PacksSubmenuShowsNoneInstalled()
+    public void Build_EmptyState_SoundPackSubmenuHasRandomAndNone()
     {
         var state = MenuTestHelper.EmptyControllerState();
 
         var items = ControllerMenuModel.Build(state);
 
         var packMenu = items.First(i => i.Label == "Sound Pack");
-        packMenu.Children.Should().ContainSingle()
+        // Random + None (no installed packs, no separator)
+        packMenu.Children.Should().HaveCount(2);
+        packMenu.Children.First().Label.Should().Be("Random");
+        packMenu.Children.Last().Label.Should().Be("(None)");
+    }
+
+    [Fact]
+    public void Build_EmptyState_EnabledPacksSubmenuShowsNoneInstalled()
+    {
+        var state = MenuTestHelper.EmptyControllerState();
+
+        var items = ControllerMenuModel.Build(state);
+
+        var enabledMenu = items.First(i => i.Label == "Enabled Packs");
+        enabledMenu.Children.Should().ContainSingle()
             .Which.Label.Should().Be("(none installed)");
-        packMenu.Children.Single().Enabled.Should().BeFalse();
+        enabledMenu.Children.Single().Enabled.Should().BeFalse();
     }
 
     [Fact]
@@ -66,16 +80,86 @@ public class ControllerMenuModelTests
     }
 
     [Fact]
-    public void Build_ActiveState_PackItemsWithCorrectCheckedState()
+    public void Build_ActiveState_SoundPackSubmenu_RandomIsChecked()
     {
         var state = MenuTestHelper.ActiveControllerState();
 
         var items = ControllerMenuModel.Build(state);
 
         var packMenu = items.First(i => i.Label == "Sound Pack");
-        packMenu.Children.Should().HaveCount(2);
-        packMenu.Children.First(c => c.Tag == "switch-pack:assistant").Checked.Should().BeTrue();
+        // Random + assistant + retro + separator + (None) = 5
+        packMenu.Children.Should().HaveCount(5);
+        packMenu.Children.First(c => c.Tag == "switch-pack:random").Checked.Should().BeTrue();
+        packMenu.Children.First(c => c.Tag == "switch-pack:assistant").Checked.Should().BeFalse();
         packMenu.Children.First(c => c.Tag == "switch-pack:retro").Checked.Should().BeFalse();
+        packMenu.Children.First(c => c.Tag == "switch-pack:").Checked.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Build_SpecificDefault_PackIsChecked()
+    {
+        var state = MenuTestHelper.ActiveControllerState() with
+        {
+            Config = new ImrdyConfig { Sound = new SoundConfig { DefaultPack = "retro" } }
+        };
+
+        var items = ControllerMenuModel.Build(state);
+
+        var packMenu = items.First(i => i.Label == "Sound Pack");
+        packMenu.Children.First(c => c.Tag == "switch-pack:random").Checked.Should().BeFalse();
+        packMenu.Children.First(c => c.Tag == "switch-pack:retro").Checked.Should().BeTrue();
+        packMenu.Children.First(c => c.Tag == "switch-pack:assistant").Checked.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Build_NoneDefault_NoneIsChecked()
+    {
+        var state = MenuTestHelper.ActiveControllerState() with
+        {
+            Config = new ImrdyConfig { Sound = new SoundConfig { DefaultPack = "" } }
+        };
+
+        var items = ControllerMenuModel.Build(state);
+
+        var packMenu = items.First(i => i.Label == "Sound Pack");
+        packMenu.Children.First(c => c.Tag == "switch-pack:random").Checked.Should().BeFalse();
+        packMenu.Children.First(c => c.Tag == "switch-pack:").Checked.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Build_ActiveState_EnabledPacksSubmenu_AllEnabled()
+    {
+        var state = MenuTestHelper.ActiveControllerState();
+
+        var items = ControllerMenuModel.Build(state);
+
+        var enabledMenu = items.First(i => i.Label == "Enabled Packs");
+        enabledMenu.Children.Should().HaveCount(2);
+        enabledMenu.Children.Should().OnlyContain(c => c.Checked == true);
+        enabledMenu.Children.First(c => c.Tag == "toggle-pack-enabled:assistant").Should().NotBeNull();
+        enabledMenu.Children.First(c => c.Tag == "toggle-pack-enabled:retro").Should().NotBeNull();
+    }
+
+    [Fact]
+    public void Build_DisabledPack_EnabledPacksSubmenu_ShowsUnchecked()
+    {
+        var state = MenuTestHelper.ActiveControllerState() with
+        {
+            Config = new ImrdyConfig
+            {
+                Sound = new SoundConfig
+                {
+                    DefaultPack = "random",
+                    DisabledPacks = ["retro"]
+                }
+            }
+        };
+
+        var items = ControllerMenuModel.Build(state);
+
+        var enabledMenu = items.First(i => i.Label == "Enabled Packs");
+        enabledMenu.Children.First(c => c.Label == "assistant").Checked.Should().BeTrue();
+        enabledMenu.Children.First(c => c.Label == "retro").Checked.Should().BeFalse();
     }
 
     [Fact]
@@ -111,7 +195,9 @@ public class ControllerMenuModelTests
         var allTags = FlattenTags(items);
 
         allTags.Should().Contain("toggle-sound");
+        allTags.Should().Contain("switch-pack:random");
         allTags.Should().Contain("switch-pack:assistant");
+        allTags.Should().Contain("toggle-pack-enabled:assistant");
         allTags.Should().Contain("open-config");
         allTags.Should().Contain("open-sounds");
         allTags.Should().Contain("open-log");
@@ -131,7 +217,7 @@ public class ControllerMenuModelTests
             .Select(x => x.index)
             .ToList();
 
-        separatorIndices.Should().HaveCount(3);
+        separatorIndices.Should().HaveCount(4);
     }
 
     private static List<string> FlattenTags(IReadOnlyList<MenuItemModel> items)

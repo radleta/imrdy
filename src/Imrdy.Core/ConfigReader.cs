@@ -58,6 +58,7 @@ public static class ConfigReader
             Tray = config.Tray ?? new TrayConfig(),
             Sound = (config.Sound ?? new SoundConfig()) with
             {
+                DisabledPacks = config.Sound?.DisabledPacks ?? [],
                 Projects = config.Sound?.Projects ?? new Dictionary<string, string>()
             }
         };

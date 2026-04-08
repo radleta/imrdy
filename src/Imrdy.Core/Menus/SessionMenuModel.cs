@@ -6,6 +6,8 @@ internal static class SessionMenuModel
     {
         var items = new List<MenuItemModel>
         {
+            new() { Label = $"{state.Project ?? state.SessionId} [{state.Status}]", Enabled = false },
+            new() { Type = MenuItemType.Separator },
             new()
             {
                 Label = "Switch to Desktop",
@@ -22,7 +24,16 @@ internal static class SessionMenuModel
 
         if (state.DesktopAvailable && state.DesktopCount.HasValue)
         {
-            var desktopChildren = new List<MenuItemModel>();
+            var desktopChildren = new List<MenuItemModel>
+            {
+                new()
+                {
+                    Label = "Auto",
+                    Tag = "set-desktop:auto",
+                    Checked = state.DesktopIndex is null,
+                },
+            };
+
             for (var i = 0; i < state.DesktopCount.Value; i++)
             {
                 desktopChildren.Add(new MenuItemModel
@@ -45,7 +56,9 @@ internal static class SessionMenuModel
 
         items.Add(new MenuItemModel { Type = MenuItemType.Separator });
 
-        items.Add(new MenuItemModel { Label = "Pin as Workspace", Tag = "pin-workspace" });
+        items.Add(state.IsPinned
+            ? new MenuItemModel { Label = "Unpin Workspace", Tag = "unpin-workspace" }
+            : new MenuItemModel { Label = "Pin as Workspace", Tag = "pin-workspace" });
 
         items.Add(new MenuItemModel { Type = MenuItemType.Separator });
 
@@ -86,7 +99,7 @@ internal static class SessionMenuModel
             {
                 Label = "(None)",
                 Tag = "set-pack:(none)",
-                Checked = state.SoundPack is null,
+                Checked = string.IsNullOrEmpty(state.SoundPack),
             });
 
             foreach (var pack in state.InstalledPacks)

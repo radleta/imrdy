@@ -126,6 +126,29 @@ public class ConfigValidatorTests : IDisposable
     }
 
     [Fact]
+    public void Validate_RandomDefaultPack_IsValid()
+    {
+        var path = Path.Combine(_tempDir, "config.json");
+        File.WriteAllText(path, """{"sound": {"defaultPack": "random"}}""");
+
+        var result = _validator.Validate(path, AvailablePacks);
+
+        result.IsValid.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Validate_DisabledPacksKey_NotWarned()
+    {
+        var path = Path.Combine(_tempDir, "config.json");
+        File.WriteAllText(path, """{"sound": {"disabledPacks": ["retro"]}}""");
+
+        var result = _validator.Validate(path, AvailablePacks);
+
+        result.IsValid.Should().BeTrue();
+        result.Errors.Should().NotContain(e => e.Message.Contains("disabledPacks"));
+    }
+
+    [Fact]
     public void Validate_EmptyConfig_IsValid()
     {
         var path = Path.Combine(_tempDir, "config.json");

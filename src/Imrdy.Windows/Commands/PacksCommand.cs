@@ -356,7 +356,7 @@ internal static class PacksCommand
                 {
                     ConfigReader.Update(c => c with
                     {
-                        Sound = c.Sound with { DefaultPack = "assistant" }
+                        Sound = c.Sound with { DefaultPack = "random" }
                     });
                     defaultCleared = true;
                 }

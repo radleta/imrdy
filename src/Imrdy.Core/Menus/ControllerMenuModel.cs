@@ -4,7 +4,11 @@ internal static class ControllerMenuModel
 {
     public static IReadOnlyList<MenuItemModel> Build(ControllerMenuState state)
     {
-        var items = new List<MenuItemModel>();
+        var items = new List<MenuItemModel>
+        {
+            new() { Label = "imrdy", Enabled = false },
+            new() { Type = MenuItemType.Separator },
+        };
 
         // Sound toggle
         items.Add(new MenuItemModel
@@ -14,29 +18,11 @@ internal static class ControllerMenuModel
             Tag = "toggle-sound",
         });
 
-        // Sound Pack submenu
-        var packChildren = new List<MenuItemModel>();
-        foreach (var pack in state.InstalledPacks)
-        {
-            packChildren.Add(new MenuItemModel
-            {
-                Label = pack,
-                Checked = string.Equals(pack, state.Config.Sound.DefaultPack, StringComparison.OrdinalIgnoreCase),
-                Tag = $"switch-pack:{pack}",
-            });
-        }
+        // Sound Pack submenu (default selection: Random | packs... | None)
+        items.Add(BuildSoundPackSubmenu(state));
 
-        if (packChildren.Count == 0)
-        {
-            packChildren.Add(new MenuItemModel { Label = "(none installed)", Enabled = false });
-        }
-
-        items.Add(new MenuItemModel
-        {
-            Label = "Sound Pack",
-            Type = MenuItemType.Submenu,
-            Children = packChildren,
-        });
+        // Enabled Packs submenu (checkbox toggles)
+        items.Add(BuildEnabledPacksSubmenu(state));
 
         items.Add(new MenuItemModel { Type = MenuItemType.Separator });
 
@@ -99,5 +85,89 @@ internal static class ControllerMenuModel
         items.Add(new MenuItemModel { Label = "Exit", Tag = "exit" });
 
         return items;
+    }
+
+    private static MenuItemModel BuildSoundPackSubmenu(ControllerMenuState state)
+    {
+        var children = new List<MenuItemModel>();
+        var defaultPack = state.Config.Sound.DefaultPack;
+        var isRandom = string.Equals(defaultPack, "random", StringComparison.OrdinalIgnoreCase);
+        var isNone = string.IsNullOrEmpty(defaultPack);
+
+        // Random option
+        children.Add(new MenuItemModel
+        {
+            Label = "Random",
+            Tag = "switch-pack:random",
+            Checked = isRandom,
+        });
+
+        // Individual packs
+        foreach (var pack in state.InstalledPacks)
+        {
+            children.Add(new MenuItemModel
+            {
+                Label = pack,
+                Tag = $"switch-pack:{pack}",
+                Checked = !isRandom && !isNone
+                    && string.Equals(pack, defaultPack, StringComparison.OrdinalIgnoreCase),
+            });
+        }
+
+        if (state.InstalledPacks.Count > 0)
+        {
+            children.Add(new MenuItemModel { Type = MenuItemType.Separator });
+        }
+
+        // None option
+        children.Add(new MenuItemModel
+        {
+            Label = "(None)",
+            Tag = "switch-pack:",
+            Checked = isNone,
+        });
+
+        return new MenuItemModel
+        {
+            Label = "Sound Pack",
+            Type = MenuItemType.Submenu,
+            Children = children,
+        };
+    }
+
+    private static MenuItemModel BuildEnabledPacksSubmenu(ControllerMenuState state)
+    {
+        var children = new List<MenuItemModel>();
+        var disabled = state.Config.Sound.DisabledPacks;
+
+        if (state.InstalledPacks.Count == 0)
+        {
+            children.Add(new MenuItemModel
+            {
+                Label = "(none installed)",
+                Enabled = false,
+            });
+        }
+        else
+        {
+            foreach (var pack in state.InstalledPacks)
+            {
+                var isDisabled = disabled.Any(d =>
+                    string.Equals(d, pack, StringComparison.OrdinalIgnoreCase));
+                children.Add(new MenuItemModel
+                {
+                    Label = pack,
+                    Tag = $"toggle-pack-enabled:{pack}",
+                    Checked = !isDisabled,
+                });
+            }
+        }
+
+        return new MenuItemModel
+        {
+            Label = "Enabled Packs",
+            Type = MenuItemType.Submenu,
+            Children = children,
+        };
     }
 }

@@ -26,7 +26,7 @@ internal static class MenuTestHelper
             new WorkspaceMenuState { WorkspaceName = "Dev", WorkspacePath = @"C:\dev" },
         ],
         InstalledPacks = ["assistant", "retro"],
-        Config = new ImrdyConfig { Sound = new SoundConfig { Enabled = true, DefaultPack = "assistant" } },
+        Config = new ImrdyConfig { Sound = new SoundConfig { Enabled = true, DefaultPack = "random" } },
         LogPath = @"C:\test\.imrdy\logs\monitor.log",
     };
 

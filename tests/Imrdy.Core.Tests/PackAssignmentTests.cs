@@ -49,12 +49,78 @@ public class PackAssignmentTests
     }
 
     [Fact]
+    public void Priority3_RandomDefault_ReturnsEnabledPack()
+    {
+        var config = new SoundConfig { DefaultPack = "random" };
+        var assignment = new PackAssignment(TwoPacks, config);
+
+        var result = assignment.Resolve(null, null);
+        result.Should().NotBeNull();
+        result.Should().BeOneOf("assistant", "retro");
+    }
+
+    [Fact]
+    public void Priority3_RandomDefault_ExcludesDisabledPacks()
+    {
+        var config = new SoundConfig
+        {
+            DefaultPack = "random",
+            DisabledPacks = ["assistant"]
+        };
+        var assignment = new PackAssignment(TwoPacks, config);
+
+        // With assistant disabled, random must always pick retro
+        for (var i = 0; i < 20; i++)
+        {
+            assignment.Resolve(null, null).Should().Be("retro");
+        }
+    }
+
+    [Fact]
+    public void Priority3_RandomDefault_AllDisabled_ReturnsNull()
+    {
+        var config = new SoundConfig
+        {
+            DefaultPack = "random",
+            DisabledPacks = ["assistant", "retro"]
+        };
+        var assignment = new PackAssignment(TwoPacks, config);
+
+        assignment.Resolve(null, null).Should().BeNull();
+    }
+
+    [Fact]
+    public void Priority3_EmptyDefault_MeansNone()
+    {
+        var config = new SoundConfig { DefaultPack = "" };
+        var assignment = new PackAssignment(TwoPacks, config);
+
+        // Empty default means none — falls through to priority 4/5
+        // With no CLI default and multiple packs, returns null
+        assignment.Resolve(null, null).Should().BeNull();
+    }
+
+    [Fact]
     public void Priority4_CliDefault()
     {
         var config = new SoundConfig { DefaultPack = "" };
         var assignment = new PackAssignment(TwoPacks, config, cliDefault: "retro");
 
         assignment.Resolve(null, null).Should().Be("retro");
+    }
+
+    [Fact]
+    public void Priority4_CliDefault_DisabledPack_FallsThrough()
+    {
+        var config = new SoundConfig
+        {
+            DefaultPack = "",
+            DisabledPacks = ["retro"]
+        };
+        var assignment = new PackAssignment(TwoPacks, config, cliDefault: "retro");
+
+        // CLI default is disabled, only one enabled pack left → auto-detect
+        assignment.Resolve(null, null).Should().Be("assistant");
     }
 
     [Fact]
@@ -85,6 +151,20 @@ public class PackAssignmentTests
     }
 
     [Fact]
+    public void StateFileOverride_DisabledPack_StillHonored()
+    {
+        var config = new SoundConfig
+        {
+            DefaultPack = "retro",
+            DisabledPacks = ["assistant"]
+        };
+        var assignment = new PackAssignment(TwoPacks, config);
+
+        // Explicit state file override is respected even if pack is disabled
+        assignment.Resolve("assistant", null).Should().Be("assistant");
+    }
+
+    [Fact]
     public void ProjectMapping_NonExistentPack_FallsThrough()
     {
         var config = new SoundConfig
@@ -95,6 +175,33 @@ public class PackAssignmentTests
         var assignment = new PackAssignment(TwoPacks, config);
 
         assignment.Resolve(null, "my-project").Should().Be("retro");
+    }
+
+    [Fact]
+    public void ProjectMapping_DisabledPack_FallsThrough()
+    {
+        var config = new SoundConfig
+        {
+            DefaultPack = "retro",
+            DisabledPacks = ["assistant"],
+            Projects = new() { ["my-project"] = "assistant" }
+        };
+        var assignment = new PackAssignment(TwoPacks, config);
+
+        assignment.Resolve(null, "my-project").Should().Be("retro");
+    }
+
+    [Fact]
+    public void ConfigDefault_DisabledPack_FallsThrough()
+    {
+        var config = new SoundConfig
+        {
+            DefaultPack = "assistant",
+            DisabledPacks = ["assistant"]
+        };
+        var assignment = new PackAssignment(TwoPacks, config, cliDefault: "retro");
+
+        assignment.Resolve(null, null).Should().Be("retro");
     }
 
     [Fact]
@@ -130,6 +237,21 @@ public class PackAssignmentTests
     }
 
     [Fact]
+    public void AutoDetect_SkipsDisabledPacks()
+    {
+        var packs = new[] { MakePack("enabled-one"), MakePack("disabled-one") };
+        var config = new SoundConfig
+        {
+            DefaultPack = "",
+            DisabledPacks = ["disabled-one"]
+        };
+        var assignment = new PackAssignment(packs, config);
+
+        // Only one enabled pack → auto-detect picks it
+        assignment.Resolve(null, null).Should().Be("enabled-one");
+    }
+
+    [Fact]
     public void NullProjectMappings_DoesNotThrow()
     {
         // JSON deserialization can produce null Projects when config has "projects": null
@@ -146,5 +268,22 @@ public class PackAssignmentTests
         var assignment = new PackAssignment(TwoPacks, config);
 
         assignment.Resolve(null, "my-project").Should().Be("retro");
+    }
+
+    [Fact]
+    public void CaseInsensitive_DisabledPackMatching()
+    {
+        var config = new SoundConfig
+        {
+            DefaultPack = "random",
+            DisabledPacks = ["ASSISTANT"]
+        };
+        var assignment = new PackAssignment(TwoPacks, config);
+
+        // "ASSISTANT" in disabled list should match "assistant" pack (case-insensitive)
+        for (var i = 0; i < 20; i++)
+        {
+            assignment.Resolve(null, null).Should().Be("retro");
+        }
     }
 }

@@ -31,7 +31,7 @@ public class ConfigReaderTests : IDisposable
         config.Should().NotBeNull();
         config.Tray.Enabled.Should().BeTrue();
         config.Sound.Enabled.Should().BeTrue();
-        config.Sound.DefaultPack.Should().Be("assistant");
+        config.Sound.DefaultPack.Should().Be("random");
         config.Sound.Projects.Should().BeEmpty();
     }
 
@@ -66,7 +66,7 @@ public class ConfigReaderTests : IDisposable
 
         config.Tray.Enabled.Should().BeFalse();
         config.Sound.Enabled.Should().BeTrue();
-        config.Sound.DefaultPack.Should().Be("assistant");
+        config.Sound.DefaultPack.Should().Be("random");
         config.Sound.Projects.Should().BeEmpty();
     }
 

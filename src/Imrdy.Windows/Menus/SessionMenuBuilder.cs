@@ -7,9 +7,10 @@ namespace Imrdy.Windows.Menus;
 internal sealed record SessionMenuCallbacks(
     Action OnSwitchDesktop,
     Action OnAssignDesktop,
-    Action<int> OnSetDesktop,
+    Action<int?> OnSetDesktop,
     Action<string?> OnSetPack,
     Action OnPinWorkspace,
+    Action OnUnpinWorkspace,
     Action OnClear,
     Action OnClearAll,
     Action OnDumpState,
@@ -23,6 +24,7 @@ internal static class SessionMenuBuilder
         Func<IReadOnlyList<string>> getInstalledPacks,
         Func<int?> getDesktopCount,
         Func<bool> getDesktopAvailable,
+        Func<bool> getIsPinned,
         ILogger? logger = null)
     {
         var menu = new ContextMenuStrip();
@@ -40,6 +42,7 @@ internal static class SessionMenuBuilder
                     InstalledPacks = getInstalledPacks(),
                     DesktopCount = getDesktopCount(),
                     DesktopAvailable = getDesktopAvailable(),
+                    IsPinned = getIsPinned(),
                 };
                 var items = SessionMenuModel.Build(state);
                 MenuRenderer.Apply(menu, items, tag => OnClick(tag, callbacks), logger);
@@ -58,6 +61,8 @@ internal static class SessionMenuBuilder
             callbacks.OnSwitchDesktop();
         else if (tag == "assign-desktop")
             callbacks.OnAssignDesktop();
+        else if (tag == "set-desktop:auto")
+            callbacks.OnSetDesktop(null);
         else if (tag.StartsWith("set-desktop:", StringComparison.Ordinal))
         {
             if (int.TryParse(tag["set-desktop:".Length..], out var index))
@@ -70,6 +75,8 @@ internal static class SessionMenuBuilder
         }
         else if (tag == "pin-workspace")
             callbacks.OnPinWorkspace();
+        else if (tag == "unpin-workspace")
+            callbacks.OnUnpinWorkspace();
         else if (tag == "clear")
             callbacks.OnClear();
         else if (tag == "clear-all")

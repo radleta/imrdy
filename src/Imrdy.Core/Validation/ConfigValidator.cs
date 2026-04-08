@@ -22,6 +22,7 @@ public sealed class ConfigValidator
     {
         "enabled",
         "defaultPack",
+        "disabledPacks",
         "projects",
     };
 
@@ -127,7 +128,9 @@ public sealed class ConfigValidator
                         && defaultProp.ValueKind == JsonValueKind.String)
                     {
                         var defaultPack = defaultProp.GetString();
-                        if (!string.IsNullOrEmpty(defaultPack) && !packNameSet.Contains(defaultPack))
+                        if (!string.IsNullOrEmpty(defaultPack)
+                            && !string.Equals(defaultPack, "random", StringComparison.OrdinalIgnoreCase)
+                            && !packNameSet.Contains(defaultPack))
                         {
                             errors.Add(new ValidationError(
                                 $"{configPath} → sound.defaultPack",

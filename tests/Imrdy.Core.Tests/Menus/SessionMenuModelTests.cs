@@ -13,8 +13,8 @@ public class SessionMenuModelTests
 
         var items = SessionMenuModel.Build(state);
 
-        // Switch, Assign, SetDesktop, SoundPack, separator, PinAsWorkspace, separator, Manage, separator, Exit
-        items.Should().HaveCount(10);
+        // Header, separator, Switch, Assign, SetDesktop, SoundPack, separator, PinAsWorkspace, separator, Manage, separator, Exit
+        items.Should().HaveCount(12);
     }
 
     [Fact]
@@ -46,13 +46,15 @@ public class SessionMenuModelTests
 
         var setDesktop = items.First(i => i.Label == "Set Desktop");
         setDesktop.Type.Should().Be(MenuItemType.Submenu);
-        setDesktop.Children.Should().HaveCount(3);
-        setDesktop.Children[0].Tag.Should().Be("set-desktop:0");
-        setDesktop.Children[0].Checked.Should().BeTrue();
-        setDesktop.Children[1].Tag.Should().Be("set-desktop:1");
-        setDesktop.Children[1].Checked.Should().BeFalse();
-        setDesktop.Children[2].Tag.Should().Be("set-desktop:2");
+        setDesktop.Children.Should().HaveCount(4);
+        setDesktop.Children[0].Tag.Should().Be("set-desktop:auto");
+        setDesktop.Children[0].Checked.Should().BeFalse();
+        setDesktop.Children[1].Tag.Should().Be("set-desktop:0");
+        setDesktop.Children[1].Checked.Should().BeTrue();
+        setDesktop.Children[2].Tag.Should().Be("set-desktop:1");
         setDesktop.Children[2].Checked.Should().BeFalse();
+        setDesktop.Children[3].Tag.Should().Be("set-desktop:2");
+        setDesktop.Children[3].Checked.Should().BeFalse();
     }
 
     [Fact]

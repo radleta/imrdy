@@ -18,7 +18,7 @@ Click a session icon to switch to its virtual desktop and focus the terminal win
 claude plugin add https://github.com/radleta/imrdy
 ```
 
-The plugin auto-installs the binary and default sound pack (`assistant`) on first session start via the bootstrap script. The sound pack is downloaded from the latest `pack-assistant-*` GitHub Release.
+The plugin auto-installs the binary and default sound pack (`assistant`) on first session start via the bootstrap script. The sound pack is downloaded from the latest `pack-assistant-*` GitHub Release. The default config uses `"random"` pack selection, which picks randomly from enabled installed packs.
 
 ### Manual
 
@@ -117,7 +117,8 @@ imrdy config set sound.defaultPack my-pack
 A persistent controller icon (headphones) appears in the system tray whenever the monitor is running. Right-click for a context menu:
 
 - **Sounds** — Toggle sound playback on/off (checked = enabled)
-- **Sound Pack** — Switch the active pack from installed packs
+- **Sound Pack** — Switch the active pack (Random, installed packs, or None)
+- **Enabled Packs** — Toggle individual packs on/off for random selection
 - **Sessions** — View and switch to active sessions
 - **Workspaces** — View and switch to pinned workspaces
 - **Open Config Folder / Open Sounds Folder / View Log** — Quick access to file locations
@@ -153,7 +154,7 @@ Supports Windows 10 (20H1+) and Windows 11 (all versions through 24H2).
 ```json
 {
   "tray": { "enabled": true },
-  "sound": { "enabled": true, "defaultPack": "assistant" }
+  "sound": { "enabled": true, "defaultPack": "random", "disabledPacks": [] }
 }
 ```
 

@@ -53,6 +53,21 @@ internal static class ControllerMenuBuilder
                 await Task.Run(() => ConfigReader.Update(c => c with { Sound = c.Sound with { DefaultPack = packName } }));
                 onConfigChanged(ConfigReader.Read());
             }
+            else if (tag.StartsWith("toggle-pack-enabled:", StringComparison.Ordinal))
+            {
+                var packName = tag["toggle-pack-enabled:".Length..];
+                await Task.Run(() => ConfigReader.Update(c =>
+                {
+                    var disabled = c.Sound.DisabledPacks;
+                    var isCurrentlyDisabled = disabled.Any(d =>
+                        string.Equals(d, packName, StringComparison.OrdinalIgnoreCase));
+                    var newDisabled = isCurrentlyDisabled
+                        ? disabled.Where(d => !string.Equals(d, packName, StringComparison.OrdinalIgnoreCase)).ToList()
+                        : [.. disabled, packName];
+                    return c with { Sound = c.Sound with { DisabledPacks = newDisabled } };
+                }));
+                onConfigChanged(ConfigReader.Read());
+            }
             else if (tag == "open-config")
             {
                 OpenFolder("explorer.exe", ImrdyPaths.Home, logger);

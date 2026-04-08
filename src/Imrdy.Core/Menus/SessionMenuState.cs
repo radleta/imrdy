@@ -10,4 +10,5 @@ public sealed record SessionMenuState
     public IReadOnlyList<string> InstalledPacks { get; init; } = [];
     public int? DesktopCount { get; init; }
     public bool DesktopAvailable { get; init; }
+    public bool IsPinned { get; init; }
 }

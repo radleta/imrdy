@@ -341,8 +341,9 @@ internal sealed class TrayApp : ApplicationContext
         {
             var previousStatus = entry.State.Status;
             var statusChanged = previousStatus != state.Status;
+            var previousNotificationType = entry.State.NotificationType;
+            var notificationChanged = previousNotificationType != state.NotificationType;
             entry.State = state;
-            entry.SoundPack = state.SoundPack;
             entry.DesktopIndex = state.DesktopIndex;
 
             if (statusChanged)
@@ -369,8 +370,11 @@ internal sealed class TrayApp : ApplicationContext
                 TriggerStatusChangeSound(entry, previousStatus, state.Status);
             }
 
-            // Notification-type sounds (every write, not just status change)
-            TriggerNotificationSound(entry, state.NotificationType);
+            // Notification-type sounds (only when notification type actually changes)
+            if (notificationChanged)
+            {
+                TriggerNotificationSound(entry, state.NotificationType);
+            }
 
             // SessionEnd → start grace period (only once; sweep re-reads must not reset it)
             if (string.Equals(state.HookEvent, "SessionEnd", StringComparison.OrdinalIgnoreCase))
@@ -388,14 +392,27 @@ internal sealed class TrayApp : ApplicationContext
         }
         else
         {
-            // New session
+            // New session — resolve pack from config/project rules, then persist
+            var resolvedPack = state.SoundPack;
+            if (string.IsNullOrEmpty(resolvedPack))
+            {
+                var assignment = new PackAssignment(_loadedPacks, _soundConfig);
+                resolvedPack = assignment.Resolve(null, PathNormalizer.DeriveProject(state.Cwd));
+            }
+
+            // Map null (no pack resolved) to "" (explicitly none) so it persists
+            resolvedPack ??= "";
+
             entry = new SessionEntry
             {
                 SessionId = state.SessionId,
                 State = state,
-                SoundPack = state.SoundPack,
+                SoundPack = resolvedPack,
                 DesktopIndex = state.DesktopIndex,
             };
+
+            // Write resolved pack to state file so the hook preserves it
+            PersistSessionSoundPack(entry);
 
             _sessions[state.SessionId] = entry;
             CreateSessionIcon(entry);
@@ -521,6 +538,31 @@ internal sealed class TrayApp : ApplicationContext
 
             // Workspace white dot may reappear now (D11)
             UpdateWorkspaceVisibility();
+        }
+    }
+
+    /// <summary>
+    /// Writes the session's sound_pack to its state file so the hook preserves it.
+    /// </summary>
+    private void PersistSessionSoundPack(SessionEntry entry)
+    {
+        PersistSessionField(entry, current => current with { SoundPack = entry.SoundPack });
+    }
+
+    private void PersistSessionField(SessionEntry entry, Func<StateFileModel, StateFileModel> update)
+    {
+        var statePath = Path.Combine(ImrdyPaths.Sessions, $"{entry.SessionId}.json");
+        try
+        {
+            var current = _stateReader.ReadStateFile(statePath);
+            if (current is not null)
+            {
+                _stateReader.WriteStateFile(statePath, update(current));
+            }
+        }
+        catch (IOException ex)
+        {
+            _logger.LogDebug(ex, "Could not persist session field for {SessionId}", entry.SessionId);
         }
     }
 
@@ -715,12 +757,16 @@ internal sealed class TrayApp : ApplicationContext
                 OnSetDesktop: index =>
                 {
                     entry.DesktopIndex = index;
-                    _desktopManager.SwitchToDesktop(index);
+                    if (index.HasValue)
+                    {
+                        _desktopManager.SwitchToDesktop(index.Value);
+                    }
                 },
                 OnSetPack: packName =>
                 {
-                    entry.SoundPack = packName;
-                    _logger.LogDebug("Set session {SessionId} sound pack to {Pack}", entry.SessionId, packName ?? "(none)");
+                    entry.SoundPack = packName ?? "";
+                    PersistSessionSoundPack(entry);
+                    _logger.LogDebug("Set session {SessionId} sound pack to {Pack}", entry.SessionId, entry.SoundPack);
                 },
                 OnPinWorkspace: () =>
                 {
@@ -740,6 +786,21 @@ internal sealed class TrayApp : ApplicationContext
                         _logger.LogWarning(ex, "Failed to pin workspace for session {SessionId}", entry.SessionId);
                     }
                 },
+                OnUnpinWorkspace: () =>
+                {
+                    var cwd = entry.State.Cwd;
+                    if (string.IsNullOrEmpty(cwd)) return;
+                    try
+                    {
+                        _workspaceStore.Unpin(cwd);
+                        ReloadWorkspaces();
+                        _logger.LogInformation("Unpinned workspace from session: {Path}", cwd);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Failed to unpin workspace for session {SessionId}", entry.SessionId);
+                    }
+                },
                 OnClear: () =>
                 {
                     var stateFile = Path.Combine(ImrdyPaths.Sessions, $"{entry.SessionId}.json");
@@ -753,6 +814,7 @@ internal sealed class TrayApp : ApplicationContext
             getInstalledPacks: () => _loadedPacks.Select(p => p.Name).ToList(),
             getDesktopCount: () => _desktopManager.GetDesktopCount(),
             getDesktopAvailable: () => _desktopManager.IsAvailable,
+            getIsPinned: () => !string.IsNullOrEmpty(entry.State.Cwd) && _workspaceStore.IsPinned(entry.State.Cwd),
             logger: _logger);
         entry.Icon.ContextMenuStrip = entry.Menu;
 
@@ -1069,15 +1131,10 @@ internal sealed class TrayApp : ApplicationContext
                 entry.SessionId, soundEvent);
         }
 
-        // Resolve which pack to use
-        var assignment = new PackAssignment(_loadedPacks, _soundConfig);
-        var packName = assignment.Resolve(
-            entry.SoundPack,
-            PathNormalizer.DeriveProject(entry.State?.Cwd ?? ""));
-
-        if (packName is null)
+        // Use the session's assigned pack — resolved at creation, sticky until changed
+        var packName = entry.SoundPack;
+        if (string.IsNullOrEmpty(packName))
         {
-            _logger.LogDebug("No pack resolved for session {SessionId}", entry.SessionId);
             return;
         }
 
