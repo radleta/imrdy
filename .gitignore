@@ -50,3 +50,6 @@ scratch/
 ## brainstorm working dir and server info
 .brainstorm/
 .server-info
+
+# chrome-devtools working dir
+.chrome-devtools
