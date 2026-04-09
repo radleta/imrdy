@@ -2,6 +2,17 @@
 
 Windows system tray monitor for Claude Code sessions. .NET 10, WinForms, single executable.
 
+## Why
+
+Managing multiple Claude Code sessions in parallel is an attention problem: knowing which session needs you, which is working, which is idle, and acting on the right one without losing focus on your work.
+
+imrdy puts that information in the system tray where it stays glanceable in peripheral vision:
+
+- **Dots in the tray** — one icon per active session
+- **Color = state** — busy, idle, needs attention, permission requested
+- **Aging = dimming** — icons fade as sessions go quiet
+- **Click = acknowledge and bring to focus** — switches to the session's virtual desktop and focuses its terminal in one gesture
+
 ## Architecture
 
 ```

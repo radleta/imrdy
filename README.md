@@ -2,6 +2,12 @@
 
 System tray monitor for Claude Code sessions on Windows. Replaces the PowerShell + Node.js dual-runtime architecture with a single .NET executable.
 
+## Why
+
+Managing multiple Claude Code sessions in parallel is an attention problem: knowing which session needs you, which is working, which is idle, and acting on the right one without losing focus on your work. imrdy puts that information in the system tray where it stays glanceable in peripheral vision and never demands foreground attention.
+
+## How it looks
+
 Each active Claude Code session gets a colored circle icon in the system tray:
 - **Yellow** = busy (working)
 - **Green** = idle (waiting for input)
