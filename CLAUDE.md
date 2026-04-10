@@ -40,7 +40,7 @@ The hook runs hundreds of times per session. It uses `HookServiceBuilder` (light
 
 ```bash
 dotnet build                                    # Debug build
-dotnet test --filter "Category!=Integration&Category!=Benchmark"  # Unit tests only (321 tests)
+dotnet test --filter "Category!=Integration&Category!=Benchmark"  # Unit tests only (325 tests)
 ./build-dev.sh                                  # Publish → stop tray → deploy to ~/.local/bin/ → auto-respawn
 ```
 

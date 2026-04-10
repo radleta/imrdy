@@ -179,6 +179,7 @@ A persistent controller icon (headphones) appears in the system tray whenever th
 - **Sounds** — Toggle sound playback on/off (checked = enabled)
 - **Sound Pack** — Switch the active pack (Random, installed packs, or None)
 - **Enabled Packs** — Toggle individual packs on/off for random selection
+- **Icon Style** — Switch between dot icons and installed graphics packs (Dots, installed packs)
 - **Sessions** — View and switch to active sessions
 - **Workspaces** — View and switch to pinned workspaces
 - **Open Config Folder / Open Sounds Folder / View Log** — Quick access to file locations
