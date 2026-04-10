@@ -36,11 +36,15 @@ The hook runs hundreds of times per session. It uses `HookServiceBuilder` (light
 
 `ITrayIconRenderer` interface with two impls: `CircleIconRenderer` (built-in GDI+ dots, always-available fallback) and `PackIconRenderer` (SVG via Svg.NET v3.4.7). Config flag `tray.iconStyle` selects: `"dots"` or `"pack:<name>"`. Packs live at `~/.imrdy/graphics/packs/<name>/` with a `pack.json` manifest. `GraphicsPackLoader` in `Imrdy.Core` mirrors the sound `PackLoader`. Pack load failure silently falls back to dots.
 
+### Overlay (Mode B)
+
+`OverlayWindow` in `src/Imrdy.Windows/Overlay/` — borderless transparent `Form` with `WS_EX_LAYERED` for per-pixel alpha via `UpdateLayeredWindow`. Renders session characters as a horizontal row at the bottom screen edge. Uses `GraphicsPackLoader` directly to render SVGs at overlay size (or GDI+ circles in dots mode) — independent of `ITrayIconRenderer`. TopMost enforced by a 5-second watchdog via `SetWindowPos` P/Invoke. `PInvokeOverlay.cs` in `src/Imrdy.Windows/Desktop/` holds all overlay-specific Win32 declarations. Pre-rendered bitmap cache with aging (`ColorMatrix` desaturation). Config: `overlay.enabled`, `overlay.position`, `overlay.size`, `overlay.spacing`.
+
 ## Build & Test
 
 ```bash
 dotnet build                                    # Debug build
-dotnet test --filter "Category!=Integration&Category!=Benchmark"  # Unit tests only (325 tests)
+dotnet test --filter "Category!=Integration&Category!=Benchmark"  # Unit tests only (333 tests)
 ./build-dev.sh                                  # Publish → stop tray → deploy to ~/.local/bin/ → auto-respawn
 ```
 

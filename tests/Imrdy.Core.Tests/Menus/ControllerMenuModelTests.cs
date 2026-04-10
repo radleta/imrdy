@@ -296,6 +296,66 @@ public class ControllerMenuModelTests
         iconStyleMenu.Children.Single().Checked.Should().BeTrue();
     }
 
+    [Fact]
+    public void Build_OverlaySubmenu_ShowsEnabled_WhenOverlayOn()
+    {
+        var state = MenuTestHelper.EmptyControllerState() with
+        {
+            Config = new ImrdyConfig { Overlay = new OverlayConfig { Enabled = true } },
+        };
+
+        var items = ControllerMenuModel.Build(state);
+
+        var overlayMenu = items.First(i => i.Label == "Overlay");
+        overlayMenu.Children.First(c => c.Tag == "toggle-overlay").Checked.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Build_OverlaySubmenu_ShowsDisabled_WhenOverlayOff()
+    {
+        var state = MenuTestHelper.EmptyControllerState() with
+        {
+            Config = new ImrdyConfig { Overlay = new OverlayConfig { Enabled = false } },
+        };
+
+        var items = ControllerMenuModel.Build(state);
+
+        var overlayMenu = items.First(i => i.Label == "Overlay");
+        overlayMenu.Children.First(c => c.Tag == "toggle-overlay").Checked.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Build_OverlaySubmenu_ShowsPositionRadios_WithCorrectSelection()
+    {
+        var state = MenuTestHelper.EmptyControllerState() with
+        {
+            Config = new ImrdyConfig { Overlay = new OverlayConfig { Position = "bottom-left" } },
+        };
+
+        var items = ControllerMenuModel.Build(state);
+
+        var overlayMenu = items.First(i => i.Label == "Overlay");
+        overlayMenu.Children.First(c => c.Tag == "set-overlay-position:bottom-left").Checked.Should().BeTrue();
+        overlayMenu.Children.First(c => c.Tag == "set-overlay-position:bottom-right").Checked.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Build_OverlaySubmenu_ShowsSizeRadios_WithCorrectSelection()
+    {
+        var state = MenuTestHelper.EmptyControllerState() with
+        {
+            Config = new ImrdyConfig { Overlay = new OverlayConfig { Size = 96 } },
+        };
+
+        var items = ControllerMenuModel.Build(state);
+
+        var overlayMenu = items.First(i => i.Label == "Overlay");
+        overlayMenu.Children.First(c => c.Tag == "set-overlay-size:48").Checked.Should().BeFalse();
+        overlayMenu.Children.First(c => c.Tag == "set-overlay-size:64").Checked.Should().BeFalse();
+        overlayMenu.Children.First(c => c.Tag == "set-overlay-size:96").Checked.Should().BeTrue();
+        overlayMenu.Children.First(c => c.Tag == "set-overlay-size:128").Checked.Should().BeFalse();
+    }
+
     private static List<string> FlattenTags(IReadOnlyList<MenuItemModel> items)
     {
         var tags = new List<string>();

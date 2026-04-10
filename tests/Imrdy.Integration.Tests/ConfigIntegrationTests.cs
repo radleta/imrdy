@@ -97,6 +97,42 @@ public class ConfigIntegrationTests : IDisposable
         exitCode.Should().Be(1);
     }
 
+    [Fact]
+    public async Task ConfigSet_OverlayEnabled_ExitsZero()
+    {
+        var (exitCode, _, _) = await _cli.RunAsync("config set overlay.enabled true",
+            workingDirectory: _temp.Path, environmentVariables: EnvWithHome());
+
+        exitCode.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task ConfigSet_OverlayPosition_ExitsZero()
+    {
+        var (exitCode, _, _) = await _cli.RunAsync("config set overlay.position bottom-left",
+            workingDirectory: _temp.Path, environmentVariables: EnvWithHome());
+
+        exitCode.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task ConfigSet_OverlaySize_ExitsZero()
+    {
+        var (exitCode, _, _) = await _cli.RunAsync("config set overlay.size 128",
+            workingDirectory: _temp.Path, environmentVariables: EnvWithHome());
+
+        exitCode.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task ConfigSet_OverlayEnabled_InvalidBool_ExitsOne()
+    {
+        var (exitCode, _, _) = await _cli.RunAsync("config set overlay.enabled notabool",
+            workingDirectory: _temp.Path, environmentVariables: EnvWithHome());
+
+        exitCode.Should().Be(1);
+    }
+
     public void Dispose()
     {
         _temp.Dispose();

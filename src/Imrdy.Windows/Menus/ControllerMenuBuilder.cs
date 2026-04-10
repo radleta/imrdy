@@ -74,6 +74,23 @@ internal static class ControllerMenuBuilder
                 await Task.Run(() => ConfigReader.Update(c => c with { Tray = c.Tray with { IconStyle = newStyle } }));
                 onConfigChanged(ConfigReader.Read());
             }
+            else if (tag == "toggle-overlay")
+            {
+                await Task.Run(() => ConfigReader.Update(c => c with { Overlay = c.Overlay with { Enabled = !state.Config.Overlay.Enabled } }));
+                onConfigChanged(ConfigReader.Read());
+            }
+            else if (tag.StartsWith("set-overlay-position:", StringComparison.Ordinal))
+            {
+                var position = tag["set-overlay-position:".Length..];
+                await Task.Run(() => ConfigReader.Update(c => c with { Overlay = c.Overlay with { Position = position } }));
+                onConfigChanged(ConfigReader.Read());
+            }
+            else if (tag.StartsWith("set-overlay-size:", StringComparison.Ordinal))
+            {
+                if (!int.TryParse(tag["set-overlay-size:".Length..], out var size)) return;
+                await Task.Run(() => ConfigReader.Update(c => c with { Overlay = c.Overlay with { Size = size } }));
+                onConfigChanged(ConfigReader.Read());
+            }
             else if (tag == "open-config")
             {
                 OpenFolder("explorer.exe", ImrdyPaths.Home, logger);

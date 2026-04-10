@@ -14,6 +14,7 @@ using Imrdy.Windows.Icons;
 using Imrdy.Windows.Menus;
 using Imrdy.Windows.Models;
 using Imrdy.Windows.Notifications;
+using Imrdy.Windows.Overlay;
 using Imrdy.Windows.Sound;
 using Microsoft.Extensions.Logging;
 using ILogger = Microsoft.Extensions.Logging.ILogger;
@@ -37,6 +38,7 @@ internal sealed class TrayApp : ApplicationContext
         typeof(NotifyIcon).GetMethod("ShowContextMenu", BindingFlags.Instance | BindingFlags.NonPublic);
 
     private readonly ILogger _logger;
+    private readonly ILoggerFactory _loggerFactory;
     private readonly StateFileReader _stateReader;
     private readonly WorkspaceStore _workspaceStore;
     private readonly CooldownTracker _cooldownTracker;
@@ -47,6 +49,9 @@ internal sealed class TrayApp : ApplicationContext
     private readonly TrayIconRendererFactory _rendererFactory;
     private readonly GraphicsPackLoader _graphicsPackLoader;
     private string _currentIconStyle;
+    private OverlayWindow? _overlayWindow;
+    private bool _overlayEnabled;
+    private OverlayConfig _overlayConfig = new();
     private readonly BalloonTipManager _balloonTipManager;
     private readonly WorkspaceVisibility _workspaceVisibility = new();
     private readonly WinFormsSoundPlayer _soundPlayer = new();
@@ -94,6 +99,7 @@ internal sealed class TrayApp : ApplicationContext
         GraphicsPackLoader graphicsPackLoader)
     {
         _logger = loggerFactory.CreateLogger<TrayApp>();
+        _loggerFactory = loggerFactory;
         _stateReader = stateReader;
         _workspaceStore = workspaceStore;
         _cooldownTracker = cooldownTracker;
@@ -133,6 +139,24 @@ internal sealed class TrayApp : ApplicationContext
         LoadSoundConfig();
         InitializeWatchers();
         InitializeTimers();
+
+        var overlayConfig = ConfigReader.Read().Overlay;
+        _overlayEnabled = overlayConfig.Enabled;
+        _overlayConfig = overlayConfig;
+        if (_overlayEnabled)
+        {
+            try
+            {
+                _overlayWindow = new OverlayWindow(overlayConfig, _loggerFactory, _graphicsPackLoader);
+                _overlayWindow.Show();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to create overlay window — overlay disabled");
+                _overlayWindow = null;
+                _overlayEnabled = false;
+            }
+        }
 
         // Initial sweep to pick up existing sessions
         PerformSweep();
@@ -318,22 +342,31 @@ internal sealed class TrayApp : ApplicationContext
 
     private void OnAgingTimerTick(object? sender, EventArgs e)
     {
-        foreach (var (_, entry) in _sessions)
+        try
         {
-            if (entry.Icon is null) continue;
-
-            var agingSince = DateTimeOffset.UtcNow - entry.LastSeenAt;
-            var newTier = StatusMap.GetAgingTier(agingSince);
-
-            // Only update icon if aging tier changed (avoid GDI churn)
-            if (newTier != entry.LastAgingTier)
+            foreach (var (_, entry) in _sessions)
             {
-                entry.LastAgingTier = newTier;
-                entry.Icon.Icon = _renderer.GetIcon(entry.State.Status, newTier);
+                if (entry.Icon is null) continue;
+
+                var agingSince = DateTimeOffset.UtcNow - entry.LastSeenAt;
+                var newTier = StatusMap.GetAgingTier(agingSince);
+
+                // Only update icon if aging tier changed (avoid GDI churn)
+                if (newTier != entry.LastAgingTier)
+                {
+                    entry.LastAgingTier = newTier;
+                    entry.Icon.Icon = _renderer.GetIcon(entry.State.Status, newTier);
+                }
+
+                // Always update tooltip (status age changes every tick)
+                entry.Icon.Text = FormatSessionTooltip(entry);
             }
 
-            // Always update tooltip (status age changes every tick)
-            entry.Icon.Text = FormatSessionTooltip(entry);
+            RefreshOverlay();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error in aging timer");
         }
     }
 
@@ -532,6 +565,7 @@ internal sealed class TrayApp : ApplicationContext
         {
             Commands.ProcessResolver.ClearSession(sessionId);
             entry.Dispose();
+            RefreshOverlay();
 
             // Delete state file so sweep doesn't resurrect the session
             var statePath = Path.Combine(ImrdyPaths.Sessions, $"{sessionId}.json");
@@ -842,6 +876,7 @@ internal sealed class TrayApp : ApplicationContext
             }
         };
 
+        RefreshOverlay();
     }
 
     /// <summary>
@@ -960,6 +995,7 @@ internal sealed class TrayApp : ApplicationContext
         entry.LastAgingTier = tier;
         entry.Icon.Icon = _renderer.GetIcon(entry.State.Status, tier);
         entry.Icon.Text = FormatSessionTooltip(entry);
+        RefreshOverlay();
     }
 
     private void CreateWorkspaceIcon(WorkspaceSessionEntry entry)
@@ -1071,6 +1107,37 @@ internal sealed class TrayApp : ApplicationContext
             RefreshAllSessionIcons();
             _logger.LogInformation("Icon style changed to {IconStyle}", newIconStyle);
         }
+
+        var overlayNowEnabled = config.Overlay.Enabled;
+        if (config.Overlay != _overlayConfig || overlayNowEnabled != _overlayEnabled)
+        {
+            _overlayWindow?.Dispose();
+            _overlayWindow = null;
+            _overlayConfig = config.Overlay;
+
+            if (overlayNowEnabled)
+            {
+                try
+                {
+                    _overlayWindow = new OverlayWindow(config.Overlay, _loggerFactory, _graphicsPackLoader);
+                    _overlayWindow.Show();
+                    RefreshOverlay();
+                    _logger.LogInformation("Overlay enabled with position={Position}, size={Size}",
+                        config.Overlay.Position, config.Overlay.Size);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to create overlay window during config change");
+                    _overlayWindow = null;
+                    overlayNowEnabled = false;
+                }
+            }
+            else
+            {
+                _logger.LogInformation("Overlay disabled");
+            }
+            _overlayEnabled = overlayNowEnabled;
+        }
     }
 
     private void RefreshAllSessionIcons()
@@ -1088,6 +1155,19 @@ internal sealed class TrayApp : ApplicationContext
             if (ws.Icon is null) continue;
             ws.Icon.Icon = _renderer.GetIcon("workspace", 0);
         }
+    }
+
+    private void RefreshOverlay()
+    {
+        if (_overlayWindow is null || !_overlayEnabled) return;
+        var sessions = _sessions.Values
+            .Where(e => e.Icon?.Visible == true && e.State is not null)
+            .Select(e => new OverlaySessionInfo(
+                e.SessionId,
+                e.State.Status,
+                e.LastAgingTier))
+            .ToList();
+        _overlayWindow.UpdateSessions(sessions);
     }
 
     // --- Sound Triggers (port of PS1:700-750) ---
@@ -1299,6 +1379,10 @@ internal sealed class TrayApp : ApplicationContext
         _controllerIcon.Icon?.Dispose();
         _controllerIcon.ContextMenuStrip?.Dispose();
         _controllerIcon.Dispose();
+
+        // Dispose overlay window
+        _overlayWindow?.Dispose();
+        _overlayWindow = null;
 
         // Dispose all session icons
         foreach (var entry in _sessions.Values)

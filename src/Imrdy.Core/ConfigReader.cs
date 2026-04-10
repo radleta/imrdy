@@ -64,6 +64,12 @@ public static class ConfigReader
             {
                 DisabledPacks = config.Sound?.DisabledPacks ?? [],
                 Projects = config.Sound?.Projects ?? new Dictionary<string, string>()
+            },
+            Overlay = (config.Overlay ?? new OverlayConfig()) with
+            {
+                Position = string.IsNullOrWhiteSpace(config.Overlay?.Position) ? "bottom-right" : config.Overlay.Position,
+                Size = Math.Clamp(config.Overlay?.Size ?? 64, 32, 256),
+                Spacing = Math.Clamp(config.Overlay?.Spacing ?? 4, 0, 32),
             }
         };
     }

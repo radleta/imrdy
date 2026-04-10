@@ -27,6 +27,9 @@ internal static class ControllerMenuModel
         // Icon Style submenu
         items.Add(BuildIconStyleSubmenu(state));
 
+        // Overlay submenu
+        items.Add(BuildOverlaySubmenu(state));
+
         items.Add(new MenuItemModel { Type = MenuItemType.Separator });
 
         // Sessions submenu
@@ -167,6 +170,65 @@ internal static class ControllerMenuModel
         return new MenuItemModel
         {
             Label = "Icon Style",
+            Type = MenuItemType.Submenu,
+            Children = children,
+        };
+    }
+
+    private static MenuItemModel BuildOverlaySubmenu(ControllerMenuState state)
+    {
+        var overlay = state.Config.Overlay;
+        var children = new List<MenuItemModel>
+        {
+            new MenuItemModel
+            {
+                Label = "Enabled",
+                Tag = "toggle-overlay",
+                Checked = overlay.Enabled,
+            },
+            new MenuItemModel { Type = MenuItemType.Separator },
+            new MenuItemModel
+            {
+                Label = "Bottom Right",
+                Tag = "set-overlay-position:bottom-right",
+                Checked = string.Equals(overlay.Position, "bottom-right", StringComparison.OrdinalIgnoreCase),
+            },
+            new MenuItemModel
+            {
+                Label = "Bottom Left",
+                Tag = "set-overlay-position:bottom-left",
+                Checked = string.Equals(overlay.Position, "bottom-left", StringComparison.OrdinalIgnoreCase),
+            },
+            new MenuItemModel { Type = MenuItemType.Separator },
+            new MenuItemModel
+            {
+                Label = "Small (48px)",
+                Tag = "set-overlay-size:48",
+                Checked = overlay.Size == 48,
+            },
+            new MenuItemModel
+            {
+                Label = "Medium (64px)",
+                Tag = "set-overlay-size:64",
+                Checked = overlay.Size == 64,
+            },
+            new MenuItemModel
+            {
+                Label = "Large (96px)",
+                Tag = "set-overlay-size:96",
+                Checked = overlay.Size == 96,
+            },
+            new MenuItemModel
+            {
+                Label = "Extra Large (128px)",
+                Tag = "set-overlay-size:128",
+                Checked = overlay.Size == 128,
+            },
+        };
+
+        return new MenuItemModel
+        {
+            Label = "Overlay",
             Type = MenuItemType.Submenu,
             Children = children,
         };

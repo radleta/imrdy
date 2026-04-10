@@ -172,6 +172,34 @@ Aging (session idle time) is applied automatically to all packs via `ColorMatrix
 
 All packs must declare a `license` field in `pack.json`. A stub `dev-test` pack ships with the source under `src/Imrdy.Windows/Resources/graphics-packs/` for use in development.
 
+## Overlay (Mode B)
+
+An alternative to the 16px tray icons: a floating borderless window that renders session characters as a horizontal row along the bottom screen edge. Uses the active graphics pack (or colored circles in dots mode). Stays on top via a 5-second `SetWindowPos` watchdog.
+
+**Enable:**
+```bash
+imrdy config set overlay.enabled true
+```
+
+**Config fields:**
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `overlay.enabled` | `false` | Show the overlay window |
+| `overlay.position` | `"bottom-right"` | `"bottom-right"` or `"bottom-left"` |
+| `overlay.size` | `64` | Icon size in pixels (32–256) |
+| `overlay.spacing` | `4` | Gap between icons in pixels (0–32) |
+
+**CLI examples:**
+```bash
+imrdy config set overlay.position bottom-left
+imrdy config set overlay.size 128
+```
+
+**Controller menu:** Right-click the controller icon → **Overlay** — toggle enabled, select position, select size.
+
+**V1 limitations:** Primary monitor only. No animation, no click interaction (full click-through), no drag to reposition, no peek mode.
+
 ## Controller Tray Icon
 
 A persistent controller icon (headphones) appears in the system tray whenever the monitor is running. Right-click for a context menu:
@@ -180,6 +208,7 @@ A persistent controller icon (headphones) appears in the system tray whenever th
 - **Sound Pack** — Switch the active pack (Random, installed packs, or None)
 - **Enabled Packs** — Toggle individual packs on/off for random selection
 - **Icon Style** — Switch between dot icons and installed graphics packs (Dots, installed packs)
+- **Overlay** — Toggle overlay window, select position and size
 - **Sessions** — View and switch to active sessions
 - **Workspaces** — View and switch to pinned workspaces
 - **Open Config Folder / Open Sounds Folder / View Log** — Quick access to file locations
@@ -216,7 +245,8 @@ Supports Windows 10 (20H1+) and Windows 11 (all versions through 24H2).
 ```json
 {
   "tray": { "enabled": true, "iconStyle": "dots" },
-  "sound": { "enabled": true, "defaultPack": "random", "disabledPacks": [] }
+  "sound": { "enabled": true, "defaultPack": "random", "disabledPacks": [] },
+  "overlay": { "enabled": false, "position": "bottom-right", "size": 64, "spacing": 4 }
 }
 ```
 

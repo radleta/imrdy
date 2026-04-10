@@ -95,7 +95,7 @@ internal static class ConfigCommand
         if (args.Length < 2)
         {
             console.MarkupLine("[red]Usage:[/] imrdy config set <key> <value>");
-            console.MarkupLine("[dim]Keys: tray.enabled, sound.enabled, sound.defaultPack, sound.projects.<project>[/]");
+            console.MarkupLine("[dim]Keys: tray.enabled, sound.enabled, sound.defaultPack, sound.projects.<project>, overlay.enabled, overlay.position, overlay.size, overlay.spacing[/]");
             return 1;
         }
 
@@ -142,9 +142,43 @@ internal static class ConfigCommand
                     }
                 });
             }
+            else if (string.Equals(key, "overlay.enabled", StringComparison.OrdinalIgnoreCase))
+            {
+                if (!bool.TryParse(value, out var enabled))
+                {
+                    console.MarkupLine($"[red]Invalid value for '{Markup.Escape(key)}':[/] expected true/false, got '{Markup.Escape(value)}'");
+                    return 1;
+                }
+
+                ConfigReader.Update(c => c with { Overlay = c.Overlay with { Enabled = enabled } });
+            }
+            else if (string.Equals(key, "overlay.position", StringComparison.OrdinalIgnoreCase))
+            {
+                ConfigReader.Update(c => c with { Overlay = c.Overlay with { Position = value } });
+            }
+            else if (string.Equals(key, "overlay.size", StringComparison.OrdinalIgnoreCase))
+            {
+                if (!int.TryParse(value, out var size))
+                {
+                    console.MarkupLine($"[red]Invalid value for '{Markup.Escape(key)}':[/] expected integer, got '{Markup.Escape(value)}'");
+                    return 1;
+                }
+
+                ConfigReader.Update(c => c with { Overlay = c.Overlay with { Size = size } });
+            }
+            else if (string.Equals(key, "overlay.spacing", StringComparison.OrdinalIgnoreCase))
+            {
+                if (!int.TryParse(value, out var spacing))
+                {
+                    console.MarkupLine($"[red]Invalid value for '{Markup.Escape(key)}':[/] expected integer, got '{Markup.Escape(value)}'");
+                    return 1;
+                }
+
+                ConfigReader.Update(c => c with { Overlay = c.Overlay with { Spacing = spacing } });
+            }
             else
             {
-                console.MarkupLine($"[red]Unknown key: '{Markup.Escape(key)}'.[/] Valid keys: tray.enabled, sound.enabled, sound.defaultPack, sound.projects.<path>");
+                console.MarkupLine($"[red]Unknown key: '{Markup.Escape(key)}'.[/] Valid keys: tray.enabled, sound.enabled, sound.defaultPack, sound.projects.<path>, overlay.enabled, overlay.position, overlay.size, overlay.spacing");
                 return 1;
             }
 

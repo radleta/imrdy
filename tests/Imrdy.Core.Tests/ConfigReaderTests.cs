@@ -179,4 +179,52 @@ public class ConfigReaderTests : IDisposable
         var hasBom = bytes.Length >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF;
         hasBom.Should().BeFalse("config file should be BOM-free UTF-8");
     }
+
+    [Fact]
+    public void Read_DefaultConfig_HasOverlayDefaults()
+    {
+        var config = ConfigReader.Read();
+
+        config.Overlay.Enabled.Should().BeFalse();
+        config.Overlay.Position.Should().Be("bottom-right");
+        config.Overlay.Size.Should().Be(64);
+        config.Overlay.Spacing.Should().Be(4);
+    }
+
+    [Fact]
+    public void Read_WithOverlayEnabled_DeserializesCorrectly()
+    {
+        File.WriteAllText(_configPath, """{"overlay":{"enabled":true,"position":"bottom-left","size":128,"spacing":8}}""");
+
+        var config = ConfigReader.Read();
+
+        config.Overlay.Enabled.Should().BeTrue();
+        config.Overlay.Position.Should().Be("bottom-left");
+        config.Overlay.Size.Should().Be(128);
+        config.Overlay.Spacing.Should().Be(8);
+    }
+
+    [Fact]
+    public void EnsureDefaults_WithNullOverlay_SetsDefaults()
+    {
+        File.WriteAllText(_configPath, """{"overlay":null}""");
+
+        var config = ConfigReader.Read();
+
+        config.Overlay.Should().NotBeNull();
+        config.Overlay.Enabled.Should().BeFalse();
+        config.Overlay.Position.Should().Be("bottom-right");
+        config.Overlay.Size.Should().Be(64);
+        config.Overlay.Spacing.Should().Be(4);
+    }
+
+    [Fact]
+    public void EnsureDefaults_WithEmptyPosition_DefaultsToBottomRight()
+    {
+        File.WriteAllText(_configPath, """{"overlay":{"enabled":true,"position":"","size":64,"spacing":4}}""");
+
+        var config = ConfigReader.Read();
+
+        config.Overlay.Position.Should().Be("bottom-right");
+    }
 }
