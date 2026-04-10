@@ -129,6 +129,46 @@ public class ConfigReaderTests : IDisposable
     }
 
     [Fact]
+    public void Read_WithMissingIconStyle_DefaultsToDots()
+    {
+        File.WriteAllText(_configPath, """{"tray":{"enabled":true}}""");
+
+        var config = ConfigReader.Read();
+
+        config.Tray.IconStyle.Should().Be("dots");
+    }
+
+    [Fact]
+    public void Read_WithEmptyIconStyle_DefaultsToDots()
+    {
+        File.WriteAllText(_configPath, """{"tray":{"enabled":true,"iconStyle":""}}""");
+
+        var config = ConfigReader.Read();
+
+        config.Tray.IconStyle.Should().Be("dots");
+    }
+
+    [Fact]
+    public void Read_WithExplicitDotsStyle_Preserves()
+    {
+        File.WriteAllText(_configPath, """{"tray":{"enabled":true,"iconStyle":"dots"}}""");
+
+        var config = ConfigReader.Read();
+
+        config.Tray.IconStyle.Should().Be("dots");
+    }
+
+    [Fact]
+    public void Read_WithPackStyle_Preserves()
+    {
+        File.WriteAllText(_configPath, """{"tray":{"enabled":true,"iconStyle":"pack:test-name"}}""");
+
+        var config = ConfigReader.Read();
+
+        config.Tray.IconStyle.Should().Be("pack:test-name");
+    }
+
+    [Fact]
     public void Read_BomFreeOutput()
     {
         ConfigReader.Update(c => c);

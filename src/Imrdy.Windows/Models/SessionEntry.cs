@@ -30,8 +30,8 @@ internal sealed class SessionEntry : IDisposable
     /// <summary>Assigned virtual desktop index.</summary>
     public int? DesktopIndex { get; set; }
 
-    /// <summary>Last computed aging factor. Used to avoid unnecessary icon updates.</summary>
-    public double LastAgingFactor { get; set; } = 1.0;
+    /// <summary>Last computed aging tier. Used to avoid unnecessary icon updates.</summary>
+    public int LastAgingTier { get; set; } = 0;
 
     public void Dispose()
     {

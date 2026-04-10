@@ -24,6 +24,9 @@ internal static class ControllerMenuModel
         // Enabled Packs submenu (checkbox toggles)
         items.Add(BuildEnabledPacksSubmenu(state));
 
+        // Icon Style submenu
+        items.Add(BuildIconStyleSubmenu(state));
+
         items.Add(new MenuItemModel { Type = MenuItemType.Separator });
 
         // Sessions submenu
@@ -130,6 +133,40 @@ internal static class ControllerMenuModel
         return new MenuItemModel
         {
             Label = "Sound Pack",
+            Type = MenuItemType.Submenu,
+            Children = children,
+        };
+    }
+
+    private static MenuItemModel BuildIconStyleSubmenu(ControllerMenuState state)
+    {
+        var children = new List<MenuItemModel>();
+        var currentStyle = state.Config.Tray.IconStyle ?? "dots";
+        var isDots = !currentStyle.StartsWith("pack:", StringComparison.OrdinalIgnoreCase);
+
+        // Dots (built-in) — always present
+        children.Add(new MenuItemModel
+        {
+            Label = "Dots (built-in)",
+            Tag = "switch-icon-style:dots",
+            Checked = isDots,
+        });
+
+        // Installed graphics packs
+        foreach (var pack in state.InstalledGraphicsPacks)
+        {
+            var packStyle = $"pack:{pack}";
+            children.Add(new MenuItemModel
+            {
+                Label = pack,
+                Tag = $"switch-icon-style:{packStyle}",
+                Checked = string.Equals(currentStyle, packStyle, StringComparison.OrdinalIgnoreCase),
+            });
+        }
+
+        return new MenuItemModel
+        {
+            Label = "Icon Style",
             Type = MenuItemType.Submenu,
             Children = children,
         };

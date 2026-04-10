@@ -1,4 +1,5 @@
 using Imrdy.Core;
+using Imrdy.Core.Graphics;
 using Imrdy.Core.Sound;
 using Imrdy.Core.State;
 using Imrdy.Core.Validation;
@@ -66,6 +67,13 @@ public class ServiceRegistrationTests : IDisposable
     {
         var provider = BuildHookServices();
         provider.GetService<PackLoader>().Should().NotBeNull();
+    }
+
+    [Fact]
+    public void HookServices_Resolves_GraphicsPackLoader()
+    {
+        var provider = BuildHookServices();
+        provider.GetRequiredService<GraphicsPackLoader>().Should().NotBeNull();
     }
 
     [Fact]

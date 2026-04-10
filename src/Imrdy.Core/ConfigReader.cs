@@ -53,9 +53,13 @@ public static class ConfigReader
     private static ImrdyConfig EnsureDefaults(ImrdyConfig? config)
     {
         if (config is null) return new ImrdyConfig();
+        var tray = config.Tray ?? new TrayConfig();
         return config with
         {
-            Tray = config.Tray ?? new TrayConfig(),
+            Tray = tray with
+            {
+                IconStyle = string.IsNullOrWhiteSpace(tray.IconStyle) ? "dots" : tray.IconStyle
+            },
             Sound = (config.Sound ?? new SoundConfig()) with
             {
                 DisabledPacks = config.Sound?.DisabledPacks ?? [],

@@ -2,6 +2,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Serilog;
 using Serilog.Core;
 using Serilog.Events;
+using Imrdy.Core.Graphics;
 using Imrdy.Core.Sound;
 using Imrdy.Core.State;
 using Imrdy.Core.Validation;
@@ -21,6 +22,7 @@ public static class ServiceRegistration
     {
         services.AddSingleton<StateFileReader>();
         services.AddSingleton<PackLoader>();
+        services.AddSingleton<GraphicsPackLoader>();
         services.AddSingleton<CooldownTracker>();
         services.AddSingleton<WorkspaceVisibility>();
         services.AddSingleton<PackValidator>();

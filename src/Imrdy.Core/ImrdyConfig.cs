@@ -13,6 +13,7 @@ public record ImrdyConfig
 public record TrayConfig
 {
     public bool Enabled { get; init; } = true;
+    public string IconStyle { get; init; } = "dots";
 }
 
 public record SoundConfig

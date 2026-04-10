@@ -47,4 +47,34 @@ public static class StatusMap
     /// Gets all known base status names.
     /// </summary>
     public static IReadOnlyCollection<string> KnownBaseStatuses => BaseToColor.Keys;
+
+    /// <summary>
+    /// 5 aging tiers based on time since last interaction.
+    /// 0 = fresh (under 1m), 4 = oldest (15m+).
+    /// </summary>
+    public static int GetAgingTier(TimeSpan timeSinceLastSeen)
+    {
+        var minutes = timeSinceLastSeen.TotalMinutes;
+        return minutes switch
+        {
+            < 1 => 0,
+            < 3 => 1,
+            < 7 => 2,
+            < 15 => 3,
+            _ => 4,
+        };
+    }
+
+    /// <summary>
+    /// Converts an aging tier (0-4) to a brightness factor.
+    /// Matches the legacy GetAgingFactor values used by CircleIconRenderer.
+    /// </summary>
+    public static double GetAgingFactorFromTier(int tier) => tier switch
+    {
+        0 => 1.0,
+        1 => 0.85,
+        2 => 0.70,
+        3 => 0.55,
+        _ => 0.40,
+    };
 }

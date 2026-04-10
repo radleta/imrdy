@@ -13,6 +13,8 @@ public static class ImrdyPaths
     public static string Workspaces { get; }
     public static string SoundsDir { get; }
     public static string PacksDir { get; }
+    public static string GraphicsDir { get; }
+    public static string GraphicsPacksDir { get; }
     public static string LogsDir { get; }
     public static string MonitorLog { get; }
 
@@ -29,6 +31,8 @@ public static class ImrdyPaths
         Workspaces = Path.Combine(Home, "workspaces.json");
         SoundsDir = Path.Combine(Home, "sounds");
         PacksDir = Path.Combine(Home, "sounds", "packs");
+        GraphicsDir = Path.Combine(Home, "graphics");
+        GraphicsPacksDir = Path.Combine(Home, "graphics", "packs");
         LogsDir = Path.Combine(Home, "logs");
         MonitorLog = Path.Combine(Home, "logs", "monitor.log");
     }

@@ -1,0 +1,15 @@
+{
+  "name": "dev-test",
+  "format": "svg",
+  "version": "0.0.1",
+  "license": "NOT FOR DISTRIBUTION (dev fixture)",
+  "states": {
+    "idle":       { "file": "idle.svg" },
+    "busy":       { "file": "busy.svg" },
+    "attention":  { "file": "attention.svg" },
+    "permission": { "file": "permission.svg" },
+    "compact":    { "file": "compact.svg" },
+    "unknown":    { "file": "unknown.svg" },
+    "workspace":  { "file": "workspace.svg" }
+  }
+}

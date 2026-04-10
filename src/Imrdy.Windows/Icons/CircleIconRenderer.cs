@@ -1,6 +1,7 @@
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Runtime.InteropServices;
+using Imrdy.Core.Status;
 
 namespace Imrdy.Windows.Icons;
 
@@ -9,10 +10,23 @@ namespace Imrdy.Windows.Icons;
 /// Uses SystemInformation.SmallIconSize for correct sizing.
 /// Safe icon creation pattern: GetHicon → FromHandle.Clone → DestroyIcon.
 /// </summary>
-internal static class CircleIconRenderer
+internal sealed class CircleIconRenderer : ITrayIconRenderer
 {
     [DllImport("user32.dll", SetLastError = true)]
     private static extern bool DestroyIcon(IntPtr hIcon);
+
+    private readonly AgingCache _cache = new();
+
+    /// <inheritdoc/>
+    public Icon GetIcon(string status, int ageTier)
+    {
+        var (r, g, b) = StatusMap.ResolveColor(status);
+        var factor = StatusMap.GetAgingFactorFromTier(ageTier);
+        return _cache.GetOrCreate(r, g, b, factor);
+    }
+
+    /// <inheritdoc/>
+    public void Dispose() => _cache.Dispose();
 
     /// <summary>
     /// Creates a circle icon with the given RGB color and aging factor.
@@ -21,7 +35,7 @@ internal static class CircleIconRenderer
     /// <param name="g">Green component (0-255).</param>
     /// <param name="b">Blue component (0-255).</param>
     /// <param name="agingFactor">Brightness factor (1.0 = full, 0.4 = darkest).</param>
-    public static Icon CreateCircleIcon(byte r, byte g, byte b, double agingFactor = 1.0)
+    internal static Icon CreateCircleIcon(byte r, byte g, byte b, double agingFactor = 1.0)
     {
         var size = SystemInformation.SmallIconSize;
         var agedR = (byte)(r * agingFactor);
@@ -48,22 +62,5 @@ internal static class CircleIconRenderer
         {
             DestroyIcon(hIcon);
         }
-    }
-
-    /// <summary>
-    /// Calculates the aging factor based on time since last interaction.
-    /// 5 tiers: 0-1m (1.0), 1-3m (0.85), 3-7m (0.70), 7-15m (0.55), 15m+ (0.40).
-    /// </summary>
-    public static double GetAgingFactor(TimeSpan timeSinceLastSeen)
-    {
-        var minutes = timeSinceLastSeen.TotalMinutes;
-        return minutes switch
-        {
-            < 1 => 1.0,
-            < 3 => 0.85,
-            < 7 => 0.70,
-            < 15 => 0.55,
-            _ => 0.40,
-        };
     }
 }

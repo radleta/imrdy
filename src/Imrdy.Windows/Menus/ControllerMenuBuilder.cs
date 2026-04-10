@@ -68,6 +68,12 @@ internal static class ControllerMenuBuilder
                 }));
                 onConfigChanged(ConfigReader.Read());
             }
+            else if (tag.StartsWith("switch-icon-style:", StringComparison.Ordinal))
+            {
+                var newStyle = tag["switch-icon-style:".Length..];
+                await Task.Run(() => ConfigReader.Update(c => c with { Tray = c.Tray with { IconStyle = newStyle } }));
+                onConfigChanged(ConfigReader.Read());
+            }
             else if (tag == "open-config")
             {
                 OpenFolder("explorer.exe", ImrdyPaths.Home, logger);

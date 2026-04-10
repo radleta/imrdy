@@ -15,7 +15,12 @@
   </ItemGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="Imrdy.Integration.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Microsoft.Toolkit.Uwp.Notifications" Version="7.1.3" />
+    <PackageReference Include="Svg" Version="3.4.7" />
     <PackageReference Include="System.Threading.AccessControl" Version="10.0.5" />
   </ItemGroup>
 

@@ -68,4 +68,52 @@ public class StatusMapTests
         StatusMap.KnownBaseStatuses.Should().HaveCount(7);
         StatusMap.KnownBaseStatuses.Should().Contain(["busy", "idle", "attention", "permission", "compact", "unknown", "workspace"]);
     }
+
+    [Fact]
+    public void GetAgingTier_Under1Minute_Returns0()
+    {
+        StatusMap.GetAgingTier(TimeSpan.FromSeconds(30)).Should().Be(0);
+    }
+
+    [Fact]
+    public void GetAgingTier_Between1And3Minutes_Returns1()
+    {
+        StatusMap.GetAgingTier(TimeSpan.FromMinutes(2)).Should().Be(1);
+    }
+
+    [Fact]
+    public void GetAgingTier_Between3And7Minutes_Returns2()
+    {
+        StatusMap.GetAgingTier(TimeSpan.FromMinutes(5)).Should().Be(2);
+    }
+
+    [Fact]
+    public void GetAgingTier_Between7And15Minutes_Returns3()
+    {
+        StatusMap.GetAgingTier(TimeSpan.FromMinutes(10)).Should().Be(3);
+    }
+
+    [Fact]
+    public void GetAgingTier_Over15Minutes_Returns4()
+    {
+        StatusMap.GetAgingTier(TimeSpan.FromMinutes(20)).Should().Be(4);
+    }
+
+    [Fact]
+    public void GetAgingTier_AtBoundary_UsesLowerTier()
+    {
+        // TimeSpan.FromMinutes(1) is exactly 1 minute — must return tier 1 (not 0), since the < 1 branch excludes it
+        StatusMap.GetAgingTier(TimeSpan.FromMinutes(1)).Should().Be(1);
+    }
+
+    [Fact]
+    public void GetAgingFactorFromTier_RoundTripMatchesLegacy()
+    {
+        // Verify all 5 tiers produce the same factor as CircleIconRenderer.GetAgingFactor at each tier boundary
+        StatusMap.GetAgingFactorFromTier(0).Should().Be(1.0);   // < 1m
+        StatusMap.GetAgingFactorFromTier(1).Should().Be(0.85);  // 1-3m
+        StatusMap.GetAgingFactorFromTier(2).Should().Be(0.70);  // 3-7m
+        StatusMap.GetAgingFactorFromTier(3).Should().Be(0.55);  // 7-15m
+        StatusMap.GetAgingFactorFromTier(4).Should().Be(0.40);  // 15m+
+    }
 }

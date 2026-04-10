@@ -118,6 +118,60 @@ Or map packs to specific projects via config:
 imrdy config set sound.defaultPack my-pack
 ```
 
+## Graphics Packs
+
+Graphics packs let you replace the default colored-dot tray icons with custom SVG artwork. Each session icon is rendered by a pack at runtime via Svg.NET.
+
+**Pack location:** `~/.imrdy/graphics/packs/<pack-name>/`
+
+**Pack structure:**
+```
+~/.imrdy/graphics/packs/my-pack/
+  pack.json
+  idle.svg
+  busy.svg
+  attention.svg
+  permission.svg
+  compact.svg
+  unknown.svg
+  workspace.svg
+```
+
+**Minimal `pack.json`:**
+```json
+{
+  "name": "my-pack",
+  "format": "svg",
+  "version": "1.0.0",
+  "license": "MIT",
+  "states": {
+    "idle":       { "file": "idle.svg" },
+    "busy":       { "file": "busy.svg" },
+    "attention":  { "file": "attention.svg" },
+    "permission": { "file": "permission.svg" },
+    "compact":    { "file": "compact.svg" },
+    "unknown":    { "file": "unknown.svg" },
+    "workspace":  { "file": "workspace.svg" }
+  }
+}
+```
+
+**Install a pack:** Drop the pack folder into `~/.imrdy/graphics/packs/`. Only install packs from trusted sources — SVG files are rendered at runtime and pack content is not sanitized in this release.
+
+**Switch to a pack:**
+```bash
+imrdy config set tray.iconStyle pack:my-pack
+```
+
+**Switch back to dots:**
+```bash
+imrdy config set tray.iconStyle dots
+```
+
+Aging (session idle time) is applied automatically to all packs via `ColorMatrix` desaturation and dimming — no pack-specific work required. If a pack fails to load, the tray silently falls back to the built-in dot renderer.
+
+All packs must declare a `license` field in `pack.json`. A stub `dev-test` pack ships with the source under `src/Imrdy.Windows/Resources/graphics-packs/` for use in development.
+
 ## Controller Tray Icon
 
 A persistent controller icon (headphones) appears in the system tray whenever the monitor is running. Right-click for a context menu:
@@ -154,12 +208,13 @@ Supports Windows 10 (20H1+) and Windows 11 (all versions through 24H2).
 | Session state files | `~/.imrdy/sessions/*.json` |
 | Workspace config | `~/.imrdy/workspaces.json` |
 | Sound packs | `~/.imrdy/sounds/packs/` |
+| Graphics packs | `~/.imrdy/graphics/packs/` |
 | Logs | `~/.imrdy/logs/monitor.log` |
 
 **Config schema (`~/.imrdy/config.json`):**
 ```json
 {
-  "tray": { "enabled": true },
+  "tray": { "enabled": true, "iconStyle": "dots" },
   "sound": { "enabled": true, "defaultPack": "random", "disabledPacks": [] }
 }
 ```

@@ -32,11 +32,15 @@ imrdy             → TrayApp (WinForms ApplicationContext, Application.Run, mes
 
 The hook runs hundreds of times per session. It uses `HookServiceBuilder` (lightweight DI, no COM/WinForms). The tray uses `MonitorServiceBuilder` (full DI with COM desktop manager).
 
+### Graphics Packs
+
+`ITrayIconRenderer` interface with two impls: `CircleIconRenderer` (built-in GDI+ dots, always-available fallback) and `PackIconRenderer` (SVG via Svg.NET v3.4.7). Config flag `tray.iconStyle` selects: `"dots"` or `"pack:<name>"`. Packs live at `~/.imrdy/graphics/packs/<name>/` with a `pack.json` manifest. `GraphicsPackLoader` in `Imrdy.Core` mirrors the sound `PackLoader`. Pack load failure silently falls back to dots.
+
 ## Build & Test
 
 ```bash
 dotnet build                                    # Debug build
-dotnet test --filter "Category!=Integration&Category!=Benchmark"  # Unit tests only (291 tests)
+dotnet test --filter "Category!=Integration&Category!=Benchmark"  # Unit tests only (321 tests)
 ./build-dev.sh                                  # Publish → stop tray → deploy to ~/.local/bin/ → auto-respawn
 ```
 

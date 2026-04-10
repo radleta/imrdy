@@ -232,6 +232,70 @@ public class ControllerMenuModelTests
         separatorIndices.Should().HaveCount(4);
     }
 
+    [Fact]
+    public void Build_IconStyleSubmenu_DotsCheckedByDefault()
+    {
+        var state = MenuTestHelper.EmptyControllerState() with
+        {
+            Config = new ImrdyConfig { Tray = new TrayConfig { IconStyle = "dots" } },
+        };
+
+        var items = ControllerMenuModel.Build(state);
+
+        var iconStyleMenu = items.First(i => i.Label == "Icon Style");
+        iconStyleMenu.Children.Should().ContainSingle();
+        var dots = iconStyleMenu.Children.First(c => c.Label == "Dots (built-in)");
+        dots.Checked.Should().BeTrue();
+        iconStyleMenu.Children.Should().NotContain(c => c.Label != "Dots (built-in)" && c.Checked);
+    }
+
+    [Fact]
+    public void Build_IconStyleSubmenu_PackCheckedWhenActive()
+    {
+        var state = MenuTestHelper.EmptyControllerState() with
+        {
+            InstalledGraphicsPacks = ["my-pack"],
+            Config = new ImrdyConfig { Tray = new TrayConfig { IconStyle = "pack:my-pack" } },
+        };
+
+        var items = ControllerMenuModel.Build(state);
+
+        var iconStyleMenu = items.First(i => i.Label == "Icon Style");
+        iconStyleMenu.Children.First(c => c.Label == "my-pack").Checked.Should().BeTrue();
+        iconStyleMenu.Children.First(c => c.Label == "Dots (built-in)").Checked.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Build_IconStyleSubmenu_ListsAllInstalledPacks()
+    {
+        var state = MenuTestHelper.EmptyControllerState() with
+        {
+            InstalledGraphicsPacks = ["pack-a", "pack-b"],
+        };
+
+        var items = ControllerMenuModel.Build(state);
+
+        var iconStyleMenu = items.First(i => i.Label == "Icon Style");
+        iconStyleMenu.Children.Should().HaveCount(3); // Dots + pack-a + pack-b
+        iconStyleMenu.Children.Select(c => c.Label).Should().Contain("Dots (built-in)", "pack-a", "pack-b");
+    }
+
+    [Fact]
+    public void Build_IconStyleSubmenu_EmptyPacksList_ShowsOnlyDots()
+    {
+        var state = MenuTestHelper.EmptyControllerState() with
+        {
+            InstalledGraphicsPacks = [],
+        };
+
+        var items = ControllerMenuModel.Build(state);
+
+        var iconStyleMenu = items.First(i => i.Label == "Icon Style");
+        iconStyleMenu.Children.Should().ContainSingle();
+        iconStyleMenu.Children.Single().Label.Should().Be("Dots (built-in)");
+        iconStyleMenu.Children.Single().Checked.Should().BeTrue();
+    }
+
     private static List<string> FlattenTags(IReadOnlyList<MenuItemModel> items)
     {
         var tags = new List<string>();

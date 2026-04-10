@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Reflection;
 using Imrdy.Core;
 using Imrdy.Core.Desktop;
+using Imrdy.Core.Graphics;
 using Imrdy.Core.Menus;
 using Imrdy.Core.Sound;
 using Imrdy.Core.State;
@@ -42,7 +43,10 @@ internal sealed class TrayApp : ApplicationContext
     private readonly PackLoader _packLoader;
     private readonly IDesktopManager _desktopManager;
     private readonly MonitorOptions _options;
-    private readonly AgingCache _agingCache = new();
+    private ITrayIconRenderer _renderer;
+    private readonly TrayIconRendererFactory _rendererFactory;
+    private readonly GraphicsPackLoader _graphicsPackLoader;
+    private string _currentIconStyle;
     private readonly BalloonTipManager _balloonTipManager;
     private readonly WorkspaceVisibility _workspaceVisibility = new();
     private readonly WinFormsSoundPlayer _soundPlayer = new();
@@ -84,7 +88,10 @@ internal sealed class TrayApp : ApplicationContext
         CooldownTracker cooldownTracker,
         PackLoader packLoader,
         IDesktopManager desktopManager,
-        MonitorOptions options)
+        MonitorOptions options,
+        ITrayIconRenderer renderer,
+        TrayIconRendererFactory rendererFactory,
+        GraphicsPackLoader graphicsPackLoader)
     {
         _logger = loggerFactory.CreateLogger<TrayApp>();
         _stateReader = stateReader;
@@ -93,6 +100,10 @@ internal sealed class TrayApp : ApplicationContext
         _packLoader = packLoader;
         _desktopManager = desktopManager;
         _options = options;
+        _renderer = renderer;
+        _rendererFactory = rendererFactory;
+        _graphicsPackLoader = graphicsPackLoader;
+        _currentIconStyle = ConfigReader.Read().Tray.IconStyle ?? "dots";
         _balloonTipManager = new BalloonTipManager(loggerFactory)
         {
             Disabled = _options.NoToast,
@@ -311,15 +322,14 @@ internal sealed class TrayApp : ApplicationContext
         {
             if (entry.Icon is null) continue;
 
-            var (r, g, b) = StatusMap.ResolveColor(entry.State.Status);
             var agingSince = DateTimeOffset.UtcNow - entry.LastSeenAt;
-            var newFactor = CircleIconRenderer.GetAgingFactor(agingSince);
+            var newTier = StatusMap.GetAgingTier(agingSince);
 
             // Only update icon if aging tier changed (avoid GDI churn)
-            if (Math.Abs(newFactor - entry.LastAgingFactor) > 0.001)
+            if (newTier != entry.LastAgingTier)
             {
-                entry.LastAgingFactor = newFactor;
-                entry.Icon.Icon = _agingCache.GetOrCreate(r, g, b, newFactor);
+                entry.LastAgingTier = newTier;
+                entry.Icon.Icon = _renderer.GetIcon(entry.State.Status, newTier);
             }
 
             // Always update tooltip (status age changes every tick)
@@ -589,8 +599,8 @@ internal sealed class TrayApp : ApplicationContext
             var d = entry.State;
             var age = (int)(DateTimeOffset.UtcNow - entry.StatusSince).TotalSeconds;
             var seenAge = (int)(DateTimeOffset.UtcNow - entry.LastSeenAt).TotalSeconds;
-            var agingFactor = entry.LastAgingFactor;
-            lines.Add($"{ts} [DUMP] {sid[..Math.Min(8, sid.Length)]} project={d.Project} status={d.Status} hook={d.HookEvent} desktop={entry.DesktopIndex} pack={entry.SoundPack} dismissed={entry.Dismissed} statusAge={age}s seenAge={seenAge}s aging={agingFactor:F2} pid={d.ClaudePid}");
+            var agingTier = entry.LastAgingTier;
+            lines.Add($"{ts} [DUMP] {sid[..Math.Min(8, sid.Length)]} project={d.Project} status={d.Status} hook={d.HookEvent} desktop={entry.DesktopIndex} pack={entry.SoundPack} dismissed={entry.Dismissed} statusAge={age}s seenAge={seenAge}s agingTier={agingTier} pid={d.ClaudePid}");
 
             // Check state file consistency
             var stateFile = Path.Combine(ImrdyPaths.Sessions, $"{sid}.json");
@@ -731,8 +741,7 @@ internal sealed class TrayApp : ApplicationContext
 
     private void CreateSessionIcon(SessionEntry entry)
     {
-        var (r, g, b) = StatusMap.ResolveColor(entry.State.Status);
-        var icon = _agingCache.GetOrCreate(r, g, b, 1.0);
+        var icon = _renderer.GetIcon(entry.State.Status, 0);
 
         entry.Icon = new NotifyIcon
         {
@@ -946,20 +955,16 @@ internal sealed class TrayApp : ApplicationContext
             return;
         }
 
-        var (r, g, b) = StatusMap.ResolveColor(entry.State.Status);
         var agingSince = DateTimeOffset.UtcNow - entry.LastSeenAt;
-        var factor = CircleIconRenderer.GetAgingFactor(agingSince);
-        entry.LastAgingFactor = factor;
-        var icon = _agingCache.GetOrCreate(r, g, b, factor);
-
-        entry.Icon.Icon = icon;
+        var tier = StatusMap.GetAgingTier(agingSince);
+        entry.LastAgingTier = tier;
+        entry.Icon.Icon = _renderer.GetIcon(entry.State.Status, tier);
         entry.Icon.Text = FormatSessionTooltip(entry);
     }
 
     private void CreateWorkspaceIcon(WorkspaceSessionEntry entry)
     {
-        var (r, g, b) = StatusMap.ResolveColor("workspace");
-        var icon = _agingCache.GetOrCreate(r, g, b, 1.0);
+        var icon = _renderer.GetIcon("workspace", 0);
 
         entry.Icon = new NotifyIcon
         {
@@ -1039,7 +1044,9 @@ internal sealed class TrayApp : ApplicationContext
                 WorkspacePath = w.Workspace.Path,
             }).ToList(),
             InstalledPacks = _loadedPacks.Select(p => p.Name).ToList(),
-            Config = new ImrdyConfig { Sound = _soundConfig },
+            InstalledGraphicsPacks = _graphicsPackLoader.LoadPacks(ImrdyPaths.GraphicsPacksDir)
+                .Select(p => p.Name).ToList(),
+            Config = ConfigReader.Read(),
             LogPath = ImrdyPaths.MonitorLog,
         };
     }
@@ -1053,6 +1060,34 @@ internal sealed class TrayApp : ApplicationContext
         _balloonTipManager.SuppressSystemSound = _loadedPacks.Count > 0 && _soundEnabled;
         _logger.LogDebug("Config updated from controller menu: enabled={Enabled}, default={Default}",
             config.Sound.Enabled, config.Sound.DefaultPack);
+
+        var newIconStyle = config.Tray.IconStyle ?? "dots";
+        if (!string.Equals(newIconStyle, _currentIconStyle, StringComparison.OrdinalIgnoreCase))
+        {
+            var oldRenderer = _renderer;
+            _renderer = _rendererFactory.Create(newIconStyle);
+            _currentIconStyle = newIconStyle;
+            oldRenderer.Dispose();
+            RefreshAllSessionIcons();
+            _logger.LogInformation("Icon style changed to {IconStyle}", newIconStyle);
+        }
+    }
+
+    private void RefreshAllSessionIcons()
+    {
+        foreach (var entry in _sessions.Values)
+        {
+            if (entry.Icon is null) continue;
+            var agingSince = DateTimeOffset.UtcNow - entry.LastSeenAt;
+            var tier = StatusMap.GetAgingTier(agingSince);
+            entry.LastAgingTier = tier;
+            entry.Icon.Icon = _renderer.GetIcon(entry.State.Status, tier);
+        }
+        foreach (var ws in _workspaces.Values)
+        {
+            if (ws.Icon is null) continue;
+            ws.Icon.Icon = _renderer.GetIcon("workspace", 0);
+        }
     }
 
     // --- Sound Triggers (port of PS1:700-750) ---
@@ -1281,7 +1316,7 @@ internal sealed class TrayApp : ApplicationContext
 
         _workspaces.Clear();
 
-        _agingCache.Dispose();
+        _renderer.Dispose();
         _balloonTipManager.Dispose();
         _soundPlayer.Dispose();
         _desktopManager.Dispose();

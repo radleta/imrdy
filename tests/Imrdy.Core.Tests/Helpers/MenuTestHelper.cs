@@ -9,6 +9,7 @@ internal static class MenuTestHelper
         Sessions = [],
         Workspaces = [],
         InstalledPacks = [],
+        InstalledGraphicsPacks = [],
         Config = new ImrdyConfig(),
         LogPath = @"C:\test\.imrdy\logs\monitor.log",
     };
@@ -26,6 +27,7 @@ internal static class MenuTestHelper
             new WorkspaceMenuState { WorkspaceName = "Dev", WorkspacePath = @"C:\dev" },
         ],
         InstalledPacks = ["assistant", "retro"],
+        InstalledGraphicsPacks = [],
         Config = new ImrdyConfig { Sound = new SoundConfig { Enabled = true, DefaultPack = "random" } },
         LogPath = @"C:\test\.imrdy\logs\monitor.log",
     };
