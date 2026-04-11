@@ -1,4 +1,5 @@
 using FluentAssertions;
+using Imrdy.Core.Icons;
 using Imrdy.Core.Menus;
 using Imrdy.Core.Tests.Helpers;
 
@@ -233,7 +234,21 @@ public class ControllerMenuModelTests
     }
 
     [Fact]
-    public void Build_IconStyleSubmenu_DotsCheckedByDefault()
+    public void Build_IconStyleSubmenu_CirclesCheckedByDefault()
+    {
+        // Default TrayConfig.IconStyle is "dots" which normalizes to "circles"
+        var state = MenuTestHelper.EmptyControllerState();
+
+        var items = ControllerMenuModel.Build(state);
+
+        var iconStyleMenu = items.First(i => i.Label == "Icon Style");
+        iconStyleMenu.Children.First(c => c.Tag == "switch-icon-style:circles").Checked.Should().BeTrue();
+        iconStyleMenu.Children.Where(c => c.Tag != "switch-icon-style:circles" && c.Type == MenuItemType.Item)
+            .Should().OnlyContain(c => !c.Checked);
+    }
+
+    [Fact]
+    public void Build_IconStyleSubmenu_DotsNormalizesToCircles()
     {
         var state = MenuTestHelper.EmptyControllerState() with
         {
@@ -243,10 +258,54 @@ public class ControllerMenuModelTests
         var items = ControllerMenuModel.Build(state);
 
         var iconStyleMenu = items.First(i => i.Label == "Icon Style");
-        iconStyleMenu.Children.Should().ContainSingle();
-        var dots = iconStyleMenu.Children.First(c => c.Label == "Dots (built-in)");
-        dots.Checked.Should().BeTrue();
-        iconStyleMenu.Children.Should().NotContain(c => c.Label != "Dots (built-in)" && c.Checked);
+        iconStyleMenu.Children.First(c => c.Tag == "switch-icon-style:circles").Checked.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Build_IconStyleSubmenu_AllSixBuiltInsPresent()
+    {
+        var state = MenuTestHelper.EmptyControllerState();
+
+        var items = ControllerMenuModel.Build(state);
+
+        var iconStyleMenu = items.First(i => i.Label == "Icon Style");
+        foreach (var styleName in StyleNames.BuiltInStyles)
+        {
+            iconStyleMenu.Children.Should().Contain(c => c.Tag == $"switch-icon-style:{styleName}",
+                $"built-in style '{styleName}' should be present");
+        }
+    }
+
+    [Fact]
+    public void Build_IconStyleSubmenu_BuiltInLabelsAreTitleCase()
+    {
+        var state = MenuTestHelper.EmptyControllerState();
+
+        var items = ControllerMenuModel.Build(state);
+
+        var iconStyleMenu = items.First(i => i.Label == "Icon Style");
+        iconStyleMenu.Children.First(c => c.Tag == "switch-icon-style:circles").Label.Should().Be("Circles");
+        iconStyleMenu.Children.First(c => c.Tag == "switch-icon-style:squares").Label.Should().Be("Squares");
+        iconStyleMenu.Children.First(c => c.Tag == "switch-icon-style:triangles").Label.Should().Be("Triangles");
+        iconStyleMenu.Children.First(c => c.Tag == "switch-icon-style:diamonds").Label.Should().Be("Diamonds");
+        iconStyleMenu.Children.First(c => c.Tag == "switch-icon-style:hexagons").Label.Should().Be("Hexagons");
+        iconStyleMenu.Children.First(c => c.Tag == "switch-icon-style:plus").Label.Should().Be("Plus");
+    }
+
+    [Fact]
+    public void Build_IconStyleSubmenu_SpecificStyleChecked()
+    {
+        var state = MenuTestHelper.EmptyControllerState() with
+        {
+            Config = new ImrdyConfig { Tray = new TrayConfig { IconStyle = "triangles" } },
+        };
+
+        var items = ControllerMenuModel.Build(state);
+
+        var iconStyleMenu = items.First(i => i.Label == "Icon Style");
+        iconStyleMenu.Children.First(c => c.Tag == "switch-icon-style:triangles").Checked.Should().BeTrue();
+        iconStyleMenu.Children.Where(c => c.Tag != "switch-icon-style:triangles" && c.Type == MenuItemType.Item)
+            .Should().OnlyContain(c => !c.Checked);
     }
 
     [Fact]
@@ -262,7 +321,7 @@ public class ControllerMenuModelTests
 
         var iconStyleMenu = items.First(i => i.Label == "Icon Style");
         iconStyleMenu.Children.First(c => c.Label == "my-pack").Checked.Should().BeTrue();
-        iconStyleMenu.Children.First(c => c.Label == "Dots (built-in)").Checked.Should().BeFalse();
+        iconStyleMenu.Children.First(c => c.Tag == "switch-icon-style:circles").Checked.Should().BeFalse();
     }
 
     [Fact]
@@ -276,12 +335,13 @@ public class ControllerMenuModelTests
         var items = ControllerMenuModel.Build(state);
 
         var iconStyleMenu = items.First(i => i.Label == "Icon Style");
-        iconStyleMenu.Children.Should().HaveCount(3); // Dots + pack-a + pack-b
-        iconStyleMenu.Children.Select(c => c.Label).Should().Contain("Dots (built-in)", "pack-a", "pack-b");
+        // 6 built-ins + separator + 2 packs = 9
+        iconStyleMenu.Children.Should().HaveCount(9);
+        iconStyleMenu.Children.Select(c => c.Label).Should().Contain("pack-a", "pack-b");
     }
 
     [Fact]
-    public void Build_IconStyleSubmenu_EmptyPacksList_ShowsOnlyDots()
+    public void Build_IconStyleSubmenu_EmptyPacksList_ShowsOnlySixBuiltIns()
     {
         var state = MenuTestHelper.EmptyControllerState() with
         {
@@ -291,9 +351,25 @@ public class ControllerMenuModelTests
         var items = ControllerMenuModel.Build(state);
 
         var iconStyleMenu = items.First(i => i.Label == "Icon Style");
-        iconStyleMenu.Children.Should().ContainSingle();
-        iconStyleMenu.Children.Single().Label.Should().Be("Dots (built-in)");
-        iconStyleMenu.Children.Single().Checked.Should().BeTrue();
+        iconStyleMenu.Children.Should().HaveCount(6);
+        iconStyleMenu.Children.Should().OnlyContain(c => c.Type == MenuItemType.Item);
+    }
+
+    [Fact]
+    public void Build_IconStyleSubmenu_HasSeparatorBeforePacks()
+    {
+        var state = MenuTestHelper.EmptyControllerState() with
+        {
+            InstalledGraphicsPacks = ["my-pack"],
+        };
+
+        var items = ControllerMenuModel.Build(state);
+
+        var iconStyleMenu = items.First(i => i.Label == "Icon Style");
+        // 6 built-ins + 1 separator + 1 pack = 8
+        iconStyleMenu.Children.Should().HaveCount(8);
+        iconStyleMenu.Children[6].Type.Should().Be(MenuItemType.Separator);
+        iconStyleMenu.Children[7].Label.Should().Be("my-pack");
     }
 
     [Fact]

@@ -7,7 +7,9 @@ public sealed record SessionMenuState
     public string? Project { get; init; }
     public int? DesktopIndex { get; init; }
     public string? SoundPack { get; init; }
+    public string? IconStyle { get; init; }
     public IReadOnlyList<string> InstalledPacks { get; init; } = [];
+    public IReadOnlyList<string> InstalledGraphicsPacks { get; init; } = [];
     public int? DesktopCount { get; init; }
     public bool DesktopAvailable { get; init; }
     public bool IsPinned { get; init; }

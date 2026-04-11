@@ -27,6 +27,9 @@ internal sealed class SessionEntry : IDisposable
     /// <summary>Assigned sound pack name.</summary>
     public string? SoundPack { get; set; }
 
+    /// <summary>Assigned icon style (shape name or pack style). Null means use the global default.</summary>
+    public string? IconStyle { get; set; }
+
     /// <summary>Assigned virtual desktop index.</summary>
     public int? DesktopIndex { get; set; }
 

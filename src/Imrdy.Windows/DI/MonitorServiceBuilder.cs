@@ -26,12 +26,6 @@ public static class MonitorServiceBuilder
         services.AddSingleton<ISoundPlayer, WinFormsSoundPlayer>();
         services.AddSingleton<IDesktopManager, ComVirtualDesktop>();
         services.AddSingleton<TrayIconRendererFactory>();
-        services.AddSingleton<ITrayIconRenderer>(sp =>
-        {
-            var factory = sp.GetRequiredService<TrayIconRendererFactory>();
-            var config = ConfigReader.Read();
-            return factory.Create(config.Tray.IconStyle);
-        });
         services.AddSingleton<TrayApp>();
         return services.BuildServiceProvider();
     }

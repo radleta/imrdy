@@ -3,6 +3,7 @@ using System.Reflection;
 using Imrdy.Core;
 using Imrdy.Core.Desktop;
 using Imrdy.Core.Graphics;
+using Imrdy.Core.Icons;
 using Imrdy.Core.Menus;
 using Imrdy.Core.Sound;
 using Imrdy.Core.State;
@@ -45,7 +46,7 @@ internal sealed class TrayApp : ApplicationContext
     private readonly PackLoader _packLoader;
     private readonly IDesktopManager _desktopManager;
     private readonly MonitorOptions _options;
-    private ITrayIconRenderer _renderer;
+    private readonly Dictionary<string, ITrayIconRenderer> _rendererCache = new(StringComparer.OrdinalIgnoreCase);
     private readonly TrayIconRendererFactory _rendererFactory;
     private readonly GraphicsPackLoader _graphicsPackLoader;
     private string _currentIconStyle;
@@ -94,7 +95,6 @@ internal sealed class TrayApp : ApplicationContext
         PackLoader packLoader,
         IDesktopManager desktopManager,
         MonitorOptions options,
-        ITrayIconRenderer renderer,
         TrayIconRendererFactory rendererFactory,
         GraphicsPackLoader graphicsPackLoader)
     {
@@ -106,10 +106,9 @@ internal sealed class TrayApp : ApplicationContext
         _packLoader = packLoader;
         _desktopManager = desktopManager;
         _options = options;
-        _renderer = renderer;
         _rendererFactory = rendererFactory;
         _graphicsPackLoader = graphicsPackLoader;
-        _currentIconStyle = ConfigReader.Read().Tray.IconStyle ?? "dots";
+        _currentIconStyle = StyleNames.NormalizeStyleName(ConfigReader.Read().Tray.IconStyle) ?? "circles";
         _balloonTipManager = new BalloonTipManager(loggerFactory)
         {
             Disabled = _options.NoToast,
@@ -355,7 +354,7 @@ internal sealed class TrayApp : ApplicationContext
                 if (newTier != entry.LastAgingTier)
                 {
                     entry.LastAgingTier = newTier;
-                    entry.Icon.Icon = _renderer.GetIcon(entry.State.Status, newTier);
+                    entry.Icon.Icon = GetRendererForStyle(StyleNames.NormalizeStyleName(entry.IconStyle) ?? _currentIconStyle).GetIcon(entry.State.Status, newTier);
                 }
 
                 // Always update tooltip (status age changes every tick)
@@ -446,16 +445,28 @@ internal sealed class TrayApp : ApplicationContext
             // Map null (no pack resolved) to "" (explicitly none) so it persists
             resolvedPack ??= "";
 
+            // Normalize and validate icon style — reject unknown values (fall back to null = global default)
+            var normalizedStyle = StyleNames.NormalizeStyleName(state.IconStyle);
+            if (normalizedStyle is not null
+                && !StyleNames.BuiltInStyles.Contains(normalizedStyle, StringComparer.OrdinalIgnoreCase)
+                && !normalizedStyle.StartsWith("pack:", StringComparison.OrdinalIgnoreCase))
+            {
+                _logger.LogDebug("Unknown icon style '{Style}' in state file for {SessionId} — ignoring", normalizedStyle, state.SessionId);
+                normalizedStyle = null;
+            }
+
             entry = new SessionEntry
             {
                 SessionId = state.SessionId,
                 State = state,
                 SoundPack = resolvedPack,
                 DesktopIndex = state.DesktopIndex,
+                IconStyle = normalizedStyle,
             };
 
-            // Write resolved pack to state file so the hook preserves it
+            // Write resolved pack and icon style to state file so the hook preserves them
             PersistSessionSoundPack(entry);
+            PersistSessionIconStyle(entry);
 
             _sessions[state.SessionId] = entry;
             CreateSessionIcon(entry);
@@ -591,6 +602,14 @@ internal sealed class TrayApp : ApplicationContext
     private void PersistSessionSoundPack(SessionEntry entry)
     {
         PersistSessionField(entry, current => current with { SoundPack = entry.SoundPack });
+    }
+
+    /// <summary>
+    /// Writes the session's icon_style to its state file so the hook preserves it.
+    /// </summary>
+    private void PersistSessionIconStyle(SessionEntry entry)
+    {
+        PersistSessionField(entry, current => current with { IconStyle = entry.IconStyle });
     }
 
     private void PersistSessionField(SessionEntry entry, Func<StateFileModel, StateFileModel> update)
@@ -773,9 +792,18 @@ internal sealed class TrayApp : ApplicationContext
 
     // --- Icon Management ---
 
+    private ITrayIconRenderer GetRendererForStyle(string styleName)
+    {
+        if (_rendererCache.TryGetValue(styleName, out var cached))
+            return cached;
+        var renderer = _rendererFactory.Create(styleName);
+        _rendererCache[styleName] = renderer;
+        return renderer;
+    }
+
     private void CreateSessionIcon(SessionEntry entry)
     {
-        var icon = _renderer.GetIcon(entry.State.Status, 0);
+        var icon = GetRendererForStyle(StyleNames.NormalizeStyleName(entry.IconStyle) ?? _currentIconStyle).GetIcon(entry.State.Status, 0);
 
         entry.Icon = new NotifyIcon
         {
@@ -810,6 +838,12 @@ internal sealed class TrayApp : ApplicationContext
                     entry.SoundPack = packName ?? "";
                     PersistSessionSoundPack(entry);
                     _logger.LogDebug("Set session {SessionId} sound pack to {Pack}", entry.SessionId, entry.SoundPack);
+                },
+                OnSetIconStyle: styleName =>
+                {
+                    entry.IconStyle = styleName;
+                    PersistSessionIconStyle(entry);
+                    UpdateSessionIcon(entry);
                 },
                 OnPinWorkspace: () =>
                 {
@@ -855,6 +889,7 @@ internal sealed class TrayApp : ApplicationContext
                 OnDumpState: () => DumpState(),
                 OnExit: () => ExitThread()),
             getInstalledPacks: () => _loadedPacks.Select(p => p.Name).ToList(),
+            getInstalledGraphicsPacks: () => _graphicsPackLoader.LoadPacks(ImrdyPaths.GraphicsPacksDir).Select(p => p.Name).ToList(),
             getDesktopCount: () => _desktopManager.GetDesktopCount(),
             getDesktopAvailable: () => _desktopManager.IsAvailable,
             getIsPinned: () => !string.IsNullOrEmpty(entry.State.Cwd) && _workspaceStore.IsPinned(entry.State.Cwd),
@@ -993,14 +1028,14 @@ internal sealed class TrayApp : ApplicationContext
         var agingSince = DateTimeOffset.UtcNow - entry.LastSeenAt;
         var tier = StatusMap.GetAgingTier(agingSince);
         entry.LastAgingTier = tier;
-        entry.Icon.Icon = _renderer.GetIcon(entry.State.Status, tier);
+        entry.Icon.Icon = GetRendererForStyle(StyleNames.NormalizeStyleName(entry.IconStyle) ?? _currentIconStyle).GetIcon(entry.State.Status, tier);
         entry.Icon.Text = FormatSessionTooltip(entry);
         RefreshOverlay();
     }
 
     private void CreateWorkspaceIcon(WorkspaceSessionEntry entry)
     {
-        var icon = _renderer.GetIcon("workspace", 0);
+        var icon = GetRendererForStyle(_currentIconStyle).GetIcon("workspace", 0);
 
         entry.Icon = new NotifyIcon
         {
@@ -1097,14 +1132,14 @@ internal sealed class TrayApp : ApplicationContext
         _logger.LogDebug("Config updated from controller menu: enabled={Enabled}, default={Default}",
             config.Sound.Enabled, config.Sound.DefaultPack);
 
-        var newIconStyle = config.Tray.IconStyle ?? "dots";
+        var newIconStyle = StyleNames.NormalizeStyleName(config.Tray.IconStyle) ?? "circles";
         if (!string.Equals(newIconStyle, _currentIconStyle, StringComparison.OrdinalIgnoreCase))
         {
-            var oldRenderer = _renderer;
-            _renderer = _rendererFactory.Create(newIconStyle);
             _currentIconStyle = newIconStyle;
-            oldRenderer.Dispose();
             RefreshAllSessionIcons();
+            var overlayForInvalidate = _overlayWindow;
+            if (overlayForInvalidate is not null)
+                overlayForInvalidate.BeginInvoke(() => overlayForInvalidate.InvalidateStyleCache());
             _logger.LogInformation("Icon style changed to {IconStyle}", newIconStyle);
         }
 
@@ -1148,12 +1183,12 @@ internal sealed class TrayApp : ApplicationContext
             var agingSince = DateTimeOffset.UtcNow - entry.LastSeenAt;
             var tier = StatusMap.GetAgingTier(agingSince);
             entry.LastAgingTier = tier;
-            entry.Icon.Icon = _renderer.GetIcon(entry.State.Status, tier);
+            entry.Icon.Icon = GetRendererForStyle(StyleNames.NormalizeStyleName(entry.IconStyle) ?? _currentIconStyle).GetIcon(entry.State.Status, tier);
         }
         foreach (var ws in _workspaces.Values)
         {
             if (ws.Icon is null) continue;
-            ws.Icon.Icon = _renderer.GetIcon("workspace", 0);
+            ws.Icon.Icon = GetRendererForStyle(_currentIconStyle).GetIcon("workspace", 0);
         }
     }
 
@@ -1165,7 +1200,8 @@ internal sealed class TrayApp : ApplicationContext
             .Select(e => new OverlaySessionInfo(
                 e.SessionId,
                 e.State.Status,
-                e.LastAgingTier))
+                e.LastAgingTier,
+                StyleNames.NormalizeStyleName(e.IconStyle) ?? _currentIconStyle))
             .ToList();
         _overlayWindow.UpdateSessions(sessions);
     }
@@ -1400,7 +1436,9 @@ internal sealed class TrayApp : ApplicationContext
 
         _workspaces.Clear();
 
-        _renderer.Dispose();
+        foreach (var r in _rendererCache.Values)
+            r.Dispose();
+        _rendererCache.Clear();
         _balloonTipManager.Dispose();
         _soundPlayer.Dispose();
         _desktopManager.Dispose();

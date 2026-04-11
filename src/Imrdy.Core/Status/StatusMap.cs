@@ -67,7 +67,7 @@ public static class StatusMap
 
     /// <summary>
     /// Converts an aging tier (0-4) to a brightness factor.
-    /// Matches the legacy GetAgingFactor values used by CircleIconRenderer.
+    /// Matches the legacy GetAgingFactor values used by ParametricShapeRenderer.
     /// </summary>
     public static double GetAgingFactorFromTier(int tier) => tier switch
     {

@@ -11,7 +11,7 @@ namespace Imrdy.Windows.Icons;
 /// Renders tray icons from an SVG-based graphics pack.
 /// Pre-renders all (state, tier) combinations eagerly in the constructor.
 /// Falls back gracefully on any render failure — caller should check IsHealthy
-/// and substitute a CircleIconRenderer if false (handled by Step 8 DI wiring).
+/// and substitute a ParametricShapeRenderer if false (handled by TrayIconRendererFactory).
 /// </summary>
 internal sealed class PackIconRenderer : ITrayIconRenderer
 {
@@ -25,7 +25,7 @@ internal sealed class PackIconRenderer : ITrayIconRenderer
     /// <summary>
     /// True if all (state, tier) combinations rendered successfully during construction.
     /// False means the cache is empty and GetIcon will return a safety-net transparent icon.
-    /// The DI builder in Step 8 reads this to decide whether to swap to CircleIconRenderer.
+    /// TrayIconRendererFactory reads this to decide whether to swap to ParametricShapeRenderer.
     /// </summary>
     internal bool IsHealthy { get; private set; }
 

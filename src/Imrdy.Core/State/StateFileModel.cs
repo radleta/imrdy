@@ -37,6 +37,9 @@ public sealed record StateFileModel
     [JsonPropertyName("sound_pack")]
     public string? SoundPack { get; init; }
 
+    [JsonPropertyName("icon_style")]
+    public string? IconStyle { get; init; }
+
     [JsonPropertyName("desktop_index")]
     public int? DesktopIndex { get; init; }
 

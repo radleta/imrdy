@@ -1,3 +1,6 @@
+using System.Globalization;
+using Imrdy.Core.Icons;
+
 namespace Imrdy.Core.Menus;
 
 internal static class ControllerMenuModel
@@ -144,27 +147,35 @@ internal static class ControllerMenuModel
     private static MenuItemModel BuildIconStyleSubmenu(ControllerMenuState state)
     {
         var children = new List<MenuItemModel>();
-        var currentStyle = state.Config.Tray.IconStyle ?? "dots";
-        var isDots = !currentStyle.StartsWith("pack:", StringComparison.OrdinalIgnoreCase);
+        var currentStyle = StyleNames.NormalizeStyleName(state.Config.Tray.IconStyle) ?? "circles";
+        var textInfo = CultureInfo.InvariantCulture.TextInfo;
 
-        // Dots (built-in) — always present
-        children.Add(new MenuItemModel
+        // Built-in shape styles
+        foreach (var styleName in StyleNames.BuiltInStyles)
         {
-            Label = "Dots (built-in)",
-            Tag = "switch-icon-style:dots",
-            Checked = isDots,
-        });
-
-        // Installed graphics packs
-        foreach (var pack in state.InstalledGraphicsPacks)
-        {
-            var packStyle = $"pack:{pack}";
             children.Add(new MenuItemModel
             {
-                Label = pack,
-                Tag = $"switch-icon-style:{packStyle}",
-                Checked = string.Equals(currentStyle, packStyle, StringComparison.OrdinalIgnoreCase),
+                Label = textInfo.ToTitleCase(styleName),
+                Tag = $"switch-icon-style:{styleName}",
+                Checked = string.Equals(currentStyle, styleName, StringComparison.OrdinalIgnoreCase),
             });
+        }
+
+        // Installed graphics packs (after separator)
+        if (state.InstalledGraphicsPacks.Count > 0)
+        {
+            children.Add(new MenuItemModel { Type = MenuItemType.Separator });
+
+            foreach (var pack in state.InstalledGraphicsPacks)
+            {
+                var packStyle = $"pack:{pack}";
+                children.Add(new MenuItemModel
+                {
+                    Label = pack,
+                    Tag = $"switch-icon-style:{packStyle}",
+                    Checked = string.Equals(currentStyle, packStyle, StringComparison.OrdinalIgnoreCase),
+                });
+            }
         }
 
         return new MenuItemModel

@@ -34,17 +34,17 @@ The hook runs hundreds of times per session. It uses `HookServiceBuilder` (light
 
 ### Graphics Packs
 
-`ITrayIconRenderer` interface with two impls: `CircleIconRenderer` (built-in GDI+ dots, always-available fallback) and `PackIconRenderer` (SVG via Svg.NET v3.4.7). Config flag `tray.iconStyle` selects: `"dots"` or `"pack:<name>"`. Packs live at `~/.imrdy/graphics/packs/<name>/` with a `pack.json` manifest. `GraphicsPackLoader` in `Imrdy.Core` mirrors the sound `PackLoader`. Pack load failure silently falls back to dots.
+`ITrayIconRenderer` interface with two impls: `ParametricShapeRenderer` (built-in GDI+ shapes, always-available fallback; replaces `CircleIconRenderer`) and `PackIconRenderer` (SVG via Svg.NET v3.4.7). Six built-in styles: `circles`, `squares`, `triangles`, `diamonds`, `hexagons`, `plus`. `StyleNames` in `Imrdy.Core` provides `NormalizeStyleName` (maps `"dots"` → `"circles"`) and `BuiltInStyles`. Config flag `tray.iconStyle` selects: any built-in name or `"pack:<name>"`. `TrayIconRendererFactory` creates renderers by style name; `TrayApp._rendererCache` (keyed by style) replaces the former single `_renderer` field. Per-session icon style override: tray-owned, persisted via `PersistSessionField`, mirrors SoundPack pattern. Packs live at `~/.imrdy/graphics/packs/<name>/` with a `pack.json` manifest. `GraphicsPackLoader` in `Imrdy.Core` mirrors the sound `PackLoader`. Pack load failure silently falls back to circles.
 
 ### Overlay (Mode B)
 
-`OverlayWindow` in `src/Imrdy.Windows/Overlay/` — borderless transparent `Form` with `WS_EX_LAYERED` for per-pixel alpha via `UpdateLayeredWindow`. Renders session characters as a horizontal row at the bottom screen edge. Uses `GraphicsPackLoader` directly to render SVGs at overlay size (or GDI+ circles in dots mode) — independent of `ITrayIconRenderer`. TopMost enforced by a 5-second watchdog via `SetWindowPos` P/Invoke. `PInvokeOverlay.cs` in `src/Imrdy.Windows/Desktop/` holds all overlay-specific Win32 declarations. Pre-rendered bitmap cache with aging (`ColorMatrix` desaturation). Config: `overlay.enabled`, `overlay.position`, `overlay.size`, `overlay.spacing`.
+`OverlayWindow` in `src/Imrdy.Windows/Overlay/` — borderless transparent `Form` with `WS_EX_LAYERED` for per-pixel alpha via `UpdateLayeredWindow`. Renders session characters as a horizontal row at the bottom screen edge. Uses `GraphicsPackLoader` directly to render SVGs at overlay size — independent of `ITrayIconRenderer` (which is fixed to `SmallIconSize`). In built-in mode, renders shapes directly via `ShapeDefinitions` delegates at overlay size. Per-session icon style respected via `OverlaySessionInfo.IconStyle`. TopMost enforced by a 5-second watchdog via `SetWindowPos` P/Invoke. `PInvokeOverlay.cs` in `src/Imrdy.Windows/Desktop/` holds all overlay-specific Win32 declarations. Lazy bitmap cache keyed by `(style, status, tier)` with aging (`ColorMatrix` desaturation); replaces former eager `PreRenderAll`. Config: `overlay.enabled`, `overlay.position`, `overlay.size`, `overlay.spacing`.
 
 ## Build & Test
 
 ```bash
 dotnet build                                    # Debug build
-dotnet test --filter "Category!=Integration&Category!=Benchmark"  # Unit tests only (333 tests)
+dotnet test --filter "Category!=Integration&Category!=Benchmark"  # Unit tests only (362 tests)
 ./build-dev.sh                                  # Publish → stop tray → deploy to ~/.local/bin/ → auto-respawn
 ```
 

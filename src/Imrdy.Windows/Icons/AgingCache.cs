@@ -3,12 +3,25 @@ using System.Drawing;
 namespace Imrdy.Windows.Icons;
 
 /// <summary>
-/// Caches rendered tray icons by status + aging factor to avoid GDI+ churn.
-/// Disposes evicted entries when a cache key is replaced.
+/// Caches rendered tray icons by color + aging factor to avoid GDI+ churn.
+/// The icon factory delegate is supplied at construction time, decoupling the
+/// cache from any specific shape renderer.
+/// AgingCache owns all Icons produced by the factory — callers get borrowed references
+/// and must not dispose them.
 /// </summary>
 internal sealed class AgingCache : IDisposable
 {
     private readonly Dictionary<string, Icon> _cache = new();
+    private readonly Func<byte, byte, byte, double, Icon> _iconFactory;
+
+    /// <param name="iconFactory">
+    /// Called on cache miss to produce a new Icon for the given color and aging factor.
+    /// The returned Icon is owned by AgingCache and will be disposed on Clear/Dispose.
+    /// </param>
+    public AgingCache(Func<byte, byte, byte, double, Icon> iconFactory)
+    {
+        _iconFactory = iconFactory;
+    }
 
     /// <summary>
     /// Gets or creates a cached icon for the given status color and aging factor.
@@ -22,7 +35,7 @@ internal sealed class AgingCache : IDisposable
             return cached;
         }
 
-        var icon = CircleIconRenderer.CreateCircleIcon(r, g, b, agingFactor);
+        var icon = _iconFactory(r, g, b, agingFactor);
         _cache[key] = icon;
         return icon;
     }

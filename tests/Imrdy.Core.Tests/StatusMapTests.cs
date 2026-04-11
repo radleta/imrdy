@@ -109,7 +109,7 @@ public class StatusMapTests
     [Fact]
     public void GetAgingFactorFromTier_RoundTripMatchesLegacy()
     {
-        // Verify all 5 tiers produce the same factor as CircleIconRenderer.GetAgingFactor at each tier boundary
+        // Verify all 5 tiers produce the correct factor used by ParametricShapeRenderer
         StatusMap.GetAgingFactorFromTier(0).Should().Be(1.0);   // < 1m
         StatusMap.GetAgingFactorFromTier(1).Should().Be(0.85);  // 1-3m
         StatusMap.GetAgingFactorFromTier(2).Should().Be(0.70);  // 3-7m

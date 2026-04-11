@@ -9,6 +9,7 @@ internal sealed record SessionMenuCallbacks(
     Action OnAssignDesktop,
     Action<int?> OnSetDesktop,
     Action<string?> OnSetPack,
+    Action<string?> OnSetIconStyle,
     Action OnPinWorkspace,
     Action OnUnpinWorkspace,
     Action OnClear,
@@ -22,6 +23,7 @@ internal static class SessionMenuBuilder
         SessionEntry entry,
         SessionMenuCallbacks callbacks,
         Func<IReadOnlyList<string>> getInstalledPacks,
+        Func<IReadOnlyList<string>> getInstalledGraphicsPacks,
         Func<int?> getDesktopCount,
         Func<bool> getDesktopAvailable,
         Func<bool> getIsPinned,
@@ -39,7 +41,9 @@ internal static class SessionMenuBuilder
                     Project = entry.State.Project,
                     DesktopIndex = entry.DesktopIndex,
                     SoundPack = entry.SoundPack,
+                    IconStyle = entry.IconStyle,
                     InstalledPacks = getInstalledPacks(),
+                    InstalledGraphicsPacks = getInstalledGraphicsPacks(),
                     DesktopCount = getDesktopCount(),
                     DesktopAvailable = getDesktopAvailable(),
                     IsPinned = getIsPinned(),
@@ -72,6 +76,11 @@ internal static class SessionMenuBuilder
         {
             var packName = tag["set-pack:".Length..];
             callbacks.OnSetPack(packName == "(none)" ? null : packName);
+        }
+        else if (tag.StartsWith("set-icon-style:", StringComparison.Ordinal))
+        {
+            var styleName = tag["set-icon-style:".Length..];
+            callbacks.OnSetIconStyle(styleName == "(default)" ? null : styleName);
         }
         else if (tag == "pin-workspace")
             callbacks.OnPinWorkspace();

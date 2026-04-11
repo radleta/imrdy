@@ -13,8 +13,8 @@ public class SessionMenuModelTests
 
         var items = SessionMenuModel.Build(state);
 
-        // Header, separator, Switch, Assign, SetDesktop, SoundPack, separator, PinAsWorkspace, separator, Manage, separator, Exit
-        items.Should().HaveCount(12);
+        // Header, separator, Switch, Assign, SetDesktop, SoundPack, IconStyle, separator, PinAsWorkspace, separator, Manage, separator, Exit
+        items.Should().HaveCount(13);
     }
 
     [Fact]
@@ -204,5 +204,109 @@ public class SessionMenuModelTests
 
         items.First(i => i.Tag == "switch-desktop").Enabled.Should().BeFalse();
         items.First(i => i.Tag == "assign-desktop").Enabled.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Build_IconStyleSubmenu_DefaultCheckedWhenIconStyleNull()
+    {
+        var state = MenuTestHelper.SingleSessionState("proj", "idle") with { IconStyle = null };
+
+        var items = SessionMenuModel.Build(state);
+
+        var iconStyleMenu = items.First(i => i.Label == "Icon Style");
+        iconStyleMenu.Children.First(c => c.Tag == "set-icon-style:(default)").Checked.Should().BeTrue();
+        iconStyleMenu.Children.Where(c => c.Tag != "set-icon-style:(default)" && c.Type == MenuItemType.Item)
+            .Should().OnlyContain(c => !c.Checked);
+    }
+
+    [Fact]
+    public void Build_IconStyleSubmenu_SpecificStyleCheckedWhenSet()
+    {
+        var state = MenuTestHelper.SingleSessionState("proj", "idle") with { IconStyle = "squares" };
+
+        var items = SessionMenuModel.Build(state);
+
+        var iconStyleMenu = items.First(i => i.Label == "Icon Style");
+        iconStyleMenu.Children.First(c => c.Tag == "set-icon-style:(default)").Checked.Should().BeFalse();
+        iconStyleMenu.Children.First(c => c.Tag == "set-icon-style:squares").Checked.Should().BeTrue();
+        iconStyleMenu.Children.Where(c => c.Tag != "set-icon-style:squares" && c.Type == MenuItemType.Item)
+            .Should().OnlyContain(c => !c.Checked);
+    }
+
+    [Fact]
+    public void Build_IconStyleSubmenu_AllSixBuiltInsPresent()
+    {
+        var state = MenuTestHelper.SingleSessionState("proj", "idle");
+
+        var items = SessionMenuModel.Build(state);
+
+        var iconStyleMenu = items.First(i => i.Label == "Icon Style");
+        iconStyleMenu.Children.Should().Contain(c => c.Tag == "set-icon-style:circles");
+        iconStyleMenu.Children.Should().Contain(c => c.Tag == "set-icon-style:squares");
+        iconStyleMenu.Children.Should().Contain(c => c.Tag == "set-icon-style:triangles");
+        iconStyleMenu.Children.Should().Contain(c => c.Tag == "set-icon-style:diamonds");
+        iconStyleMenu.Children.Should().Contain(c => c.Tag == "set-icon-style:hexagons");
+        iconStyleMenu.Children.Should().Contain(c => c.Tag == "set-icon-style:plus");
+    }
+
+    [Fact]
+    public void Build_IconStyleSubmenu_DefaultItemIsFirst()
+    {
+        var state = MenuTestHelper.SingleSessionState("proj", "idle");
+
+        var items = SessionMenuModel.Build(state);
+
+        var iconStyleMenu = items.First(i => i.Label == "Icon Style");
+        iconStyleMenu.Children[0].Tag.Should().Be("set-icon-style:(default)");
+        iconStyleMenu.Children[0].Label.Should().Be("(Default)");
+        iconStyleMenu.Children[1].Type.Should().Be(MenuItemType.Separator);
+    }
+
+    [Fact]
+    public void Build_IconStyleSubmenu_WithPacksHasSeparatorBeforePacks()
+    {
+        var state = MenuTestHelper.SingleSessionState("proj", "idle") with
+        {
+            InstalledGraphicsPacks = ["ghosts-b"],
+        };
+
+        var items = SessionMenuModel.Build(state);
+
+        var iconStyleMenu = items.First(i => i.Label == "Icon Style");
+        // (Default) + sep + 6 built-ins + sep + 1 pack = 10
+        iconStyleMenu.Children.Should().HaveCount(10);
+        iconStyleMenu.Children[8].Type.Should().Be(MenuItemType.Separator);
+        iconStyleMenu.Children[9].Tag.Should().Be("set-icon-style:pack:ghosts-b");
+    }
+
+    [Fact]
+    public void Build_IconStyleSubmenu_NoPacks_HasDefaultAndSixBuiltIns()
+    {
+        var state = MenuTestHelper.SingleSessionState("proj", "idle") with
+        {
+            InstalledGraphicsPacks = [],
+        };
+
+        var items = SessionMenuModel.Build(state);
+
+        var iconStyleMenu = items.First(i => i.Label == "Icon Style");
+        // (Default) + sep + 6 built-ins = 8
+        iconStyleMenu.Children.Should().HaveCount(8);
+    }
+
+    [Fact]
+    public void Build_IconStyleSubmenu_PackCheckedWhenIconStyleIsPackStyle()
+    {
+        var state = MenuTestHelper.SingleSessionState("proj", "idle") with
+        {
+            IconStyle = "pack:ghosts-b",
+            InstalledGraphicsPacks = ["ghosts-b"],
+        };
+
+        var items = SessionMenuModel.Build(state);
+
+        var iconStyleMenu = items.First(i => i.Label == "Icon Style");
+        iconStyleMenu.Children.First(c => c.Tag == "set-icon-style:pack:ghosts-b").Checked.Should().BeTrue();
+        iconStyleMenu.Children.First(c => c.Tag == "set-icon-style:(default)").Checked.Should().BeFalse();
     }
 }
