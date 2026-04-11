@@ -15,4 +15,7 @@ public sealed record WorkspaceEntry
 
     [JsonPropertyName("desktop")]
     public int Desktop { get; init; }
+
+    [JsonPropertyName("icon_style")]
+    public string? IconStyle { get; init; }
 }

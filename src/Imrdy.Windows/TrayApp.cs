@@ -705,6 +705,7 @@ internal sealed class TrayApp : ApplicationContext
                 if (_workspaces.TryGetValue(key, out var existing))
                 {
                     existing.Workspace = workspace;
+                    existing.IconStyle = StyleNames.NormalizeStyleName(workspace.IconStyle);
                 }
                 else
                 {
@@ -712,6 +713,7 @@ internal sealed class TrayApp : ApplicationContext
                     {
                         Workspace = workspace,
                     };
+                    wsEntry.IconStyle = StyleNames.NormalizeStyleName(workspace.IconStyle);
                     _workspaces[key] = wsEntry;
                     CreateWorkspaceIcon(wsEntry);
                     _logger.LogDebug("Workspace added: {Name} ({Path})", workspace.Name, workspace.Path);
@@ -1035,7 +1037,7 @@ internal sealed class TrayApp : ApplicationContext
 
     private void CreateWorkspaceIcon(WorkspaceSessionEntry entry)
     {
-        var icon = GetRendererForStyle(_currentIconStyle).GetIcon("workspace", 0);
+        var icon = GetRendererForStyle(StyleNames.NormalizeStyleName(entry.IconStyle) ?? _currentIconStyle).GetIcon("workspace", 0);
 
         entry.Icon = new NotifyIcon
         {
@@ -1067,6 +1069,16 @@ internal sealed class TrayApp : ApplicationContext
             },
             getDesktopCount: () => _desktopManager.GetDesktopCount(),
             getDesktopAvailable: () => _desktopManager.IsAvailable,
+            onSetIconStyle: styleName =>
+            {
+                entry.IconStyle = styleName;
+                _workspaceStore.SetIconStyle(entry.Workspace.Path, styleName);
+                if (entry.Icon is not null)
+                    entry.Icon.Icon = GetRendererForStyle(
+                        StyleNames.NormalizeStyleName(entry.IconStyle) ?? _currentIconStyle)
+                        .GetIcon("workspace", 0);
+            },
+            getInstalledGraphicsPacks: () => _graphicsPackLoader.LoadPacks(ImrdyPaths.GraphicsPacksDir).Select(p => p.Name).ToList(),
             logger: _logger);
         entry.Icon.ContextMenuStrip = entry.Menu;
 
@@ -1188,7 +1200,7 @@ internal sealed class TrayApp : ApplicationContext
         foreach (var ws in _workspaces.Values)
         {
             if (ws.Icon is null) continue;
-            ws.Icon.Icon = GetRendererForStyle(_currentIconStyle).GetIcon("workspace", 0);
+            ws.Icon.Icon = GetRendererForStyle(StyleNames.NormalizeStyleName(ws.IconStyle) ?? _currentIconStyle).GetIcon("workspace", 0);
         }
     }
 

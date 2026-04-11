@@ -67,9 +67,15 @@ internal static class MenuTestHelper
         DesktopCount = 2,
     };
 
-    public static WorkspaceMenuState PinnedWorkspaceState(string name, string path) => new()
+    public static WorkspaceMenuState PinnedWorkspaceState(
+        string name,
+        string path,
+        string? iconStyle = null,
+        IReadOnlyList<string>? installedGraphicsPacks = null) => new()
     {
         WorkspaceName = name,
         WorkspacePath = path,
+        IconStyle = iconStyle,
+        InstalledGraphicsPacks = installedGraphicsPacks ?? [],
     };
 }

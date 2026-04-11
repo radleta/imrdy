@@ -1,3 +1,6 @@
+using System.Globalization;
+using Imrdy.Core.Icons;
+
 namespace Imrdy.Core.Menus;
 
 internal static class WorkspaceMenuModel
@@ -42,6 +45,10 @@ internal static class WorkspaceMenuModel
             items.Add(new MenuItemModel { Type = MenuItemType.Separator });
         }
 
+        items.Add(BuildIconStyleSubmenu(state));
+
+        items.Add(new MenuItemModel { Type = MenuItemType.Separator });
+
         items.Add(new MenuItemModel
         {
             Label = "Manage",
@@ -50,5 +57,56 @@ internal static class WorkspaceMenuModel
         });
 
         return items;
+    }
+
+    private static MenuItemModel BuildIconStyleSubmenu(WorkspaceMenuState state)
+    {
+        var children = new List<MenuItemModel>();
+        var textInfo = CultureInfo.InvariantCulture.TextInfo;
+
+        // (Default) — use global style
+        children.Add(new MenuItemModel
+        {
+            Label = "(Default)",
+            Tag = "set-icon-style:(default)",
+            Checked = state.IconStyle is null,
+        });
+
+        children.Add(new MenuItemModel { Type = MenuItemType.Separator });
+
+        // Built-in shape styles
+        foreach (var styleName in StyleNames.BuiltInStyles)
+        {
+            children.Add(new MenuItemModel
+            {
+                Label = textInfo.ToTitleCase(styleName),
+                Tag = $"set-icon-style:{styleName}",
+                Checked = string.Equals(state.IconStyle, styleName, StringComparison.OrdinalIgnoreCase),
+            });
+        }
+
+        // Installed graphics packs (after separator)
+        if (state.InstalledGraphicsPacks.Count > 0)
+        {
+            children.Add(new MenuItemModel { Type = MenuItemType.Separator });
+
+            foreach (var pack in state.InstalledGraphicsPacks)
+            {
+                var packStyle = $"pack:{pack}";
+                children.Add(new MenuItemModel
+                {
+                    Label = pack,
+                    Tag = $"set-icon-style:{packStyle}",
+                    Checked = string.Equals(state.IconStyle, packStyle, StringComparison.OrdinalIgnoreCase),
+                });
+            }
+        }
+
+        return new MenuItemModel
+        {
+            Label = "Icon Style",
+            Type = MenuItemType.Submenu,
+            Children = children,
+        };
     }
 }

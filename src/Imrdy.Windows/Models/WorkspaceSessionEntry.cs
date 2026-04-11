@@ -17,6 +17,9 @@ internal sealed class WorkspaceSessionEntry : IDisposable
     /// <summary>Whether the white dot is currently visible (no active sessions).</summary>
     public bool Visible { get; set; } = true;
 
+    /// <summary>Per-workspace icon style override. Null means use global config.</summary>
+    public string? IconStyle { get; set; }
+
     public void Dispose()
     {
         Icon?.Visible = false;

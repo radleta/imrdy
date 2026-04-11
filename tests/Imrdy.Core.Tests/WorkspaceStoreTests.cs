@@ -200,4 +200,46 @@ public class WorkspaceStoreTests : IDisposable
 
         _store.IsPinned(@"D:\dev\project").Should().BeFalse();
     }
+
+    [Fact]
+    public void SetIconStyle_PinnedWorkspace_UpdatesIconStyle()
+    {
+        _store.Pin(@"D:\dev\project", "project", 1);
+        _store.SetIconStyle(@"D:\dev\project", "triangles");
+
+        var config = _store.Load();
+        config.Workspaces[0].IconStyle.Should().Be("triangles");
+    }
+
+    [Fact]
+    public void SetIconStyle_Null_ClearsIconStyle()
+    {
+        _store.Pin(@"D:\dev\project", "project", 1);
+        _store.SetIconStyle(@"D:\dev\project", "triangles");
+        _store.SetIconStyle(@"D:\dev\project", null);
+
+        var config = _store.Load();
+        config.Workspaces[0].IconStyle.Should().BeNull();
+    }
+
+    [Fact]
+    public void SetIconStyle_UnknownPath_DoesNothing()
+    {
+        _store.Pin(@"D:\dev\project", "project", 1);
+        _store.SetIconStyle(@"D:\dev\other", "triangles");
+
+        var config = _store.Load();
+        config.Workspaces[0].IconStyle.Should().BeNull();
+    }
+
+    [Fact]
+    public void Pin_PreservesExistingIconStyle()
+    {
+        _store.Pin(@"D:\dev\project", "project", 1);
+        _store.SetIconStyle(@"D:\dev\project", "triangles");
+        _store.Pin(@"D:\dev\project", "new-name", 2);
+
+        var config = _store.Load();
+        config.Workspaces[0].IconStyle.Should().Be("triangles");
+    }
 }

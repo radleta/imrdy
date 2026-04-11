@@ -19,6 +19,8 @@ internal static class WorkspaceMenuBuilder
         Action<int> onSetDesktop,
         Func<int?> getDesktopCount,
         Func<bool> getDesktopAvailable,
+        Action<string?> onSetIconStyle,
+        Func<IReadOnlyList<string>> getInstalledGraphicsPacks,
         ILogger? logger = null)
     {
         var menu = new ContextMenuStrip();
@@ -33,9 +35,11 @@ internal static class WorkspaceMenuBuilder
                     DesktopIndex = entry.Workspace.Desktop,
                     DesktopCount = getDesktopCount(),
                     DesktopAvailable = getDesktopAvailable(),
+                    IconStyle = entry.IconStyle,
+                    InstalledGraphicsPacks = getInstalledGraphicsPacks(),
                 };
                 var items = WorkspaceMenuModel.Build(state);
-                MenuRenderer.Apply(menu, items, tag => OnClick(tag, onUnpin, onAssignDesktop, onSetDesktop), logger);
+                MenuRenderer.Apply(menu, items, tag => OnClick(tag, onUnpin, onAssignDesktop, onSetDesktop, onSetIconStyle), logger);
             }
             catch (Exception ex)
             {
@@ -45,7 +49,7 @@ internal static class WorkspaceMenuBuilder
         return menu;
     }
 
-    private static void OnClick(string tag, Action<string> onUnpin, Action onAssignDesktop, Action<int> onSetDesktop)
+    private static void OnClick(string tag, Action<string> onUnpin, Action onAssignDesktop, Action<int> onSetDesktop, Action<string?> onSetIconStyle)
     {
         if (tag == "assign-desktop")
             onAssignDesktop();
@@ -55,6 +59,11 @@ internal static class WorkspaceMenuBuilder
         {
             if (int.TryParse(tag["set-desktop:".Length..], out var index))
                 onSetDesktop(index);
+        }
+        else if (tag.StartsWith("set-icon-style:", StringComparison.Ordinal))
+        {
+            var style = tag["set-icon-style:".Length..];
+            onSetIconStyle(style == "(default)" ? null : style);
         }
     }
 }

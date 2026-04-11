@@ -79,6 +79,7 @@ public sealed class WorkspaceStore
                 Path = normalized,
                 Name = name,
                 Desktop = desktop,
+                IconStyle = config.Workspaces[existing].IconStyle,
             };
         }
         else
@@ -121,6 +122,22 @@ public sealed class WorkspaceStore
         if (index >= 0)
         {
             config.Workspaces[index] = config.Workspaces[index] with { Desktop = desktop };
+            Save(config);
+        }
+    }
+
+    /// <summary>
+    /// Updates the icon style override for a workspace. Null clears the override. No-op if not found.
+    /// </summary>
+    public void SetIconStyle(string path, string? iconStyle)
+    {
+        var config = Load();
+        var index = config.Workspaces.FindIndex(
+            w => PathNormalizer.AreEqual(w.Path, path));
+
+        if (index >= 0)
+        {
+            config.Workspaces[index] = config.Workspaces[index] with { IconStyle = iconStyle };
             Save(config);
         }
     }
