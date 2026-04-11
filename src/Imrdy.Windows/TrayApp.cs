@@ -803,9 +803,34 @@ internal sealed class TrayApp : ApplicationContext
         return renderer;
     }
 
+    /// <summary>
+    /// Resolves the effective icon style for a session: session override → workspace override → global default.
+    /// </summary>
+    private string ResolveSessionIconStyle(SessionEntry entry)
+    {
+        var sessionStyle = StyleNames.NormalizeStyleName(entry.IconStyle);
+        if (sessionStyle is not null)
+            return sessionStyle;
+
+        // Inherit from workspace if session has no override
+        var cwd = entry.State?.Cwd;
+        if (!string.IsNullOrEmpty(cwd))
+        {
+            var key = PathNormalizer.Normalize(cwd).ToUpperInvariant();
+            if (_workspaces.TryGetValue(key, out var ws))
+            {
+                var wsStyle = StyleNames.NormalizeStyleName(ws.IconStyle);
+                if (wsStyle is not null)
+                    return wsStyle;
+            }
+        }
+
+        return _currentIconStyle;
+    }
+
     private void CreateSessionIcon(SessionEntry entry)
     {
-        var icon = GetRendererForStyle(StyleNames.NormalizeStyleName(entry.IconStyle) ?? _currentIconStyle).GetIcon(entry.State.Status, 0);
+        var icon = GetRendererForStyle(ResolveSessionIconStyle(entry)).GetIcon(entry.State.Status, 0);
 
         entry.Icon = new NotifyIcon
         {
@@ -1030,7 +1055,7 @@ internal sealed class TrayApp : ApplicationContext
         var agingSince = DateTimeOffset.UtcNow - entry.LastSeenAt;
         var tier = StatusMap.GetAgingTier(agingSince);
         entry.LastAgingTier = tier;
-        entry.Icon.Icon = GetRendererForStyle(StyleNames.NormalizeStyleName(entry.IconStyle) ?? _currentIconStyle).GetIcon(entry.State.Status, tier);
+        entry.Icon.Icon = GetRendererForStyle(ResolveSessionIconStyle(entry)).GetIcon(entry.State.Status, tier);
         entry.Icon.Text = FormatSessionTooltip(entry);
         RefreshOverlay();
     }
@@ -1077,6 +1102,8 @@ internal sealed class TrayApp : ApplicationContext
                     entry.Icon.Icon = GetRendererForStyle(
                         StyleNames.NormalizeStyleName(entry.IconStyle) ?? _currentIconStyle)
                         .GetIcon("workspace", 0);
+                // Refresh sessions that inherit from this workspace
+                RefreshAllSessionIcons();
             },
             getInstalledGraphicsPacks: () => _graphicsPackLoader.LoadPacks(ImrdyPaths.GraphicsPacksDir).Select(p => p.Name).ToList(),
             logger: _logger);
@@ -1195,7 +1222,7 @@ internal sealed class TrayApp : ApplicationContext
             var agingSince = DateTimeOffset.UtcNow - entry.LastSeenAt;
             var tier = StatusMap.GetAgingTier(agingSince);
             entry.LastAgingTier = tier;
-            entry.Icon.Icon = GetRendererForStyle(StyleNames.NormalizeStyleName(entry.IconStyle) ?? _currentIconStyle).GetIcon(entry.State.Status, tier);
+            entry.Icon.Icon = GetRendererForStyle(ResolveSessionIconStyle(entry)).GetIcon(entry.State.Status, tier);
         }
         foreach (var ws in _workspaces.Values)
         {
@@ -1213,7 +1240,7 @@ internal sealed class TrayApp : ApplicationContext
                 e.SessionId,
                 e.State.Status,
                 e.LastAgingTier,
-                StyleNames.NormalizeStyleName(e.IconStyle) ?? _currentIconStyle))
+                ResolveSessionIconStyle(e)))
             .ToList();
         _overlayWindow.UpdateSessions(sessions);
     }
