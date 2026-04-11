@@ -9,7 +9,8 @@ public class FieldPreservationTests
     private static StateFileModel CreateModel(
         string? soundPack = null,
         int? desktopIndex = null,
-        string lastMessage = "") => new()
+        string lastMessage = "",
+        string? iconStyle = null) => new()
     {
         SessionId = "test",
         Status = "busy",
@@ -20,6 +21,7 @@ public class FieldPreservationTests
         SoundPack = soundPack,
         DesktopIndex = desktopIndex,
         LastMessage = lastMessage,
+        IconStyle = iconStyle,
     };
 
     [Fact]
@@ -67,6 +69,28 @@ public class FieldPreservationTests
     }
 
     [Fact]
+    public void PreserveFields_PreservesIconStyleFromExisting()
+    {
+        var existing = CreateModel(iconStyle: "triangles");
+        var newState = CreateModel(iconStyle: null);
+
+        var result = FieldPreservation.PreserveFields(newState, existing);
+
+        result.IconStyle.Should().Be("triangles");
+    }
+
+    [Fact]
+    public void PreserveFields_NewIconStyleTakesPrecedence()
+    {
+        var existing = CreateModel(iconStyle: "triangles");
+        var newState = CreateModel(iconStyle: "squares");
+
+        var result = FieldPreservation.PreserveFields(newState, existing);
+
+        result.IconStyle.Should().Be("squares");
+    }
+
+    [Fact]
     public void PreserveFields_BothNull_StaysNull()
     {
         var existing = CreateModel();
@@ -76,6 +100,7 @@ public class FieldPreservationTests
 
         result.SoundPack.Should().BeNull();
         result.DesktopIndex.Should().BeNull();
+        result.IconStyle.Should().BeNull();
     }
 
     [Fact]

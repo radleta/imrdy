@@ -9,7 +9,7 @@ namespace Imrdy.Core.Hooks;
 public static class FieldPreservation
 {
     /// <summary>
-    /// Preserves sound_pack and desktop_index from an existing state file
+    /// Preserves sound_pack, desktop_index, and icon_style from an existing state file
     /// when writing a new state. New values take precedence over existing ones.
     /// </summary>
     public static StateFileModel PreserveFields(StateFileModel newState, StateFileModel? existing)
@@ -23,6 +23,7 @@ public static class FieldPreservation
         {
             SoundPack = newState.SoundPack ?? existing.SoundPack,
             DesktopIndex = newState.DesktopIndex ?? existing.DesktopIndex,
+            IconStyle = newState.IconStyle ?? existing.IconStyle,
         };
     }
 
