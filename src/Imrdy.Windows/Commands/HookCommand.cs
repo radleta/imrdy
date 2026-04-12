@@ -75,6 +75,10 @@ internal static class HookCommand
             hookEvent.Source,
             hookEvent.NotificationType);
 
+        logger.LogInformation("Hook: {SessionId} → {Status} ({HookEvent})",
+            hookEvent.SessionId, status, hookEvent.HookEventName);
+        logger.LogDebug("Hook raw stdin: {RawStdin}", input);
+
         // Normalize path and derive project name
         var normalizedCwd = PathNormalizer.Normalize(hookEvent.Cwd);
         var project = PathNormalizer.DeriveProject(hookEvent.Cwd);
@@ -115,6 +119,7 @@ internal static class HookCommand
             ClaudePid = claudePid,
             Timestamp = DateTimeOffset.UtcNow,
             SessionName = hookEvent.SessionName,
+            ToolName = hookEvent.ToolName,
         };
 
         // Preserve sound_pack and desktop_index from existing state

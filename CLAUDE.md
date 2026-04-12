@@ -9,7 +9,7 @@ Managing multiple Claude Code sessions in parallel is an attention problem: know
 imrdy puts that information in the system tray where it stays glanceable in peripheral vision:
 
 - **Dots in the tray** — one icon per active session
-- **Color = state** — busy, idle, needs attention, permission requested
+- **Color = state** — busy, idle, needs attention, permission requested, error (tool/stop failures)
 - **Aging = dimming** — icons fade as sessions go quiet
 - **Click = acknowledge and bring to focus** — switches to the session's virtual desktop and focuses its terminal in one gesture
 
@@ -44,7 +44,7 @@ The hook runs hundreds of times per session. It uses `HookServiceBuilder` (light
 
 ```bash
 dotnet build                                    # Debug build
-dotnet test --filter "Category!=Integration&Category!=Benchmark"  # Unit tests only (373 tests)
+dotnet test --filter "Category!=Integration&Category!=Benchmark"  # Unit tests only (385 tests)
 ./build-dev.sh                                  # Publish → stop tray → deploy to ~/.local/bin/ → auto-respawn
 ```
 
@@ -70,6 +70,8 @@ Target: `net10.0-windows10.0.17763.0` | PublishSingleFile + SelfContained | No I
 **Toast Notifications**: Uses `Microsoft.Toolkit.Uwp.Notifications` (WinRT toast API). Click activation fires on background thread — must marshal to UI via `BeginInvoke`. Extracts icon to `~/.imrdy/imrdy.png` for toast logo.
 
 **Stop Signal**: Named `EventWaitHandle` (`Local\ImrdyStop`). `imrdy stop` signals it; tray listens on background thread, posts `ExitThread` to UI thread.
+
+**Hook Logging**: `~/.imrdy/logs/hook_.log` with same rotation as monitor log (1MB, 5 retained files). Info-level: one line per hook event (`SessionId → Status (HookEvent)`). Debug-level raw payloads via `IMRDY_LOG=1`. Uses `shared: true` for concurrent hook process writes.
 
 ## Git Workflow
 

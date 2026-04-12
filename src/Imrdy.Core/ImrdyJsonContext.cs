@@ -23,6 +23,7 @@ namespace Imrdy.Core;
 [JsonSerializable(typeof(JsonObject))]
 [JsonSerializable(typeof(JsonArray))]
 [JsonSerializable(typeof(Dictionary<string, string>))]
+[JsonSerializable(typeof(Dictionary<string, JsonElement>))]
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
 internal partial class ImrdyJsonContext : JsonSerializerContext
 {

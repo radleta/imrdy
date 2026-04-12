@@ -1,10 +1,11 @@
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace Imrdy.Core.Hooks;
 
 /// <summary>
 /// Typed model for Claude Code hook stdin JSON payload.
-/// Covers all fields from the 8 hook event types.
+/// Covers all fields from the 16 hook event types.
 /// </summary>
 public sealed record HookEventModel
 {
@@ -31,4 +32,10 @@ public sealed record HookEventModel
 
     [JsonPropertyName("message")]
     public string? Message { get; init; }
+
+    [JsonPropertyName("tool_name")]
+    public string? ToolName { get; init; }
+
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? ExtensionData { get; set; } = null;
 }

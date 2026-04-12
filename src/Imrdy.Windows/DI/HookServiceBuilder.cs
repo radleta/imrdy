@@ -13,7 +13,7 @@ public static class HookServiceBuilder
     {
         var services = new ServiceCollection();
         services.AddCoreServices();
-        services.AddSerilog(verbose: verbose, quiet: quiet);
+        services.AddSerilog(verbose: verbose, quiet: quiet, fileSink: true, logPath: ImrdyPaths.HookLog);
         return services.BuildServiceProvider();
     }
 }

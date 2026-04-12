@@ -17,6 +17,7 @@ public static class StatusMap
         ["busy"] = (230, 40, 40),
         ["idle"] = (40, 200, 40),
         ["attention"] = (255, 120, 0),
+        ["error"] = (230, 200, 40),
         ["permission"] = (180, 60, 230),
         ["compact"] = (60, 120, 230),
         ["unknown"] = (128, 128, 128),

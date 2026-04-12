@@ -9,6 +9,7 @@ public class StatusMapTests
     [InlineData("busy", 230, 40, 40)]
     [InlineData("idle", 40, 200, 40)]
     [InlineData("attention", 255, 120, 0)]
+    [InlineData("error", 230, 200, 40)]
     [InlineData("permission", 180, 60, 230)]
     [InlineData("compact", 60, 120, 230)]
     [InlineData("unknown", 128, 128, 128)]
@@ -16,6 +17,12 @@ public class StatusMapTests
     public void ResolveColor_BaseStatuses_ReturnCorrectRgb(string status, byte r, byte g, byte b)
     {
         StatusMap.ResolveColor(status).Should().Be((r, g, b));
+    }
+
+    [Fact]
+    public void ResolveColor_Error_ReturnsYellow()
+    {
+        StatusMap.ResolveColor("error").Should().Be((230, 200, 40));
     }
 
     [Fact]
@@ -65,8 +72,8 @@ public class StatusMapTests
     [Fact]
     public void KnownBaseStatuses_ContainsAllExpected()
     {
-        StatusMap.KnownBaseStatuses.Should().HaveCount(7);
-        StatusMap.KnownBaseStatuses.Should().Contain(["busy", "idle", "attention", "permission", "compact", "unknown", "workspace"]);
+        StatusMap.KnownBaseStatuses.Should().HaveCount(8);
+        StatusMap.KnownBaseStatuses.Should().Contain(["busy", "idle", "attention", "error", "permission", "compact", "unknown", "workspace"]);
     }
 
     [Fact]

@@ -44,7 +44,8 @@ public static class ServiceRegistration
         this IServiceCollection services,
         bool verbose = false,
         bool quiet = false,
-        bool fileSink = false)
+        bool fileSink = false,
+        string? logPath = null)
     {
         var levelSwitch = new LoggingLevelSwitch();
 
@@ -76,12 +77,13 @@ public static class ServiceRegistration
 
         if (fileSink)
         {
-            var logPath = ImrdyPaths.MonitorLog;
+            var logPath2 = logPath ?? ImrdyPaths.MonitorLog;
             config.WriteTo.File(
-                logPath,
+                logPath2,
                 fileSizeLimitBytes: 1_048_576, // 1MB
                 retainedFileCountLimit: 5,
                 rollOnFileSizeLimit: true,
+                shared: true,
                 outputTemplate: "[{Timestamp:yyyy-MM-dd HH:mm:ss.fff} {Level:u3}] {Message:lj}{NewLine}{Exception}");
         }
 

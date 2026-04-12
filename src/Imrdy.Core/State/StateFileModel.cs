@@ -40,6 +40,9 @@ public sealed record StateFileModel
     [JsonPropertyName("icon_style")]
     public string? IconStyle { get; init; }
 
+    [JsonPropertyName("tool_name")]
+    public string? ToolName { get; init; }
+
     [JsonPropertyName("desktop_index")]
     public int? DesktopIndex { get; init; }
 

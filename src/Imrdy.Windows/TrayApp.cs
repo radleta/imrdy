@@ -393,7 +393,7 @@ internal sealed class TrayApp : ApplicationContext
                 entry.StatusSince = DateTimeOffset.UtcNow;
 
                 // Auto-restore dismissed sessions on attention-worthy status changes
-                if (entry.Dismissed && state.Status is "busy" or "attention" or "permission")
+                if (entry.Dismissed && state.Status is "busy" or "attention" or "permission" or "error")
                 {
                     entry.Dismissed = false;
                     if (entry.Icon is not null)
@@ -1263,6 +1263,7 @@ internal sealed class TrayApp : ApplicationContext
         SoundEvent? soundEvent = (previousStatus, newStatus) switch
         {
             (_, "busy") when previousStatus != "busy" => SoundEvent.GettingToWork,
+            (_, "error") when previousStatus != "error" => SoundEvent.NeedsYou,
             (_, "idle") when previousStatus == "busy" => SoundEvent.Finished,
             (_, "end") => SoundEvent.SessionEnd,
             _ => null,

@@ -14,7 +14,7 @@ internal sealed class BalloonTipManager : IDisposable
 {
     private static readonly HashSet<string> DefaultToastEvents = new(StringComparer.OrdinalIgnoreCase)
     {
-        "idle", "attention", "permission",
+        "idle", "attention", "permission", "error",
     };
 
     private readonly ILogger _logger;
@@ -133,6 +133,7 @@ internal sealed class BalloonTipManager : IDisposable
         var text = status switch
         {
             "permission" => "Permission request",
+            "error" => "Tool failure",
             "attention" => "Needs your attention",
             "idle" => "Finished",
             _ => $"Status: {status}",

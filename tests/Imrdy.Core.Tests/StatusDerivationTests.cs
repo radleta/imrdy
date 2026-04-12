@@ -14,6 +14,14 @@ public class StatusDerivationTests
     [InlineData("Notification", "attention")]
     [InlineData("PermissionRequest", "permission")]
     [InlineData("SessionEnd", "end")]
+    [InlineData("PostToolUse", "busy")]
+    [InlineData("PostToolUseFailure", "error")]
+    [InlineData("StopFailure", "error")]
+    [InlineData("SubagentStart", "busy")]
+    [InlineData("SubagentStop", "busy")]
+    [InlineData("PostCompact", "idle")]
+    [InlineData("Elicitation", "permission")]
+    [InlineData("WorktreeCreate", "busy")]
     public void DeriveStatus_StandardEvents_ReturnExpectedStatus(string eventName, string expected)
     {
         StatusDerivation.DeriveStatus(eventName).Should().Be(expected);

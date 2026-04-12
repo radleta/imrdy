@@ -12,9 +12,17 @@ public static class StatusDerivation
         ["UserPromptSubmit"] = "busy",
         ["PreToolUse"] = "busy",
         ["PreCompact"] = "compact",
+        ["PostCompact"] = "idle",
         ["Stop"] = "idle",
+        ["StopFailure"] = "error",
         ["Notification"] = "attention",
         ["PermissionRequest"] = "permission",
+        ["PostToolUse"] = "busy",
+        ["PostToolUseFailure"] = "error",
+        ["SubagentStart"] = "busy",
+        ["SubagentStop"] = "busy",
+        ["Elicitation"] = "permission",
+        ["WorktreeCreate"] = "busy",
         ["SessionEnd"] = "end",
     };
 

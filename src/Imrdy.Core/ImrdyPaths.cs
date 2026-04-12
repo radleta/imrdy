@@ -17,6 +17,7 @@ public static class ImrdyPaths
     public static string GraphicsPacksDir { get; }
     public static string LogsDir { get; }
     public static string MonitorLog { get; }
+    public static string HookLog { get; }
 
     public const string MutexName = @"Global\ImrdyMonitor";
     public const string StopEventName = @"Local\ImrdyStop";
@@ -35,5 +36,6 @@ public static class ImrdyPaths
         GraphicsPacksDir = Path.Combine(Home, "graphics", "packs");
         LogsDir = Path.Combine(Home, "logs");
         MonitorLog = Path.Combine(Home, "logs", "monitor.log");
+        HookLog = Path.Combine(Home, "logs", "hook_.log");
     }
 }
