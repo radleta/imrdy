@@ -205,6 +205,81 @@ public class NotificationDwellStateTests
         _dwell.GetFiredSessions(BaseTime + TimeSpan.FromSeconds(3.1)).Should().HaveCount(1);
     }
 
+    // --- "done" status (Stop event — no toast/sound expected) ---
+
+    [Fact]
+    public void DwellDuration_DoneUses3sDefault()
+    {
+        _dwell.OnStatusChanged("s1", "done", "busy", BaseTime);
+
+        // Not fired at +2.9s
+        _dwell.GetFiredSessions(BaseTime + TimeSpan.FromSeconds(2.9)).Should().BeEmpty();
+
+        // Fired at +3.1s (default 3s for unknown statuses)
+        _dwell.GetFiredSessions(BaseTime + TimeSpan.FromSeconds(3.1)).Should().HaveCount(1);
+    }
+
+    [Fact]
+    public void DoneStatus_FiredNotification_HasNullNotificationType()
+    {
+        // "done" enters via status-change path (no notificationType) — toast dispatch
+        // will skip it since "done" is not in DefaultToastEvents
+        _dwell.OnStatusChanged("s1", "done", "busy", BaseTime);
+
+        var fired = _dwell.GetFiredSessions(BaseTime + TimeSpan.FromSeconds(4));
+        fired.Should().HaveCount(1);
+        fired[0].Status.Should().Be("done");
+        fired[0].NotificationType.Should().BeNull();
+    }
+
+    // --- Teams scenario: Stop→done absorbed, idle_prompt→idle fires ---
+
+    [Fact]
+    public void TeamsPattern_StopThenBusy_AbsorbsDone()
+    {
+        // Stop fires → "done"
+        _dwell.OnStatusChanged("s1", "done", "busy", BaseTime);
+
+        // PreToolUse fires 2s later → "busy" replaces pending "done"
+        _dwell.OnStatusChanged("s1", "busy", "done", BaseTime + TimeSpan.FromSeconds(2));
+
+        // At +4s: busy has been settled 2s (< 3s dwell) → nothing fires
+        _dwell.GetFiredSessions(BaseTime + TimeSpan.FromSeconds(4)).Should().BeEmpty();
+
+        // At +6s: busy settled 4s (≥ 3s) → fires as busy (no toast in real dispatch)
+        var fired = _dwell.GetFiredSessions(BaseTime + TimeSpan.FromSeconds(6));
+        fired.Should().HaveCount(1);
+        fired[0].Status.Should().Be("busy");
+    }
+
+    [Fact]
+    public void TeamsPattern_IdlePromptFiresWithNotificationType()
+    {
+        // idle_prompt Notification → enters as "idle" via notification-type path
+        _dwell.OnStatusChanged("s1", "idle", "done", BaseTime, notificationType: "idle_prompt");
+
+        var fired = _dwell.GetFiredSessions(BaseTime + TimeSpan.FromSeconds(6));
+        fired.Should().HaveCount(1);
+        fired[0].Status.Should().Be("idle");
+        fired[0].NotificationType.Should().Be("idle_prompt");
+    }
+
+    [Fact]
+    public void TeamsPattern_RepeatedStopCycles_NeverFiresIdleToast()
+    {
+        // Simulate teams: rapid done→busy→done→busy cycling
+        _dwell.OnStatusChanged("s1", "done", "busy", BaseTime);
+        _dwell.OnStatusChanged("s1", "busy", "done", BaseTime + TimeSpan.FromSeconds(1));
+        _dwell.OnStatusChanged("s1", "done", "busy", BaseTime + TimeSpan.FromSeconds(4));
+        _dwell.OnStatusChanged("s1", "busy", "done", BaseTime + TimeSpan.FromSeconds(5));
+
+        // At +8s: busy settled 3s → fires, but status is "busy" (not "idle" or "done")
+        var fired = _dwell.GetFiredSessions(BaseTime + TimeSpan.FromSeconds(8));
+        fired.Should().HaveCount(1);
+        fired[0].Status.Should().Be("busy");
+        fired[0].NotificationType.Should().BeNull();
+    }
+
     // --- FiredNotification fields ---
 
     [Fact]

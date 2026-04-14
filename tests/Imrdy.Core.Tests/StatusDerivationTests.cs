@@ -10,7 +10,7 @@ public class StatusDerivationTests
     [InlineData("UserPromptSubmit", "busy")]
     [InlineData("PreToolUse", "busy")]
     [InlineData("PreCompact", "compact")]
-    [InlineData("Stop", "idle")]
+    [InlineData("Stop", "done")]
     [InlineData("Notification", "attention")]
     [InlineData("PermissionRequest", "permission")]
     [InlineData("SessionEnd", "end")]
@@ -48,9 +48,16 @@ public class StatusDerivationTests
     }
 
     [Fact]
-    public void DeriveStatus_NotificationWithOtherType_ReturnsAttention()
+    public void DeriveStatus_NotificationWithIdlePrompt_ReturnsIdle()
     {
         StatusDerivation.DeriveStatus("Notification", notificationType: "idle_prompt")
+            .Should().Be("idle");
+    }
+
+    [Fact]
+    public void DeriveStatus_NotificationWithOtherType_ReturnsAttention()
+    {
+        StatusDerivation.DeriveStatus("Notification", notificationType: "task_notification")
             .Should().Be("attention");
     }
 
@@ -65,6 +72,7 @@ public class StatusDerivationTests
     {
         StatusDerivation.DeriveStatus("sessionstart", source: "RESUME").Should().Be("idle");
         StatusDerivation.DeriveStatus("notification", notificationType: "PERMISSION_PROMPT").Should().Be("permission");
+        StatusDerivation.DeriveStatus("notification", notificationType: "IDLE_PROMPT").Should().Be("idle");
     }
 
     [Fact]

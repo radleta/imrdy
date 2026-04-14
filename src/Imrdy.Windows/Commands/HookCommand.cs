@@ -75,8 +75,12 @@ internal static class HookCommand
             hookEvent.Source,
             hookEvent.NotificationType);
 
-        logger.LogInformation("Hook: {SessionId} → {Status} ({HookEvent})",
-            hookEvent.SessionId, status, hookEvent.HookEventName);
+        if (!string.IsNullOrEmpty(hookEvent.NotificationType))
+            logger.LogInformation("Hook: {SessionId} → {Status} ({HookEvent} type={NotificationType})",
+                hookEvent.SessionId, status, hookEvent.HookEventName, hookEvent.NotificationType);
+        else
+            logger.LogInformation("Hook: {SessionId} → {Status} ({HookEvent})",
+                hookEvent.SessionId, status, hookEvent.HookEventName);
         logger.LogDebug("Hook raw stdin: {RawStdin}", input);
 
         // Normalize path and derive project name

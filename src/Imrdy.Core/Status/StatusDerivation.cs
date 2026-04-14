@@ -13,7 +13,7 @@ public static class StatusDerivation
         ["PreToolUse"] = "busy",
         ["PreCompact"] = "compact",
         ["PostCompact"] = "idle",
-        ["Stop"] = "idle",
+        ["Stop"] = "done",
         ["StopFailure"] = "error",
         ["Notification"] = "attention",
         ["PermissionRequest"] = "permission",
@@ -47,6 +47,13 @@ public static class StatusDerivation
             && string.Equals(notificationType, "permission_prompt", StringComparison.OrdinalIgnoreCase))
         {
             return "permission";
+        }
+
+        // Special case: Notification with idle_prompt → idle (authoritative "genuinely waiting for user" signal)
+        if (string.Equals(eventName, "Notification", StringComparison.OrdinalIgnoreCase)
+            && string.Equals(notificationType, "idle_prompt", StringComparison.OrdinalIgnoreCase))
+        {
+            return "idle";
         }
 
         return EventToStatus.TryGetValue(eventName, out var status) ? status : "unknown";

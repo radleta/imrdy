@@ -15,6 +15,7 @@ public static class StatusMap
     private static readonly Dictionary<string, (byte R, byte G, byte B)> BaseToColor = new(StringComparer.OrdinalIgnoreCase)
     {
         ["busy"] = (230, 40, 40),
+        ["done"] = (40, 180, 170),
         ["idle"] = (40, 200, 40),
         ["attention"] = (255, 120, 0),
         ["error"] = (230, 200, 40),

@@ -7,6 +7,7 @@ public class StatusMapTests
 {
     [Theory]
     [InlineData("busy", 230, 40, 40)]
+    [InlineData("done", 40, 180, 170)]
     [InlineData("idle", 40, 200, 40)]
     [InlineData("attention", 255, 120, 0)]
     [InlineData("error", 230, 200, 40)]
@@ -53,6 +54,7 @@ public class StatusMapTests
 
     [Theory]
     [InlineData("busy")]
+    [InlineData("done")]
     [InlineData("idle")]
     [InlineData("attention")]
     [InlineData("permission")]
@@ -72,8 +74,8 @@ public class StatusMapTests
     [Fact]
     public void KnownBaseStatuses_ContainsAllExpected()
     {
-        StatusMap.KnownBaseStatuses.Should().HaveCount(8);
-        StatusMap.KnownBaseStatuses.Should().Contain(["busy", "idle", "attention", "error", "permission", "compact", "unknown", "workspace"]);
+        StatusMap.KnownBaseStatuses.Should().HaveCount(9);
+        StatusMap.KnownBaseStatuses.Should().Contain(["busy", "done", "idle", "attention", "error", "permission", "compact", "unknown", "workspace"]);
     }
 
     [Fact]

@@ -316,8 +316,12 @@ internal sealed class TrayApp : ApplicationContext
                 {
                     if (_sessions.TryGetValue(notification.SessionId, out var firedEntry))
                     {
-                        // Toast: only for status-change entries (notification-type entries produce sound only)
-                        if (notification.NotificationType is null)
+                        _logger.LogInformation("Dwell fired for {SessionId}: {PreviousStatus} → {Status} (type={NotificationType})",
+                            notification.SessionId, notification.PreviousStatus, notification.Status, notification.NotificationType ?? "status-change");
+
+                        // Toast: status-change entries + idle_prompt (the authoritative "genuinely idle" signal)
+                        if (notification.NotificationType is null
+                            || string.Equals(notification.NotificationType, "idle_prompt", StringComparison.OrdinalIgnoreCase))
                         {
                             _balloonTipManager.OnStatusTransition(
                                 firedEntry, notification.PreviousStatus, notification.Status,
@@ -1307,7 +1311,7 @@ internal sealed class TrayApp : ApplicationContext
         {
             (_, "busy") when previousStatus != "busy" => SoundEvent.GettingToWork,
             (_, "error") when previousStatus != "error" => SoundEvent.NeedsYou,
-            (_, "idle") when previousStatus == "busy" => SoundEvent.Finished,
+            (_, "idle") when previousStatus is "busy" or "done" => SoundEvent.Finished,
             (_, "end") => SoundEvent.SessionEnd,
             _ => null,
         };
