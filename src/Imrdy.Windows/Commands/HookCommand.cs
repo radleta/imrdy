@@ -75,12 +75,27 @@ internal static class HookCommand
             hookEvent.Source,
             hookEvent.NotificationType);
 
+        // Single-line hook log with all payload fields for grep-friendly diagnostics
+        var parts = new List<string>(8)
+        {
+            $"{hookEvent.HookEventName}"
+        };
         if (!string.IsNullOrEmpty(hookEvent.NotificationType))
-            logger.LogInformation("Hook: {SessionId} → {Status} ({HookEvent} type={NotificationType})",
-                hookEvent.SessionId, status, hookEvent.HookEventName, hookEvent.NotificationType);
-        else
-            logger.LogInformation("Hook: {SessionId} → {Status} ({HookEvent})",
-                hookEvent.SessionId, status, hookEvent.HookEventName);
+            parts.Add($"type={hookEvent.NotificationType}");
+        if (!string.IsNullOrEmpty(hookEvent.ToolName))
+            parts.Add($"tool={hookEvent.ToolName}");
+        if (!string.IsNullOrEmpty(hookEvent.Source))
+            parts.Add($"source={hookEvent.Source}");
+        if (!string.IsNullOrEmpty(hookEvent.Message))
+            parts.Add($"msg={StateFileModel.TruncateMessage(hookEvent.Message, 80)}");
+        if (hookEvent.ExtensionData is { Count: > 0 })
+        {
+            foreach (var kv in hookEvent.ExtensionData)
+                parts.Add($"{kv.Key}={kv.Value}");
+        }
+        logger.LogInformation("Hook: {SessionId} → {Status} ({Details})",
+            hookEvent.SessionId, status, string.Join(" ", parts));
+
         logger.LogDebug("Hook raw stdin: {RawStdin}", input);
 
         // Normalize path and derive project name
