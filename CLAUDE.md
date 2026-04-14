@@ -40,11 +40,15 @@ The hook runs hundreds of times per session. It uses `HookServiceBuilder` (light
 
 `OverlayWindow` in `src/Imrdy.Windows/Overlay/` — borderless transparent `Form` with `WS_EX_LAYERED` for per-pixel alpha via `UpdateLayeredWindow`. Renders session characters as a horizontal row at the bottom screen edge. Uses `GraphicsPackLoader` directly to render SVGs at overlay size — independent of `ITrayIconRenderer` (which is fixed to `SmallIconSize`). In built-in mode, renders shapes directly via `ShapeDefinitions` delegates at overlay size. Per-session icon style respected via `OverlaySessionInfo.IconStyle`. TopMost enforced by a 5-second watchdog via `SetWindowPos` P/Invoke. `PInvokeOverlay.cs` in `src/Imrdy.Windows/Desktop/` holds all overlay-specific Win32 declarations. Lazy bitmap cache keyed by `(style, status, tier)` with aging (`ColorMatrix` desaturation); replaces former eager `PreRenderAll`. Config: `overlay.enabled`, `overlay.position`, `overlay.size`, `overlay.spacing`.
 
+### Notification Dwell
+
+`NotificationDwellState` in `Imrdy.Core/Sound/` gates toast and sound notifications behind per-status dwell timers. Icon updates remain immediate; notifications only fire after a session's status has "settled" for its dwell duration (2-5s depending on status). Per-session 10s toast cooldown provides additional backstop. Dwell check piggybacks on the existing 100ms drain timer — no new timer object. `CooldownTracker` (5s per-session sound cooldown) remains as defense-in-depth. `FiredNotification` record carries `PreviousStatus` and `NotificationType` for correct dispatch.
+
 ## Build & Test
 
 ```bash
 dotnet build                                    # Debug build
-dotnet test --filter "Category!=Integration&Category!=Benchmark"  # Unit tests only (385 tests)
+dotnet test --filter "Category!=Integration&Category!=Benchmark"  # Unit tests only (401 tests)
 ./build-dev.sh                                  # Publish → stop tray → deploy to ~/.local/bin/ → auto-respawn
 ```
 

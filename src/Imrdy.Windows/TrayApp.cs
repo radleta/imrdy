@@ -43,6 +43,7 @@ internal sealed class TrayApp : ApplicationContext
     private readonly StateFileReader _stateReader;
     private readonly WorkspaceStore _workspaceStore;
     private readonly CooldownTracker _cooldownTracker;
+    private readonly NotificationDwellState _dwellState;
     private readonly PackLoader _packLoader;
     private readonly IDesktopManager _desktopManager;
     private readonly MonitorOptions _options;
@@ -92,6 +93,7 @@ internal sealed class TrayApp : ApplicationContext
         StateFileReader stateReader,
         WorkspaceStore workspaceStore,
         CooldownTracker cooldownTracker,
+        NotificationDwellState dwellState,
         PackLoader packLoader,
         IDesktopManager desktopManager,
         MonitorOptions options,
@@ -103,6 +105,7 @@ internal sealed class TrayApp : ApplicationContext
         _stateReader = stateReader;
         _workspaceStore = workspaceStore;
         _cooldownTracker = cooldownTracker;
+        _dwellState = dwellState;
         _packLoader = packLoader;
         _desktopManager = desktopManager;
         _options = options;
@@ -304,6 +307,35 @@ internal sealed class TrayApp : ApplicationContext
                     HandleSessionFileChanged(item);
                 }
             }
+
+            // Dwell notification dispatch
+            var fired = _dwellState.GetFiredSessions(DateTimeOffset.UtcNow);
+            foreach (var notification in fired)
+            {
+                try
+                {
+                    if (_sessions.TryGetValue(notification.SessionId, out var firedEntry))
+                    {
+                        // Toast: only for status-change entries (notification-type entries produce sound only)
+                        if (notification.NotificationType is null)
+                        {
+                            _balloonTipManager.OnStatusTransition(
+                                firedEntry, notification.PreviousStatus, notification.Status,
+                                IsBootstrapping, _desktopManager.GetCurrentDesktopIndex());
+                        }
+
+                        // Sound: dispatch via correct path based on entry origin
+                        if (notification.NotificationType is not null)
+                            TriggerNotificationSound(firedEntry, notification.NotificationType!); // null-forgiving: guarded by is not null check; avoids CS8604 with TreatWarningsAsErrors
+                        else
+                            TriggerStatusChangeSound(firedEntry, notification.PreviousStatus, notification.Status);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Dwell dispatch failed for {SessionId}", notification.SessionId);
+                }
+            }
         }
         catch (Exception ex)
         {
@@ -404,18 +436,27 @@ internal sealed class TrayApp : ApplicationContext
                         entry.SessionId, state.Status);
                 }
 
-                _balloonTipManager.OnStatusTransition(
-                    entry, previousStatus, state.Status,
-                    IsBootstrapping, currentDesktopIndex: _desktopManager.GetCurrentDesktopIndex());
-
-                // Sound trigger on status change
-                TriggerStatusChangeSound(entry, previousStatus, state.Status);
+                if (!IsBootstrapping)
+                {
+                    _dwellState.OnStatusChanged(entry.SessionId, state.Status, previousStatus, DateTimeOffset.UtcNow);
+                }
             }
 
             // Notification-type sounds (only when notification type actually changes)
-            if (notificationChanged)
+            if (notificationChanged && !IsBootstrapping && !string.IsNullOrEmpty(state.NotificationType))
             {
-                TriggerNotificationSound(entry, state.NotificationType);
+                // Map notification type to status for dwell duration lookup
+                var mappedStatus = state.NotificationType switch
+                {
+                    "permission_prompt" or "elicitation_dialog" => "permission",
+                    "idle_prompt" => "idle",
+                    _ => (string?)null,
+                };
+                if (mappedStatus is not null)
+                {
+                    _dwellState.OnStatusChanged(entry.SessionId, mappedStatus, entry.State.Status,
+                        DateTimeOffset.UtcNow, notificationType: state.NotificationType);
+                }
             }
 
             // SessionEnd → start grace period (only once; sweep re-reads must not reset it)
@@ -575,6 +616,8 @@ internal sealed class TrayApp : ApplicationContext
         if (_sessions.Remove(sessionId, out var entry))
         {
             Commands.ProcessResolver.ClearSession(sessionId);
+            _dwellState.RemoveSession(sessionId);
+            _cooldownTracker.RemoveSession(sessionId);
             entry.Dispose();
             RefreshOverlay();
 
