@@ -5,7 +5,7 @@ namespace Imrdy.Core.Hooks;
 
 /// <summary>
 /// Typed model for Claude Code hook stdin JSON payload.
-/// Covers all fields from the 16 hook event types.
+/// Covers all fields from the 20 hook event types.
 /// </summary>
 public sealed record HookEventModel
 {
@@ -35,6 +35,12 @@ public sealed record HookEventModel
 
     [JsonPropertyName("tool_name")]
     public string? ToolName { get; init; }
+
+    [JsonPropertyName("agent_id")]
+    public string? AgentId { get; init; }
+
+    [JsonPropertyName("agent_type")]
+    public string? AgentType { get; init; }
 
     [JsonExtensionData]
     public Dictionary<string, JsonElement>? ExtensionData { get; set; } = null;

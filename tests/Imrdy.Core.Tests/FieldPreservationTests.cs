@@ -104,6 +104,31 @@ public class FieldPreservationTests
     }
 
     [Fact]
+    public void PreserveFields_LastTeammateAt_PreservesFromExisting()
+    {
+        var ts = new DateTimeOffset(2026, 4, 14, 12, 0, 0, TimeSpan.Zero);
+        var existing = CreateModel() with { LastTeammateAt = ts };
+        var newState = CreateModel();
+
+        var result = FieldPreservation.PreserveFields(newState, existing);
+
+        result.LastTeammateAt.Should().Be(ts);
+    }
+
+    [Fact]
+    public void PreserveFields_LastTeammateAt_NewValueTakesPrecedence()
+    {
+        var old = new DateTimeOffset(2026, 4, 14, 12, 0, 0, TimeSpan.Zero);
+        var newer = new DateTimeOffset(2026, 4, 14, 13, 0, 0, TimeSpan.Zero);
+        var existing = CreateModel() with { LastTeammateAt = old };
+        var newState = CreateModel() with { LastTeammateAt = newer };
+
+        var result = FieldPreservation.PreserveFields(newState, existing);
+
+        result.LastTeammateAt.Should().Be(newer);
+    }
+
+    [Fact]
     public void ResolveLastMessage_PromptTakesPriority()
     {
         var result = FieldPreservation.ResolveLastMessage("the prompt", "the message", "previous");

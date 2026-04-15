@@ -36,6 +36,10 @@ internal sealed class SessionEntry : IDisposable
     /// <summary>Last computed aging tier. Used to avoid unnecessary icon updates.</summary>
     public int LastAgingTier { get; set; } = 0;
 
+    /// <summary>True after consensus promotion has been triggered for the current "done" status.
+    /// Reset when status changes away from "done".</summary>
+    public bool ConsensusPromoted { get; set; }
+
     public void Dispose()
     {
         Icon?.Visible = false;

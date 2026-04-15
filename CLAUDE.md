@@ -9,7 +9,7 @@ Managing multiple Claude Code sessions in parallel is an attention problem: know
 imrdy puts that information in the system tray where it stays glanceable in peripheral vision:
 
 - **Dots in the tray** — one icon per active session
-- **Color = state** — busy, idle, needs attention, permission requested, error (tool/stop failures)
+- **Color = state** — busy, idle, done (session stopped, teal), needs attention, permission requested, error (tool/stop failures)
 - **Aging = dimming** — icons fade as sessions go quiet
 - **Click = acknowledge and bring to focus** — switches to the session's virtual desktop and focuses its terminal in one gesture
 
@@ -44,11 +44,13 @@ The hook runs hundreds of times per session. It uses `HookServiceBuilder` (light
 
 `NotificationDwellState` in `Imrdy.Core/Sound/` gates toast and sound notifications behind per-status dwell timers. Icon updates remain immediate; notifications only fire after a session's status has "settled" for its dwell duration (2-5s depending on status). Per-session 10s toast cooldown provides additional backstop. Dwell check piggybacks on the existing 100ms drain timer — no new timer object. `CooldownTracker` (5s per-session sound cooldown) remains as defense-in-depth. `FiredNotification` record carries `PreviousStatus` and `NotificationType` for correct dispatch.
 
+**Teammate-aware gating**: Hook events with `agent_id` (teammate/subagent activity) skip lead status updates — they only set `last_teammate_at` on the state file. Sessions with recent teammate activity (within 2 min) suppress `done→idle` dwell entry; instead, consensus promotion in the drain timer checks: when lead is `done` and no teammate activity for 15s (`TeammateQuietThreshold`), promotes to `idle` (green) + toast/sound. Three speeds to green: no teammates = 5s dwell, teammates finish = ~15s consensus, backstop = 60s (`idle_prompt` Notification). `ConsensusPromoted` flag on `SessionEntry` prevents duplicate promotions per done cycle.
+
 ## Build & Test
 
 ```bash
 dotnet build                                    # Debug build
-dotnet test --filter "Category!=Integration&Category!=Benchmark"  # Unit tests only (401 tests)
+dotnet test --filter "Category!=Integration&Category!=Benchmark"  # Unit tests only (421 tests)
 ./build-dev.sh                                  # Publish → stop tray → deploy to ~/.local/bin/ → auto-respawn
 ```
 

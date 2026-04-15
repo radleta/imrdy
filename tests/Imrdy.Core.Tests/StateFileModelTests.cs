@@ -73,6 +73,45 @@ public class StateFileModelTests : IDisposable
     }
 
     [Fact]
+    public void LastTeammateAt_RoundTrip_WithValue()
+    {
+        var path = Path.Combine(_tempDir, "teammate-ts.json");
+        var ts = new DateTimeOffset(2026, 4, 14, 12, 0, 0, TimeSpan.Zero);
+        var model = CreateBaseModel() with { LastTeammateAt = ts };
+
+        _reader.WriteStateFile(path, model);
+        var result = _reader.ReadStateFile(path);
+
+        result.Should().NotBeNull();
+        result!.LastTeammateAt.Should().Be(ts);
+    }
+
+    [Fact]
+    public void LastTeammateAt_RoundTrip_NullWhenAbsent()
+    {
+        var path = Path.Combine(_tempDir, "no-teammate-ts.json");
+        var model = CreateBaseModel();
+
+        _reader.WriteStateFile(path, model);
+        var result = _reader.ReadStateFile(path);
+
+        result.Should().NotBeNull();
+        result!.LastTeammateAt.Should().BeNull();
+    }
+
+    [Fact]
+    public void LastTeammateAt_JsonFieldName()
+    {
+        var path = Path.Combine(_tempDir, "teammate-key.json");
+        var model = CreateBaseModel() with { LastTeammateAt = DateTimeOffset.UtcNow };
+
+        _reader.WriteStateFile(path, model);
+        var json = File.ReadAllText(path);
+
+        json.Should().Contain("\"last_teammate_at\"");
+    }
+
+    [Fact]
     public void IconStyle_DefaultsToNull_WhenAbsentFromJson()
     {
         var path = Path.Combine(_tempDir, "no-icon-style.json");

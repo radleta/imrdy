@@ -22,6 +22,10 @@ public class StatusDerivationTests
     [InlineData("PostCompact", "idle")]
     [InlineData("Elicitation", "permission")]
     [InlineData("WorktreeCreate", "busy")]
+    [InlineData("TaskCreated", "busy")]
+    [InlineData("TaskCompleted", "busy")]
+    [InlineData("TeammateIdle", "busy")]
+    [InlineData("PermissionDenied", "idle")]
     public void DeriveStatus_StandardEvents_ReturnExpectedStatus(string eventName, string expected)
     {
         StatusDerivation.DeriveStatus(eventName).Should().Be(expected);

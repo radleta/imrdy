@@ -29,6 +29,8 @@ namespace Imrdy.Windows;
 internal sealed class TrayApp : ApplicationContext
 {
     private static readonly TimeSpan GracePeriod = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan TeammatePresenceTimeout = TimeSpan.FromMinutes(2);
+    private static readonly TimeSpan TeammateQuietThreshold = TimeSpan.FromSeconds(15);
 
     /// <summary>
     /// Cached reflection accessor for NotifyIcon's private ShowContextMenu method.
@@ -309,7 +311,8 @@ internal sealed class TrayApp : ApplicationContext
             }
 
             // Dwell notification dispatch
-            var fired = _dwellState.GetFiredSessions(DateTimeOffset.UtcNow);
+            var now = DateTimeOffset.UtcNow;
+            var fired = _dwellState.GetFiredSessions(now);
             foreach (var notification in fired)
             {
                 try
@@ -339,6 +342,30 @@ internal sealed class TrayApp : ApplicationContext
                 {
                     _logger.LogWarning(ex, "Dwell dispatch failed for {SessionId}", notification.SessionId);
                 }
+            }
+
+            // Consensus promotion: if lead is "done" and all teammates are quiet (no activity
+            // for TeammateQuietThreshold), promote to idle (green) + toast/sound.
+            foreach (var (sessionId, entry) in _sessions)
+            {
+                if (entry.State.Status != "done")
+                    continue;
+
+                if (entry.ConsensusPromoted)
+                    continue; // Already promoted this "done" cycle
+
+                if (entry.State.LastTeammateAt is null)
+                    continue; // No teammates — normal dwell path handles this
+
+                if (now - entry.State.LastTeammateAt < TeammateQuietThreshold)
+                    continue; // Teammates still active
+
+                // All teammates quiet + lead done → promote to idle
+                entry.ConsensusPromoted = true;
+                _logger.LogInformation("Consensus promotion for {SessionId}: all teammates quiet for {Quiet}s",
+                    sessionId, (int)(now - entry.State.LastTeammateAt.Value).TotalSeconds);
+
+                _dwellState.OnStatusChanged(sessionId, "idle", "done", now);
             }
         }
         catch (Exception ex)
@@ -427,6 +454,7 @@ internal sealed class TrayApp : ApplicationContext
             if (statusChanged)
             {
                 entry.StatusSince = DateTimeOffset.UtcNow;
+                entry.ConsensusPromoted = false;
 
                 // Auto-restore dismissed sessions on attention-worthy status changes
                 if (entry.Dismissed && state.Status is "busy" or "attention" or "permission" or "error")
@@ -442,7 +470,19 @@ internal sealed class TrayApp : ApplicationContext
 
                 if (!IsBootstrapping)
                 {
-                    _dwellState.OnStatusChanged(entry.SessionId, state.Status, previousStatus, DateTimeOffset.UtcNow);
+                    // Suppress dwell entry for "done" status when teammates are active.
+                    // The consensus check in OnDrainTimerTick handles promotion once all teammates are quiet.
+                    var hasActiveTeammates = state.LastTeammateAt is not null
+                        && DateTimeOffset.UtcNow - state.LastTeammateAt < TeammatePresenceTimeout;
+
+                    if (state.Status == "done" && hasActiveTeammates)
+                    {
+                        _logger.LogDebug("Suppressed dwell for {SessionId}: done with active teammates", entry.SessionId);
+                    }
+                    else
+                    {
+                        _dwellState.OnStatusChanged(entry.SessionId, state.Status, previousStatus, DateTimeOffset.UtcNow);
+                    }
                 }
             }
 

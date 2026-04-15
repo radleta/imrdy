@@ -9,9 +9,12 @@ Managing multiple Claude Code sessions in parallel is an attention problem: know
 ## How it looks
 
 Each active Claude Code session gets a colored circle icon in the system tray:
-- **Yellow** = busy (working)
+- **Red** = busy (working)
+- **Teal** = done (session stopped, waiting for teammates to finish)
 - **Green** = idle (waiting for input)
-- **Red** = needs attention (permission request, elicitation dialog)
+- **Orange** = needs attention
+- **Purple** = permission requested (elicitation dialog)
+- **Yellow** = error (tool or stop failure)
 - Icons age (darken) over time based on last interaction
 
 Click a session icon to switch to its virtual desktop and focus the terminal window.

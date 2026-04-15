@@ -52,6 +52,9 @@ public sealed record StateFileModel
     [JsonPropertyName("session_name")]
     public string? SessionName { get; init; }
 
+    [JsonPropertyName("last_teammate_at")]
+    public DateTimeOffset? LastTeammateAt { get; init; }
+
     /// <summary>
     /// Truncates a message to the maximum allowed length.
     /// Port of truncateMessage() from hook-lib.mjs.

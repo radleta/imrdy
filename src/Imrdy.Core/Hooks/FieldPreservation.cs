@@ -24,6 +24,7 @@ public static class FieldPreservation
             SoundPack = newState.SoundPack ?? existing.SoundPack,
             DesktopIndex = newState.DesktopIndex ?? existing.DesktopIndex,
             IconStyle = newState.IconStyle ?? existing.IconStyle,
+            LastTeammateAt = newState.LastTeammateAt ?? existing.LastTeammateAt,
         };
     }
 

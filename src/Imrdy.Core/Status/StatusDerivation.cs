@@ -23,6 +23,10 @@ public static class StatusDerivation
         ["SubagentStop"] = "busy",
         ["Elicitation"] = "permission",
         ["WorktreeCreate"] = "busy",
+        ["TaskCreated"] = "busy",
+        ["TaskCompleted"] = "busy",
+        ["TeammateIdle"] = "busy",
+        ["PermissionDenied"] = "idle",
         ["SessionEnd"] = "end",
     };
 

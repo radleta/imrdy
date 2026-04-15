@@ -98,7 +98,50 @@ internal static class HookCommand
 
         logger.LogDebug("Hook raw stdin: {RawStdin}", input);
 
-        // Normalize path and derive project name
+        // Read existing state file for field preservation
+        var reader = services.GetRequiredService<StateFileReader>();
+        var statePath = Path.Combine(ImrdyPaths.Sessions, $"{hookEvent.SessionId}.json");
+        var existing = reader.ReadStateFile(statePath);
+
+        // Teammate events (agent_id present): update has_teammates flag only, don't change lead status.
+        // This prevents teammate tool use from overwriting the lead's status/icon.
+        if (!string.IsNullOrEmpty(hookEvent.AgentId))
+        {
+            if (existing is not null)
+            {
+                var updated = existing with { LastTeammateAt = DateTimeOffset.UtcNow, Timestamp = DateTimeOffset.UtcNow };
+                try
+                {
+                    reader.WriteStateFile(statePath, updated);
+                }
+                catch (IOException ex)
+                {
+                    logger.LogError(ex, "Failed to write teammate timestamp: {Path}", statePath);
+                    return 1;
+                }
+            }
+            else
+            {
+                logger.LogWarning("Teammate hook fired before lead session exists: {SessionId} agent={AgentId}",
+                    hookEvent.SessionId, hookEvent.AgentId);
+            }
+
+            // Auto-spawn tray if not running (same as lead path)
+            try
+            {
+                var config = ConfigReader.Read();
+                if (config.Tray.Enabled)
+                    TraySpawner.EnsureRunning(logger);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Tray auto-spawn failed");
+            }
+
+            return 0;
+        }
+
+        // Lead events (no agent_id): full state file write
         var normalizedCwd = PathNormalizer.Normalize(hookEvent.Cwd);
         var project = PathNormalizer.DeriveProject(hookEvent.Cwd);
 
@@ -113,11 +156,6 @@ internal static class HookCommand
         {
             logger.LogWarning(ex, "Failed to resolve Claude PID");
         }
-
-        // Read existing state file for field preservation
-        var reader = services.GetRequiredService<StateFileReader>();
-        var statePath = Path.Combine(ImrdyPaths.Sessions, $"{hookEvent.SessionId}.json");
-        var existing = reader.ReadStateFile(statePath);
 
         // Resolve last message
         var lastMessage = FieldPreservation.ResolveLastMessage(
@@ -141,7 +179,7 @@ internal static class HookCommand
             ToolName = hookEvent.ToolName,
         };
 
-        // Preserve sound_pack and desktop_index from existing state
+        // Preserve sound_pack, desktop_index, icon_style, and has_teammates from existing state
         newState = FieldPreservation.PreserveFields(newState, existing);
 
         // Write atomic state file (StateFileReader.WriteStateFile creates the directory if needed)
