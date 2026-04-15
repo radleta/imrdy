@@ -106,10 +106,9 @@ public class TeammateGateTests
 
     [Theory]
     [InlineData("busy")]
-    [InlineData("idle")]
     [InlineData("done")]
     [InlineData("error")]
-    public void ApplyTeammateEvent_NonPermission_PreservesStatus(string existingStatus)
+    public void ApplyTeammateEvent_NonIdleNonPermission_PreservesStatus(string existingStatus)
     {
         var existing = CreateState(existingStatus);
 
@@ -127,6 +126,78 @@ public class TeammateGateTests
 
         result.Status.Should().Be("permission");
         result.NotificationType.Should().Be("permission_prompt");
+    }
+
+    // --- ShouldPromoteToBusy ---
+
+    [Theory]
+    [InlineData("start", "PreToolUse")]
+    [InlineData("start", "PostToolUse")]
+    [InlineData("idle", "PreToolUse")]
+    [InlineData("idle", "PostToolUse")]
+    [InlineData("idle", "SubagentStart")]
+    [InlineData("start", "UserPromptSubmit")]
+    public void ShouldPromoteToBusy_IdleLeadWithBusyEvent_ReturnsTrue(string status, string eventName)
+    {
+        TeammateGate.ShouldPromoteToBusy(status, eventName).Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData("busy", "PreToolUse")]
+    [InlineData("done", "PreToolUse")]
+    [InlineData("error", "PreToolUse")]
+    [InlineData("permission", "PreToolUse")]
+    [InlineData("compact", "PreToolUse")]
+    public void ShouldPromoteToBusy_NonIdleLead_ReturnsFalse(string status, string eventName)
+    {
+        TeammateGate.ShouldPromoteToBusy(status, eventName).Should().BeFalse();
+    }
+
+    [Theory]
+    [InlineData("start", "Stop")]
+    [InlineData("idle", "Notification")]
+    [InlineData("start", "SessionEnd")]
+    public void ShouldPromoteToBusy_IdleLeadWithNonBusyEvent_ReturnsFalse(string status, string eventName)
+    {
+        TeammateGate.ShouldPromoteToBusy(status, eventName).Should().BeFalse();
+    }
+
+    [Fact]
+    public void ShouldPromoteToBusy_NullStatus_ReturnsFalse()
+    {
+        TeammateGate.ShouldPromoteToBusy(null, "PreToolUse").Should().BeFalse();
+    }
+
+    // --- ApplyTeammateEvent: busy promotion ---
+
+    [Fact]
+    public void ApplyTeammateEvent_StartLead_TeammateToolUse_PromotesToBusy()
+    {
+        var existing = CreateState("start");
+
+        var result = TeammateGate.ApplyTeammateEvent(existing, "PreToolUse");
+
+        result.Status.Should().Be("busy");
+    }
+
+    [Fact]
+    public void ApplyTeammateEvent_IdleLead_TeammateToolUse_PromotesToBusy()
+    {
+        var existing = CreateState("idle");
+
+        var result = TeammateGate.ApplyTeammateEvent(existing, "PostToolUse");
+
+        result.Status.Should().Be("busy");
+    }
+
+    [Fact]
+    public void ApplyTeammateEvent_DoneLead_TeammateToolUse_PreservesDone()
+    {
+        var existing = CreateState("done");
+
+        var result = TeammateGate.ApplyTeammateEvent(existing, "PreToolUse");
+
+        result.Status.Should().Be("done");
     }
 
     // --- ApplyTeammateEvent: timestamp updates ---

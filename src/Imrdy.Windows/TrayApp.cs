@@ -162,8 +162,8 @@ internal sealed class TrayApp : ApplicationContext
             }
         }
 
-        // Initial sweep to pick up existing sessions
-        PerformSweep();
+        // Initial load to pick up existing sessions
+        BootstrapSessions();
         IsBootstrapping = false;
 
         _logger.LogInformation("TrayApp started — monitoring {Dir}", ImrdyPaths.Sessions);
@@ -217,9 +217,9 @@ internal sealed class TrayApp : ApplicationContext
         _drainTimer.Tick += OnDrainTimerTick;
         _drainTimer.Start();
 
-        // Sweep timer: catches missed FSW events (10s)
+        // Cleanup timer: removes sessions whose state files are gone (10s)
         _sweepTimer = new System.Windows.Forms.Timer { Interval = 10_000 };
-        _sweepTimer.Tick += OnSweepTimerTick;
+        _sweepTimer.Tick += OnCleanupTimerTick;
         _sweepTimer.Start();
 
         // Stale timer: removes old sessions (60s)
@@ -382,11 +382,11 @@ internal sealed class TrayApp : ApplicationContext
         }
     }
 
-    private void OnSweepTimerTick(object? sender, EventArgs e)
+    private void OnCleanupTimerTick(object? sender, EventArgs e)
     {
         try
         {
-            PerformSweep();
+            CleanupGoneSessions();
 
             // Update controller tooltip with session count
             var count = _sessions.Count;
@@ -394,7 +394,7 @@ internal sealed class TrayApp : ApplicationContext
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error in sweep timer");
+            _logger.LogError(ex, "Error in cleanup timer");
         }
     }
 
@@ -605,7 +605,11 @@ internal sealed class TrayApp : ApplicationContext
         }
     }
 
-    private void PerformSweep()
+    /// <summary>
+    /// One-time startup load: reads all existing state files and creates session entries.
+    /// Called once during initialization before FSW takes over real-time updates.
+    /// </summary>
+    private void BootstrapSessions()
     {
         if (!Directory.Exists(ImrdyPaths.Sessions))
         {
@@ -616,24 +620,31 @@ internal sealed class TrayApp : ApplicationContext
         ReloadWorkspaces();
 
         var stateFiles = _stateReader.ReadAllStateFiles(ImrdyPaths.Sessions);
-        var activeIds = new HashSet<string>();
-
         foreach (var state in stateFiles)
         {
-            activeIds.Add(state.SessionId);
             HandleSessionFileChanged(Path.Combine(ImrdyPaths.Sessions, $"{state.SessionId}.json"));
         }
+    }
 
-        // Remove sessions whose state files no longer exist (and grace period expired)
+    /// <summary>
+    /// Periodic cleanup: removes sessions whose state files no longer exist on disk.
+    /// Defense-in-depth for FSW Deleted events that may be missed.
+    /// Does NOT re-read state files — FSW handles all real-time updates.
+    /// </summary>
+    private void CleanupGoneSessions()
+    {
         var toRemove = new List<string>();
         var now = DateTimeOffset.UtcNow;
+
         foreach (var (sessionId, entry) in _sessions)
         {
-            if (!activeIds.Contains(sessionId))
+            var stateFile = Path.Combine(ImrdyPaths.Sessions, $"{sessionId}.json");
+            if (!File.Exists(stateFile))
             {
                 if (entry.RemoveAfter is null)
                 {
                     entry.RemoveAfter = now + GracePeriod;
+                    _logger.LogDebug("State file gone, grace period started: {SessionId}", sessionId);
                 }
 
                 if (now >= entry.RemoveAfter)
@@ -642,7 +653,7 @@ internal sealed class TrayApp : ApplicationContext
                 }
             }
 
-            // Also remove sessions that have passed their grace period
+            // Also remove sessions that have passed their grace period (e.g. SessionEnd)
             if (entry.RemoveAfter.HasValue && now >= entry.RemoveAfter.Value)
             {
                 toRemove.Add(sessionId);
