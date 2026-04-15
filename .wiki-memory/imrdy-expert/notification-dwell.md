@@ -42,7 +42,10 @@ When a new status change arrives before the dwell fires, it *replaces* the pendi
 
 ## Teammate-Aware Suppression
 
-See [Teammate Detection](teammate-detection.md) for how dwell entries are suppressed when teammates are active. The consensus check in the drain timer handles promotion instead of the normal dwell path.
+See [Teammate Detection](teammate-detection.md) for the full 4-layer system. Key interactions with dwell:
+
+- **Dwell suppression**: When status is "done" and teammates are active, no dwell entry is created. Consensus handles promotion instead.
+- **idle_prompt suppression**: The 60s `idle_prompt` backstop is rewritten from "idle" back to "done" when teammates are active, preventing it from bypassing the consensus gate.
 
 ## Sound Triggers
 

@@ -258,7 +258,7 @@ internal sealed class TrayApp : ApplicationContext
 
     private void OnSessionFileChanged(object sender, FileSystemEventArgs e)
     {
-        _logger.LogInformation("FSW: {ChangeType} {Path}", e.ChangeType, e.Name);
+        _logger.LogDebug("FSW: {ChangeType} {Path}", e.ChangeType, e.Name);
         _pendingChanges.Enqueue(e.FullPath);
     }
 
@@ -322,6 +322,13 @@ internal sealed class TrayApp : ApplicationContext
                         _logger.LogInformation("Dwell fired for {SessionId}: {PreviousStatus} → {Status} (type={NotificationType})",
                             notification.SessionId, notification.PreviousStatus, notification.Status, notification.NotificationType ?? "status-change");
 
+                        // Update icon to the settled status (consensus promotion defers icon to here)
+                        if (firedEntry.State.Status != notification.Status)
+                        {
+                            firedEntry.State = firedEntry.State with { Status = notification.Status };
+                            UpdateSessionIcon(firedEntry);
+                        }
+
                         // Toast: status-change entries + idle_prompt (the authoritative "genuinely idle" signal)
                         if (notification.NotificationType is null
                             || string.Equals(notification.NotificationType, "idle_prompt", StringComparison.OrdinalIgnoreCase))
@@ -360,7 +367,8 @@ internal sealed class TrayApp : ApplicationContext
                 if (now - entry.State.LastTeammateAt < TeammateQuietThreshold)
                     continue; // Teammates still active
 
-                // All teammates quiet + lead done → promote to idle
+                // All teammates quiet + lead done → promote to idle.
+                // Icon deferred to dwell fire (5s settle prevents green/red toggling during rapid tool calls).
                 entry.ConsensusPromoted = true;
                 _logger.LogInformation("Consensus promotion for {SessionId}: all teammates quiet for {Quiet}s",
                     sessionId, (int)(now - entry.State.LastTeammateAt.Value).TotalSeconds);
@@ -417,7 +425,7 @@ internal sealed class TrayApp : ApplicationContext
                 if (newTier != entry.LastAgingTier)
                 {
                     entry.LastAgingTier = newTier;
-                    entry.Icon.Icon = GetRendererForStyle(StyleNames.NormalizeStyleName(entry.IconStyle) ?? _currentIconStyle).GetIcon(entry.State.Status, newTier);
+                    entry.Icon.Icon = GetRendererForStyle(ResolveSessionIconStyle(entry)).GetIcon(entry.State.Status, newTier);
                 }
 
                 // Always update tooltip (status age changes every tick)
@@ -444,6 +452,28 @@ internal sealed class TrayApp : ApplicationContext
 
         if (_sessions.TryGetValue(state.SessionId, out var entry))
         {
+            // Skip re-processing when sweep re-reads an unchanged state file
+            if (entry.LastProcessedTimestamp == state.Timestamp)
+            {
+                return;
+            }
+
+            entry.LastProcessedTimestamp = state.Timestamp;
+
+            // idle_prompt is a 60s backstop that fires even when subagents are still active.
+            // When teammates are present, keep the session at "done" — consensus handles promotion.
+            var hasActiveTeammates = state.LastTeammateAt is not null
+                && DateTimeOffset.UtcNow - state.LastTeammateAt < TeammatePresenceTimeout;
+
+            if (hasActiveTeammates
+                && state.Status == "idle"
+                && string.Equals(state.NotificationType, "idle_prompt", StringComparison.OrdinalIgnoreCase))
+            {
+                _logger.LogInformation("Suppressed idle_prompt for {SessionId}: teammates still active, keeping done",
+                    state.SessionId);
+                state = state with { Status = "done", NotificationType = "" };
+            }
+
             var previousStatus = entry.State.Status;
             var statusChanged = previousStatus != state.Status;
             var previousNotificationType = entry.State.NotificationType;
@@ -472,9 +502,6 @@ internal sealed class TrayApp : ApplicationContext
                 {
                     // Suppress dwell entry for "done" status when teammates are active.
                     // The consensus check in OnDrainTimerTick handles promotion once all teammates are quiet.
-                    var hasActiveTeammates = state.LastTeammateAt is not null
-                        && DateTimeOffset.UtcNow - state.LastTeammateAt < TeammatePresenceTimeout;
-
                     if (state.Status == "done" && hasActiveTeammates)
                     {
                         _logger.LogDebug("Suppressed dwell for {SessionId}: done with active teammates", entry.SessionId);
@@ -547,6 +574,7 @@ internal sealed class TrayApp : ApplicationContext
                 SoundPack = resolvedPack,
                 DesktopIndex = state.DesktopIndex,
                 IconStyle = normalizedStyle,
+                LastProcessedTimestamp = state.Timestamp,
             };
 
             // Write resolved pack and icon style to state file so the hook preserves them
@@ -583,6 +611,9 @@ internal sealed class TrayApp : ApplicationContext
         {
             return;
         }
+
+        // Load workspaces BEFORE sessions so ResolveSessionIconStyle has workspace data
+        ReloadWorkspaces();
 
         var stateFiles = _stateReader.ReadAllStateFiles(ImrdyPaths.Sessions);
         var activeIds = new HashSet<string>();
@@ -622,9 +653,6 @@ internal sealed class TrayApp : ApplicationContext
         {
             RemoveSession(sessionId);
         }
-
-        // Reload workspaces on sweep as well
-        ReloadWorkspaces();
     }
 
     private void CleanupStaleSessions()
@@ -897,7 +925,10 @@ internal sealed class TrayApp : ApplicationContext
     {
         var sessionStyle = StyleNames.NormalizeStyleName(entry.IconStyle);
         if (sessionStyle is not null)
+        {
+            _logger.LogDebug("IconStyle for {SessionId}: session override → {Style}", entry.SessionId, sessionStyle);
             return sessionStyle;
+        }
 
         // Inherit from workspace if session has no override
         var cwd = entry.State?.Cwd;
@@ -908,10 +939,14 @@ internal sealed class TrayApp : ApplicationContext
             {
                 var wsStyle = StyleNames.NormalizeStyleName(ws.IconStyle);
                 if (wsStyle is not null)
+                {
+                    _logger.LogDebug("IconStyle for {SessionId}: workspace override → {Style}", entry.SessionId, wsStyle);
                     return wsStyle;
+                }
             }
         }
 
+        _logger.LogDebug("IconStyle for {SessionId}: global default → {Style}", entry.SessionId, _currentIconStyle);
         return _currentIconStyle;
     }
 

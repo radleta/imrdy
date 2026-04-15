@@ -1,12 +1,12 @@
 ---
 tags: [imrdy/teammates]
 updated: 2026-04-14
-summary: "3-layer teammate-aware notification system — deterministic gate, state tracking, consensus promotion"
+summary: "4-layer teammate-aware notification system — deterministic gate, state tracking, consensus promotion, idle_prompt suppression"
 ---
 
 # Teammate Detection
 
-Claude Code agent teams send `agent_id` and `agent_type` on hook events from teammates. imrdy uses a 3-layer system to handle teams vs solo sessions differently.
+Claude Code agent teams send `agent_id` and `agent_type` on hook events from teammates. imrdy uses a 4-layer system to handle teams vs solo sessions differently.
 
 ## Layer 1 — Deterministic Gate (HookCommand)
 
@@ -34,17 +34,20 @@ On the 100ms drain timer tick, after dwell dispatch:
 2. Skip if `ConsensusPromoted` is already true
 3. Skip if `last_teammate_at` is null (no teammates — normal dwell path)
 4. Skip if `now - last_teammate_at < TeammateQuietThreshold` (15s)
-5. All teammates quiet → set `ConsensusPromoted = true`, fire `OnStatusChanged("idle", "done")`
+5. All teammates quiet → set `ConsensusPromoted = true`, fire `OnStatusChanged("idle", "done")` for dwell-gated icon + toast/sound (icon deferred to dwell fire to prevent green/red toggling during rapid lead tool calls)
 
 `ConsensusPromoted` resets when status changes away from "done".
 
-## Three Speeds to Green
+## Speeds to Green
 
 | Scenario | Path | Time to green |
 |----------|------|---------------|
 | No teammates | Stop→done→dwell→idle | ~5 seconds |
+| No teammates (backstop) | idle_prompt Notification | 60 seconds |
 | Teammates finish | Stop→done→consensus→idle | ~15 seconds |
-| Backstop | idle_prompt Notification | 60 seconds |
+| Teammates age out | Teammate presence expires (2 min) → dwell | ~2 minutes |
+
+For team sessions, idle_prompt is suppressed (see Layer 4 below), so consensus is the primary path. The 60s backstop only applies to solo sessions.
 
 ## Dwell Suppression for Teams
 
@@ -52,6 +55,18 @@ When status is "done" AND `last_teammate_at` is within TeammatePresenceTimeout (
 - Do NOT create a dwell entry (normal 5s done→idle path is suppressed)
 - Consensus check handles promotion instead
 - This prevents premature idle toasts while teammates are still working
+
+## Layer 4 — idle_prompt Suppression (TrayApp)
+
+`idle_prompt` is a 60s backstop Notification that fires even when subagents are still active. Without gating, it would bypass the teammate-aware consensus system and cause premature green/toast.
+
+In `HandleSessionFileChanged`, when an `idle_prompt` arrives for a session with active teammates (`last_teammate_at` within 2 min):
+- Status is rewritten from "idle" back to "done"
+- NotificationType is cleared
+- Session stays teal; no toast or sound fires
+- Consensus (Layer 3) remains the path to green
+
+This closes the gap where idle_prompt was the only notification path not respecting the teammate gate.
 
 ## Discovered Team Lifecycle Events
 

@@ -42,13 +42,15 @@ TrayApp has multiple timers that interact:
 | Timer | Interval | Purpose |
 |-------|----------|---------|
 | Drain timer | 100ms | Process pending file changes, dwell dispatch, consensus check |
-| Sweep timer | 2s | Re-read all state files, detect stale/missing sessions |
-| Stale timer | 30s | Remove sessions past grace period |
+| Sweep timer | 10s | Re-read all state files, detect stale/missing sessions |
+| Stale timer | 60s | Remove sessions past grace period |
 
 The drain timer is the central coordination point:
 1. Process queued file change events
 2. Dispatch fired dwell notifications
 3. Run consensus promotion check (see [Teammate Detection](teammate-detection.md))
+
+The sweep timer re-reads all state files but skips re-processing unchanged ones: `SessionEntry.LastProcessedTimestamp` is compared against the state file's `Timestamp` field. If they match, `HandleSessionFileChanged` returns early. This prevents redundant icon/dwell/notification processing on every sweep cycle.
 
 ## Session Icon Style Resolution
 

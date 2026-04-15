@@ -44,7 +44,7 @@ Unknown events return "unknown".
 
 - Icon: teal (distinct from green/idle)
 - No toast fires on "done" (not in DefaultToastEvents)
-- Promotes to "idle" (green) via: dwell (5s, solo) or consensus (15s, teams) or idle_prompt (60s, backstop)
+- Promotes to "idle" (green) via: dwell (5s, solo) or consensus (15s, teams). idle_prompt (60s) is the backstop for solo sessions; suppressed for teams when teammates are active (see [Teammate Detection](teammate-detection.md) Layer 4)
 
 ## Aging
 

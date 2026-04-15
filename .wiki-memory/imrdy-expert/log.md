@@ -1,5 +1,13 @@
 # imrdy-expert Wiki — Operations Log
 
+## [2026-04-14] update | idle_prompt suppression + sweep optimization
+- Updated: teammate-detection.md (3-layer → 4-layer, added Layer 4 idle_prompt suppression, revised speeds-to-green table)
+- Updated: notification-dwell.md (expanded teammate-aware suppression section with idle_prompt detail)
+- Updated: architecture.md (sweep timer 2s→10s, stale timer 30s→60s, added LastProcessedTimestamp skip optimization)
+- Updated: hook-events.md (idle_prompt section clarified: solo-only backstop, suppressed for teams)
+- Updated: status-mapping.md (done→idle promotion paths clarified for teams vs solo)
+- Updated: index.md (teammate-detection summary updated to 4-layer)
+
 ## [2026-04-14] ingest | Initial seed from teammate-aware notifications session
 - New page: hook-events.md (20 events mapped, behavioral discoveries from real testing)
 - New page: teammate-detection.md (3-layer system, agent_id gate, consensus promotion, clawd-on-desk reference)

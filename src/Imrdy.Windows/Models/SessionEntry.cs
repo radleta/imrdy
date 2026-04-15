@@ -36,6 +36,10 @@ internal sealed class SessionEntry : IDisposable
     /// <summary>Last computed aging tier. Used to avoid unnecessary icon updates.</summary>
     public int LastAgingTier { get; set; } = 0;
 
+    /// <summary>Timestamp of the last state file processed for this session.
+    /// Used by sweep to skip re-processing unchanged state files.</summary>
+    public DateTimeOffset? LastProcessedTimestamp { get; set; }
+
     /// <summary>True after consensus promotion has been triggered for the current "done" status.
     /// Reset when status changes away from "done".</summary>
     public bool ConsensusPromoted { get; set; }

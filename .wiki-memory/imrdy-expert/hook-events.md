@@ -41,8 +41,8 @@ Stop fires between every turn, including between teammate coordination turns. Ma
 ### PermissionDenied → idle (not busy)
 Initially mapped to "busy" assuming Claude would process the denial. Real-world testing showed Claude returns to the user prompt after denial — it's waiting for input, not thinking. Purple icon now immediately clears to green on deny.
 
-### idle_prompt is the authoritative idle signal
-Notification with notification_type="idle_prompt" fires exactly 60 seconds after Claude's last activity. This is the definitive "genuinely waiting for user" signal — the backstop for all idle detection.
+### idle_prompt is the authoritative idle signal (solo sessions)
+Notification with notification_type="idle_prompt" fires exactly 60 seconds after Claude's last activity. For solo sessions, this is the definitive "genuinely waiting for user" signal — the backstop for all idle detection. For team sessions, idle_prompt is suppressed when teammates are active (rewritten to "done") — consensus handles promotion instead. See [Teammate Detection](teammate-detection.md) Layer 4.
 
 ### agent_id presence is the teammate gate
 Events with `agent_id` field are from teammates. Events without are from the lead. The hook command uses this to route: teammate events only update `last_teammate_at`, lead events do full state file writes. See [Teammate Detection](teammate-detection.md).
