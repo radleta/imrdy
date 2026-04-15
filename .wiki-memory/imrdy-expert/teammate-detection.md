@@ -1,6 +1,6 @@
 ---
 tags: [imrdy/teammates]
-updated: 2026-04-14
+updated: 2026-04-15
 summary: "4-layer teammate-aware notification system — deterministic gate, state tracking, consensus promotion, idle_prompt suppression"
 ---
 
@@ -8,13 +8,24 @@ summary: "4-layer teammate-aware notification system — deterministic gate, sta
 
 Claude Code agent teams send `agent_id` and `agent_type` on hook events from teammates. imrdy uses a 4-layer system to handle teams vs solo sessions differently.
 
-## Layer 1 — Deterministic Gate (HookCommand)
+## Layer 1 — Deterministic Gate (HookCommand + TeammateGate)
 
 `agent_id` field on `HookEventModel` is the gate:
-- **Present** → teammate event: only update `last_teammate_at` timestamp on state file. Do NOT change lead's status/hook_event.
+- **Present** → teammate event: update `last_teammate_at` timestamp on state file. Lead's status/hook_event is preserved — **except** when the lead is stuck at "permission" and the teammate fires a permission-resolution event (see below).
 - **Absent** → lead event: full state file write with status derivation.
 
 This prevents teammate tool use from overwriting the lead's status. A teammate doing Read/Edit doesn't flip the lead's icon to busy.
+
+`TeammateGate` (static class in `Imrdy.Core/Hooks/`) encapsulates this logic via `ApplyTeammateEvent()` and `ShouldClearPermission()`. `HookCommand` delegates to `TeammateGate.ApplyTeammateEvent()` instead of doing inline timestamp-only writes.
+
+### Permission-Clearing Exception (purple-sticking fix)
+
+When the lead status is "permission" (purple icon — awaiting user approval), a teammate event can resolve the permission via:
+- **PostToolUse** — permission was granted, tool ran
+- **PostToolUseFailure** — tool ran but failed
+- **PermissionDenied** — permission was denied
+
+In these cases, `TeammateGate.ShouldClearPermission()` returns true. `ApplyTeammateEvent()` calls `StatusDerivation.DeriveStatus()` to get the derived status for the teammate event and updates the lead's status accordingly, clearing the purple icon. Without this, the lead could stay stuck at "permission" indefinitely after a teammate resolved it.
 
 Edge case: teammate hook can fire before lead session exists (race condition on SessionStart). Logged as warning, not an error.
 

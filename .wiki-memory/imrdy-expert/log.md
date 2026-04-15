@@ -1,5 +1,10 @@
 # imrdy-expert Wiki — Operations Log
 
+## [2026-04-15] update | purple-sticking permission fix — TeammateGate
+- Updated: teammate-detection.md (Layer 1 expanded: permission-clearing exception, TeammateGate class, ShouldClearPermission/ApplyTeammateEvent methods)
+- Updated: hook-events.md (agent_id gate section: teammate events now delegate to TeammateGate, permission-clearing exception noted)
+- Updated: CLAUDE.md (teammate-aware gating paragraph: unconditional "skip" replaced with exception for permission-resolution events, TeammateGate reference added)
+
 ## [2026-04-14] update | idle_prompt suppression + sweep optimization
 - Updated: teammate-detection.md (3-layer → 4-layer, added Layer 4 idle_prompt suppression, revised speeds-to-green table)
 - Updated: notification-dwell.md (expanded teammate-aware suppression section with idle_prompt detail)

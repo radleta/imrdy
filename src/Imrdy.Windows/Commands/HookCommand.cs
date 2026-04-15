@@ -93,8 +93,13 @@ internal static class HookCommand
             foreach (var kv in hookEvent.ExtensionData)
                 parts.Add($"{kv.Key}={kv.Value}");
         }
-        logger.LogInformation("Hook: {SessionId} → {Status} ({Details})",
-            hookEvent.SessionId, status, string.Join(" ", parts));
+        var detailStr = string.Join(" ", parts);
+        if (!string.IsNullOrEmpty(hookEvent.AgentId))
+            logger.LogInformation("Hook: {SessionId} → {Status} ({Details}) [teammate agent={AgentId}]",
+                hookEvent.SessionId, status, detailStr, hookEvent.AgentId);
+        else
+            logger.LogInformation("Hook: {SessionId} → {Status} ({Details})",
+                hookEvent.SessionId, status, detailStr);
 
         logger.LogDebug("Hook raw stdin: {RawStdin}", input);
 
@@ -103,13 +108,20 @@ internal static class HookCommand
         var statePath = Path.Combine(ImrdyPaths.Sessions, $"{hookEvent.SessionId}.json");
         var existing = reader.ReadStateFile(statePath);
 
-        // Teammate events (agent_id present): update has_teammates flag only, don't change lead status.
-        // This prevents teammate tool use from overwriting the lead's status/icon.
+        // Teammate events (agent_id present): update last_teammate_at timestamp.
+        // Preserves lead status except when clearing a resolved "permission" state.
         if (!string.IsNullOrEmpty(hookEvent.AgentId))
         {
             if (existing is not null)
             {
-                var updated = existing with { LastTeammateAt = DateTimeOffset.UtcNow, Timestamp = DateTimeOffset.UtcNow };
+                var updated = TeammateGate.ApplyTeammateEvent(existing, hookEvent.HookEventName);
+
+                if (updated.Status != existing.Status)
+                {
+                    logger.LogInformation("Hook: {SessionId} → {Status} (teammate cleared permission, was {Event})",
+                        hookEvent.SessionId, updated.Status, hookEvent.HookEventName);
+                }
+
                 try
                 {
                     reader.WriteStateFile(statePath, updated);

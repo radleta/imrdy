@@ -1,6 +1,6 @@
 ---
 tags: [imrdy/hooks]
-updated: 2026-04-14
+updated: 2026-04-15
 summary: "All 20 Claude Code hook events — what they send, status mapping, and real-world behavior"
 ---
 
@@ -45,7 +45,7 @@ Initially mapped to "busy" assuming Claude would process the denial. Real-world 
 Notification with notification_type="idle_prompt" fires exactly 60 seconds after Claude's last activity. For solo sessions, this is the definitive "genuinely waiting for user" signal — the backstop for all idle detection. For team sessions, idle_prompt is suppressed when teammates are active (rewritten to "done") — consensus handles promotion instead. See [Teammate Detection](teammate-detection.md) Layer 4.
 
 ### agent_id presence is the teammate gate
-Events with `agent_id` field are from teammates. Events without are from the lead. The hook command uses this to route: teammate events only update `last_teammate_at`, lead events do full state file writes. See [Teammate Detection](teammate-detection.md).
+Events with `agent_id` field are from teammates. Events without are from the lead. The hook command delegates to `TeammateGate.ApplyTeammateEvent()`: teammate events normally only update `last_teammate_at`, but will also clear the lead's "permission" status when the teammate fires a permission-resolution event (PostToolUse, PostToolUseFailure, PermissionDenied). Lead events do full state file writes. See [Teammate Detection](teammate-detection.md) Layer 1.
 
 ### High-frequency events
 PreToolUse and PostToolUse fire once per tool use — potentially hundreds per minute on busy sessions. Both map to "busy" so PostToolUse adds no status change, but provides confirmation data in logs.
