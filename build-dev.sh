@@ -8,8 +8,11 @@ DEST="$HOME/.local/bin/imrdy.exe"
 # 1. Publish to the normal output dir (no lock contention)
 dotnet publish src/Imrdy.Windows/Imrdy.Windows.csproj -c Release
 
-# 2. Find the publish output (avoids hardcoding the TFM)
-PUBLISH_EXE=$(find src/Imrdy.Windows/bin/Release -path '*/win-x64/publish/imrdy.exe' -type f | head -1)
+# 2. Find the publish output (avoids hardcoding the TFM).
+#    Pick the newest match — stale TFM dirs from prior builds can otherwise win
+#    the alphabetical race (e.g. net10.0-windows vs net10.0-windows10.0.17763.0).
+PUBLISH_EXE=$(find src/Imrdy.Windows/bin/Release -path '*/win-x64/publish/imrdy.exe' -type f -printf '%T@ %p\n' \
+    | sort -nr | head -1 | cut -d' ' -f2-)
 if [[ -z "$PUBLISH_EXE" ]]; then
     echo "ERROR: published imrdy.exe not found" >&2
     exit 1
