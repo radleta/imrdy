@@ -1,5 +1,9 @@
 # imrdy-expert Wiki — Operations Log
 
+## [2026-04-16] ingest | Overlay interactivity research
+- New page: overlay-interactivity.md (WS_EX_TRANSPARENT toggle pattern, NCHITTEST hit-testing, selective pass-through architecture)
+- Updated: index.md (+1 page, last updated date)
+
 ## [2026-04-15] update | purple-sticking permission fix — TeammateGate
 - Updated: teammate-detection.md (Layer 1 expanded: permission-clearing exception, TeammateGate class, ShouldClearPermission/ApplyTeammateEvent methods)
 - Updated: hook-events.md (agent_id gate section: teammate events now delegate to TeammateGate, permission-clearing exception noted)

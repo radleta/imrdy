@@ -7,6 +7,7 @@
 - [Notification Dwell](notification-dwell.md) — Dwell timer system that gates toast/sound behind status settling — prevents notification storms
 - [Status Mapping](status-mapping.md) — Two-layer status mapping: hook event → base status → RGB color, with 9 base statuses
 - [Architecture](architecture.md) — Three entry points, timer interactions, field preservation, and state file lifecycle
+- [Overlay Interactivity](overlay-interactivity.md) — Overlay interactivity: WS_EX_TRANSPARENT toggle, NCHITTEST hit-testing, selective click-through architecture
 
 ## Log
-Last updated: 2026-04-15 | 5 pages | 0 contradictions
+Last updated: 2026-04-16 | 6 pages | 0 contradictions
