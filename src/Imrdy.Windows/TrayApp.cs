@@ -581,6 +581,15 @@ internal sealed class TrayApp : ApplicationContext
             PersistSessionSoundPack(entry);
             PersistSessionIconStyle(entry);
 
+            // Session first observed as SessionEnd (tray started mid-session, or hook fired
+            // before FSW picked up earlier writes) — start grace period so cleanup removes it.
+            // Without this, FSW won't fire again and CleanupGoneSessions never sets RemoveAfter,
+            // so the stale state file lingers forever.
+            if (string.Equals(state.HookEvent, "SessionEnd", StringComparison.OrdinalIgnoreCase))
+            {
+                entry.RemoveAfter = DateTimeOffset.UtcNow + GracePeriod;
+            }
+
             _sessions[state.SessionId] = entry;
             CreateSessionIcon(entry);
 
