@@ -49,7 +49,8 @@ public class ControllerMenuModelTests
 
         var items = ControllerMenuModel.Build(state);
 
-        var packMenu = items.First(i => i.Label == "Sound Pack");
+        var soundMenu = items.First(i => i.Label == "Sound");
+        var packMenu = soundMenu.Children.First(i => i.Label == "Sound Pack");
         // Random + None (no installed packs, no separator)
         packMenu.Children.Should().HaveCount(2);
         packMenu.Children.First().Label.Should().Be("Random");
@@ -63,7 +64,8 @@ public class ControllerMenuModelTests
 
         var items = ControllerMenuModel.Build(state);
 
-        var enabledMenu = items.First(i => i.Label == "Enabled Packs");
+        var soundMenu = items.First(i => i.Label == "Sound");
+        var enabledMenu = soundMenu.Children.First(i => i.Label == "Enabled Packs");
         enabledMenu.Children.Should().ContainSingle()
             .Which.Label.Should().Be("(none installed)");
         enabledMenu.Children.Single().Enabled.Should().BeFalse();
@@ -76,7 +78,8 @@ public class ControllerMenuModelTests
 
         var items = ControllerMenuModel.Build(state);
 
-        var toggle = items.First(i => i.Tag == "toggle-sound");
+        var soundMenu = items.First(i => i.Label == "Sound");
+        var toggle = soundMenu.Children.First(i => i.Tag == "toggle-sound");
         toggle.Checked.Should().BeTrue();
         toggle.Label.Should().Be("Sounds");
     }
@@ -88,7 +91,8 @@ public class ControllerMenuModelTests
 
         var items = ControllerMenuModel.Build(state);
 
-        var toggle = items.First(i => i.Tag == "toggle-sound");
+        var soundMenu = items.First(i => i.Label == "Sound");
+        var toggle = soundMenu.Children.First(i => i.Tag == "toggle-sound");
         toggle.Checked.Should().BeFalse();
     }
 
@@ -99,7 +103,8 @@ public class ControllerMenuModelTests
 
         var items = ControllerMenuModel.Build(state);
 
-        var packMenu = items.First(i => i.Label == "Sound Pack");
+        var soundMenu = items.First(i => i.Label == "Sound");
+        var packMenu = soundMenu.Children.First(i => i.Label == "Sound Pack");
         // Random + assistant + retro + separator + (None) = 5
         packMenu.Children.Should().HaveCount(5);
         packMenu.Children.First(c => c.Tag == "switch-pack:random").Checked.Should().BeTrue();
@@ -118,7 +123,8 @@ public class ControllerMenuModelTests
 
         var items = ControllerMenuModel.Build(state);
 
-        var packMenu = items.First(i => i.Label == "Sound Pack");
+        var soundMenu = items.First(i => i.Label == "Sound");
+        var packMenu = soundMenu.Children.First(i => i.Label == "Sound Pack");
         packMenu.Children.First(c => c.Tag == "switch-pack:random").Checked.Should().BeFalse();
         packMenu.Children.First(c => c.Tag == "switch-pack:retro").Checked.Should().BeTrue();
         packMenu.Children.First(c => c.Tag == "switch-pack:assistant").Checked.Should().BeFalse();
@@ -134,7 +140,8 @@ public class ControllerMenuModelTests
 
         var items = ControllerMenuModel.Build(state);
 
-        var packMenu = items.First(i => i.Label == "Sound Pack");
+        var soundMenu = items.First(i => i.Label == "Sound");
+        var packMenu = soundMenu.Children.First(i => i.Label == "Sound Pack");
         packMenu.Children.First(c => c.Tag == "switch-pack:random").Checked.Should().BeFalse();
         packMenu.Children.First(c => c.Tag == "switch-pack:").Checked.Should().BeTrue();
     }
@@ -146,7 +153,8 @@ public class ControllerMenuModelTests
 
         var items = ControllerMenuModel.Build(state);
 
-        var enabledMenu = items.First(i => i.Label == "Enabled Packs");
+        var soundMenu = items.First(i => i.Label == "Sound");
+        var enabledMenu = soundMenu.Children.First(i => i.Label == "Enabled Packs");
         enabledMenu.Children.Should().HaveCount(2);
         enabledMenu.Children.Should().OnlyContain(c => c.Checked == true);
         enabledMenu.Children.First(c => c.Tag == "toggle-pack-enabled:assistant").Should().NotBeNull();
@@ -170,7 +178,8 @@ public class ControllerMenuModelTests
 
         var items = ControllerMenuModel.Build(state);
 
-        var enabledMenu = items.First(i => i.Label == "Enabled Packs");
+        var soundMenu = items.First(i => i.Label == "Sound");
+        var enabledMenu = soundMenu.Children.First(i => i.Label == "Enabled Packs");
         enabledMenu.Children.First(c => c.Label == "assistant").Checked.Should().BeTrue();
         enabledMenu.Children.First(c => c.Label == "retro").Checked.Should().BeFalse();
     }
@@ -184,7 +193,6 @@ public class ControllerMenuModelTests
 
         var sessionsMenu = items.First(i => i.Label == "Sessions (3)");
         sessionsMenu.Children.Should().HaveCount(3);
-        sessionsMenu.Children.Should().OnlyContain(c => c.Enabled == false);
     }
 
     [Fact]
@@ -212,7 +220,6 @@ public class ControllerMenuModelTests
         allTags.Should().Contain("switch-pack:assistant");
         allTags.Should().Contain("toggle-pack-enabled:assistant");
         allTags.Should().Contain("open-config");
-        allTags.Should().Contain("open-sounds");
         allTags.Should().Contain("open-log");
         allTags.Should().Contain("exit");
     }
@@ -241,7 +248,7 @@ public class ControllerMenuModelTests
 
         var items = ControllerMenuModel.Build(state);
 
-        var iconStyleMenu = items.First(i => i.Label == "Icon Style");
+        var iconStyleMenu = GetTrayIconStyleMenu(items);
         iconStyleMenu.Children.First(c => c.Tag == "switch-icon-style:circles").Checked.Should().BeTrue();
         iconStyleMenu.Children.Where(c => c.Tag != "switch-icon-style:circles" && c.Type == MenuItemType.Item)
             .Should().OnlyContain(c => !c.Checked);
@@ -257,7 +264,7 @@ public class ControllerMenuModelTests
 
         var items = ControllerMenuModel.Build(state);
 
-        var iconStyleMenu = items.First(i => i.Label == "Icon Style");
+        var iconStyleMenu = GetTrayIconStyleMenu(items);
         iconStyleMenu.Children.First(c => c.Tag == "switch-icon-style:circles").Checked.Should().BeTrue();
     }
 
@@ -268,7 +275,7 @@ public class ControllerMenuModelTests
 
         var items = ControllerMenuModel.Build(state);
 
-        var iconStyleMenu = items.First(i => i.Label == "Icon Style");
+        var iconStyleMenu = GetTrayIconStyleMenu(items);
         foreach (var styleName in StyleNames.BuiltInStyles)
         {
             iconStyleMenu.Children.Should().Contain(c => c.Tag == $"switch-icon-style:{styleName}",
@@ -283,7 +290,7 @@ public class ControllerMenuModelTests
 
         var items = ControllerMenuModel.Build(state);
 
-        var iconStyleMenu = items.First(i => i.Label == "Icon Style");
+        var iconStyleMenu = GetTrayIconStyleMenu(items);
         iconStyleMenu.Children.First(c => c.Tag == "switch-icon-style:circles").Label.Should().Be("Circles");
         iconStyleMenu.Children.First(c => c.Tag == "switch-icon-style:squares").Label.Should().Be("Squares");
         iconStyleMenu.Children.First(c => c.Tag == "switch-icon-style:triangles").Label.Should().Be("Triangles");
@@ -302,7 +309,7 @@ public class ControllerMenuModelTests
 
         var items = ControllerMenuModel.Build(state);
 
-        var iconStyleMenu = items.First(i => i.Label == "Icon Style");
+        var iconStyleMenu = GetTrayIconStyleMenu(items);
         iconStyleMenu.Children.First(c => c.Tag == "switch-icon-style:triangles").Checked.Should().BeTrue();
         iconStyleMenu.Children.Where(c => c.Tag != "switch-icon-style:triangles" && c.Type == MenuItemType.Item)
             .Should().OnlyContain(c => !c.Checked);
@@ -319,7 +326,7 @@ public class ControllerMenuModelTests
 
         var items = ControllerMenuModel.Build(state);
 
-        var iconStyleMenu = items.First(i => i.Label == "Icon Style");
+        var iconStyleMenu = GetTrayIconStyleMenu(items);
         iconStyleMenu.Children.First(c => c.Label == "my-pack").Checked.Should().BeTrue();
         iconStyleMenu.Children.First(c => c.Tag == "switch-icon-style:circles").Checked.Should().BeFalse();
     }
@@ -334,7 +341,7 @@ public class ControllerMenuModelTests
 
         var items = ControllerMenuModel.Build(state);
 
-        var iconStyleMenu = items.First(i => i.Label == "Icon Style");
+        var iconStyleMenu = GetTrayIconStyleMenu(items);
         // 6 built-ins + separator + 2 packs = 9
         iconStyleMenu.Children.Should().HaveCount(9);
         iconStyleMenu.Children.Select(c => c.Label).Should().Contain("pack-a", "pack-b");
@@ -350,7 +357,7 @@ public class ControllerMenuModelTests
 
         var items = ControllerMenuModel.Build(state);
 
-        var iconStyleMenu = items.First(i => i.Label == "Icon Style");
+        var iconStyleMenu = GetTrayIconStyleMenu(items);
         iconStyleMenu.Children.Should().HaveCount(6);
         iconStyleMenu.Children.Should().OnlyContain(c => c.Type == MenuItemType.Item);
     }
@@ -365,7 +372,7 @@ public class ControllerMenuModelTests
 
         var items = ControllerMenuModel.Build(state);
 
-        var iconStyleMenu = items.First(i => i.Label == "Icon Style");
+        var iconStyleMenu = GetTrayIconStyleMenu(items);
         // 6 built-ins + 1 separator + 1 pack = 8
         iconStyleMenu.Children.Should().HaveCount(8);
         iconStyleMenu.Children[6].Type.Should().Be(MenuItemType.Separator);
@@ -430,6 +437,166 @@ public class ControllerMenuModelTests
         overlayMenu.Children.First(c => c.Tag == "set-overlay-size:64").Checked.Should().BeFalse();
         overlayMenu.Children.First(c => c.Tag == "set-overlay-size:96").Checked.Should().BeTrue();
         overlayMenu.Children.First(c => c.Tag == "set-overlay-size:128").Checked.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Build_TopLevel_HasSoundTrayOverlaySessionsWorkspacesManageExit()
+    {
+        var state = MenuTestHelper.EmptyControllerState();
+
+        var items = ControllerMenuModel.Build(state);
+
+        // Non-separator items after the header+separator
+        var nonSep = items.Where(i => i.Type != MenuItemType.Separator && i.Label != "imrdy").ToList();
+        var labels = nonSep.Select(i => i.Label).ToList();
+        labels.Should().ContainInOrder("Sound", "Tray", "Overlay", "Sessions (0)", "Workspaces", "Manage", "Exit");
+    }
+
+    [Fact]
+    public void Build_TraySubmenu_HasEnabledToggleAndIconStyle()
+    {
+        var state = MenuTestHelper.EmptyControllerState();
+
+        var items = ControllerMenuModel.Build(state);
+
+        var trayMenu = items.First(i => i.Label == "Tray");
+        trayMenu.Children.Should().Contain(c => c.Tag == "toggle-tray");
+        trayMenu.Children.Should().Contain(c => c.Label == "Icon Style" && c.Type == MenuItemType.Submenu);
+    }
+
+    [Fact]
+    public void Build_OverlaySubmenu_HasInteractiveAfterEnabled()
+    {
+        var state = MenuTestHelper.EmptyControllerState();
+
+        var items = ControllerMenuModel.Build(state);
+
+        var overlayMenu = items.First(i => i.Label == "Overlay");
+        overlayMenu.Children[0].Tag.Should().Be("toggle-overlay");
+        overlayMenu.Children[1].Tag.Should().Be("toggle-overlay-interactive");
+    }
+
+    [Fact]
+    public void Build_SessionItems_HaveSwitchTagAndAreEnabled()
+    {
+        var state = MenuTestHelper.EmptyControllerState() with
+        {
+            Sessions =
+            [
+                new SessionMenuState { SessionId = "abc", Status = "idle" },
+                new SessionMenuState { SessionId = "def", Status = "busy" },
+            ],
+        };
+
+        var items = ControllerMenuModel.Build(state);
+
+        var sessionsMenu = items.First(i => i.Label == "Sessions (2)");
+        sessionsMenu.Children.Should().Contain(c => c.Tag == "switch-session:abc" && c.Enabled);
+        sessionsMenu.Children.Should().Contain(c => c.Tag == "switch-session:def" && c.Enabled);
+    }
+
+    [Fact]
+    public void Build_WorkspaceItems_HaveSwitchTagAndAreEnabled()
+    {
+        var state = MenuTestHelper.EmptyControllerState() with
+        {
+            Workspaces =
+            [
+                MenuTestHelper.WorkspaceWithDesktopIndex("Dev", @"C:\dev", 0),
+            ],
+        };
+
+        var items = ControllerMenuModel.Build(state);
+
+        var wsMenu = items.First(i => i.Label == "Workspaces");
+        wsMenu.Children.Should().ContainSingle()
+            .Which.Should().Match<MenuItemModel>(c =>
+                c.Tag == @"switch-workspace:C:\dev" && c.Enabled);
+    }
+
+    [Fact]
+    public void Build_SessionItems_SortedByDesktopIndex()
+    {
+        var state = MenuTestHelper.EmptyControllerState() with
+        {
+            Sessions =
+            [
+                MenuTestHelper.SessionWithDesktopIndex("s3", 3),
+                MenuTestHelper.SessionWithDesktopIndex("s1", 1),
+                MenuTestHelper.SessionWithDesktopIndex("s2", 2),
+            ],
+        };
+
+        var items = ControllerMenuModel.Build(state);
+
+        var sessionsMenu = items.First(i => i.Label == "Sessions (3)");
+        sessionsMenu.Children.Select(c => c.Tag).Should().Equal(
+            "switch-session:s1",
+            "switch-session:s2",
+            "switch-session:s3");
+    }
+
+    [Fact]
+    public void Build_WorkspaceItems_SortedByDesktopIndex()
+    {
+        var state = MenuTestHelper.EmptyControllerState() with
+        {
+            Workspaces =
+            [
+                MenuTestHelper.WorkspaceWithDesktopIndex("W2", @"C:\w2", 2),
+                MenuTestHelper.WorkspaceWithDesktopIndex("W0", @"C:\w0", 0),
+                MenuTestHelper.WorkspaceWithDesktopIndex("W1", @"C:\w1", 1),
+            ],
+        };
+
+        var items = ControllerMenuModel.Build(state);
+
+        var wsMenu = items.First(i => i.Label == "Workspaces");
+        wsMenu.Children.Select(c => c.Label).Should().Equal("W0", "W1", "W2");
+    }
+
+    [Fact]
+    public void Build_ManageSubmenu_HasOpenConfigAndOpenLog()
+    {
+        var state = MenuTestHelper.EmptyControllerState();
+
+        var items = ControllerMenuModel.Build(state);
+
+        var manageMenu = items.First(i => i.Label == "Manage");
+        manageMenu.Children.Should().HaveCount(2);
+        manageMenu.Children[0].Tag.Should().Be("open-config");
+        manageMenu.Children[1].Tag.Should().Be("open-log");
+    }
+
+    [Fact]
+    public void Build_TrayDisabled_TraySubmenuEnabledToggleUnchecked()
+    {
+        var state = MenuTestHelper.EmptyControllerState() with
+        {
+            Config = new ImrdyConfig { Tray = new TrayConfig { Enabled = false } },
+        };
+
+        var items = ControllerMenuModel.Build(state);
+
+        var trayMenu = items.First(i => i.Label == "Tray");
+        trayMenu.Children.First(c => c.Tag == "toggle-tray").Checked.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Build_OverlayInteractiveDefault_True_Checked()
+    {
+        var state = MenuTestHelper.EmptyControllerState();
+
+        var items = ControllerMenuModel.Build(state);
+
+        var overlayMenu = items.First(i => i.Label == "Overlay");
+        overlayMenu.Children.First(c => c.Tag == "toggle-overlay-interactive").Checked.Should().BeTrue();
+    }
+
+    private static MenuItemModel GetTrayIconStyleMenu(IReadOnlyList<MenuItemModel> items)
+    {
+        var trayMenu = items.First(i => i.Label == "Tray");
+        return trayMenu.Children.First(c => c.Label == "Icon Style");
     }
 
     private static List<string> FlattenTags(IReadOnlyList<MenuItemModel> items)

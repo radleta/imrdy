@@ -78,4 +78,26 @@ internal static class MenuTestHelper
         IconStyle = iconStyle,
         InstalledGraphicsPacks = installedGraphicsPacks ?? [],
     };
+
+    public static SessionMenuState SessionWithDesktopIndex(
+        string sessionId,
+        int? desktopIndex,
+        string status = "idle",
+        string? project = null) => new()
+    {
+        SessionId = sessionId,
+        Status = status,
+        Project = project ?? sessionId,
+        DesktopIndex = desktopIndex,
+    };
+
+    public static WorkspaceMenuState WorkspaceWithDesktopIndex(
+        string name,
+        string path,
+        int desktopIndex) => new()
+    {
+        WorkspaceName = name,
+        WorkspacePath = path,
+        DesktopIndex = desktopIndex,
+    };
 }

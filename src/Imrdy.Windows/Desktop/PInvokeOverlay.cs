@@ -33,11 +33,9 @@ internal static class PInvokeOverlay
         IntPtr hdcSrc, ref POINT pptSrc, uint crKey,
         ref BLENDFUNCTION pblend, uint dwFlags);
 
-    // Window positioning (TopMost watchdog per D17)
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter,
-        int X, int Y, int cx, int cy, uint uFlags);
+    private static extern bool ScreenToClient(IntPtr hWnd, ref POINT lpPoint);
 
     [StructLayout(LayoutKind.Sequential)]
     private struct POINT { public int X, Y; }
@@ -65,11 +63,39 @@ internal static class PInvokeOverlay
     public const byte AC_SRC_ALPHA = 1;
     public const uint ULW_ALPHA    = 2;
 
-    // SetWindowPos constants (TopMost watchdog)
-    public static readonly IntPtr HWND_TOPMOST = new(-1);
-    public const uint SWP_NOMOVE    = 0x0002;
-    public const uint SWP_NOSIZE    = 0x0001;
-    public const uint SWP_NOACTIVATE = 0x0010;
+    /// <summary>
+    /// Converts screen coordinates to client coordinates.
+    /// Used by WM_NCHITTEST whose lParam carries screen coords.
+    /// </summary>
+    public static bool ScreenToClientPoint(IntPtr hwnd, ref int x, ref int y)
+    {
+        var p = new POINT { X = x, Y = y };
+        var ok = ScreenToClient(hwnd, ref p);
+        if (ok) { x = p.X; y = p.Y; }
+        return ok;
+    }
+
+    /// <summary>
+    /// Decodes a Win32 message lParam carrying packed (x, y) coordinates.
+    /// Uses (int)(nint) cast for 64-bit safety (NOT IntPtr.ToInt32() which
+    /// throws OverflowException when upper 32 bits are non-zero).
+    /// Sign-extends LOWORD/HIWORD because Win32 treats them as signed shorts —
+    /// negative values legitimately occur on multi-monitor setups where the
+    /// window sits on a monitor positioned left/above the primary.
+    /// </summary>
+    /// <remarks>
+    /// WM_NCHITTEST lParam = SCREEN coords (call <see cref="ScreenToClientPoint"/> after).
+    /// WM_LBUTTONDOWN / WM_RBUTTONUP lParam = CLIENT coords (use directly).
+    /// </remarks>
+    public static (int X, int Y) DecodeLParamPoint(IntPtr lParam)
+    {
+        var lp = (int)(nint)lParam;
+        int x = lp & 0xFFFF;
+        int y = (lp >> 16) & 0xFFFF;
+        if (x >= 0x8000) x -= 0x10000;
+        if (y >= 0x8000) y -= 0x10000;
+        return (x, y);
+    }
 
     /// <summary>
     /// Updates the layered window surface with the given bitmap at the specified screen location.
@@ -117,13 +143,4 @@ internal static class PInvokeOverlay
         }
     }
 
-    /// <summary>
-    /// Re-asserts HWND_TOPMOST via SetWindowPos without activating the window.
-    /// Called by the TopMost watchdog timer (D17) to recover from z-order displacement.
-    /// </summary>
-    public static void ReapplyTopMost(IntPtr hwnd)
-    {
-        SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0,
-            SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
-    }
 }

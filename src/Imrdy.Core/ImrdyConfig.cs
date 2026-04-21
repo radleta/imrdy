@@ -28,6 +28,11 @@ public record SoundConfig
 public record OverlayConfig
 {
     public bool Enabled { get; init; } = false;
+    /// <summary>
+    /// Nullable so ConfigReader.EnsureDefaults can distinguish "missing from JSON" (null) from "explicitly false".
+    /// After Read(), EnsureDefaults guarantees this is non-null; callers may use <c>!</c> or <c>?? true</c> safely.
+    /// </summary>
+    public bool? Interactive { get; init; } = null;
     public string Position { get; init; } = "bottom-right";
     public int Size { get; init; } = 64;
     public int Spacing { get; init; } = 4;

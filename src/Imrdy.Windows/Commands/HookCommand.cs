@@ -138,12 +138,15 @@ internal static class HookCommand
                     hookEvent.SessionId, hookEvent.AgentId);
             }
 
-            // Auto-spawn tray if not running (same as lead path)
+            // Auto-spawn tray if not running (same as lead path).
+            // NOT gated on tray.enabled or overlay.enabled — the process does more than
+            // render UI (state tracking, dwell timers, toasts, sounds, hot-reload of config).
+            // Users can toggle display surfaces at runtime; the monitor must be alive to
+            // respond. The proper escape hatch for headless/CI is the IMRDY_NO_TRAY env
+            // var, which TraySpawner.EnsureRunning honors.
             try
             {
-                var config = ConfigReader.Read();
-                if (config.Tray.Enabled)
-                    TraySpawner.EnsureRunning(logger);
+                TraySpawner.EnsureRunning(logger);
             }
             catch (Exception ex)
             {
@@ -206,12 +209,11 @@ internal static class HookCommand
             return 1;
         }
 
-        // Auto-spawn tray if not running (mutex-gated, config-disablable)
+        // Auto-spawn tray if not running (mutex-gated, IMRDY_NO_TRAY-disablable).
+        // NOT gated on config flags — see comment at the teammate-path spawn above.
         try
         {
-            var config = ConfigReader.Read();
-            if (config.Tray.Enabled)
-                TraySpawner.EnsureRunning(logger);
+            TraySpawner.EnsureRunning(logger);
         }
         catch (Exception ex)
         {

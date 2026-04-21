@@ -3,6 +3,7 @@ using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
 using System.Windows.Forms;
 using Imrdy.Core;
+using Imrdy.Core.Display;
 using Imrdy.Core.Graphics;
 using Imrdy.Core.Icons;
 using Imrdy.Core.Status;
@@ -13,13 +14,39 @@ using Svg;
 
 namespace Imrdy.Windows.Overlay;
 
-internal sealed class OverlayWindow : Form
+/// <summary>
+/// Shared base for both overlay variants. Owns bitmap cache, composite rendering,
+/// and the bottom-of-screen layered-window positioning. Subclasses differ ONLY in
+/// CreateParams (passive adds WS_EX_TRANSPARENT) and whether they handle WndProc
+/// input (interactive does, passive doesn't).
+///
+/// We do NOT run a topmost watchdog. <see cref="Form.TopMost"/> = true is enough;
+/// re-asserting HWND_TOPMOST on a timer shoves the overlay above any other topmost
+/// window — including an open ContextMenuStrip popup — which clips the menu after
+/// every tick. If real-world z-order displacement turns out to be a problem, add
+/// recovery at the displacement source, not on a periodic timer.
+/// </summary>
+internal abstract class OverlayWindowBase : Form
 {
     private readonly OverlayConfig _config;
-    private readonly ILogger<OverlayWindow> _logger;
-    private readonly System.Windows.Forms.Timer _topmostTimer;
     private readonly GraphicsPackLoader _graphicsPackLoader;
     private readonly Dictionary<(string style, string status, int tier), Bitmap> _cache = new();
+    protected readonly ILogger _logger;
+    protected IReadOnlyList<DisplayItem> _items = Array.Empty<DisplayItem>();
+
+    private const int MaxVisibleItems = 50;
+
+    protected OverlayWindowBase(OverlayConfig config, ILoggerFactory loggerFactory, GraphicsPackLoader graphicsPackLoader)
+    {
+        _config = config;
+        _logger = loggerFactory.CreateLogger(GetType());
+        _graphicsPackLoader = graphicsPackLoader;
+
+        FormBorderStyle = FormBorderStyle.None;
+        ShowInTaskbar = false;
+        TopMost = true;
+        StartPosition = FormStartPosition.Manual;
+    }
 
     protected override CreateParams CreateParams
     {
@@ -27,41 +54,24 @@ internal sealed class OverlayWindow : Form
         {
             var cp = base.CreateParams;
             cp.ExStyle |= PInvokeOverlay.WS_EX_LAYERED;
-            cp.ExStyle |= PInvokeOverlay.WS_EX_NOACTIVATE;
             cp.ExStyle |= PInvokeOverlay.WS_EX_TOOLWINDOW;
-            cp.ExStyle |= PInvokeOverlay.WS_EX_TRANSPARENT; // Full click-through per D13
+            // WS_EX_NOACTIVATE is added by PassiveOverlayWindow only. The interactive
+            // variant must be activatable so clicks transfer foreground naturally —
+            // that's how the popup context menu gets the foreground anchor it needs
+            // for hover-tracking (per the Raymond Chen recipe).
             return cp;
         }
     }
 
-    public OverlayWindow(OverlayConfig config, ILoggerFactory loggerFactory, GraphicsPackLoader graphicsPackLoader)
+    protected int IconSize => _config.Size;
+    protected int IconCount => _items.Count;
+
+    public virtual void UpdateItems(IReadOnlyList<DisplayItem> items)
     {
-        _config = config;
-        _logger = loggerFactory.CreateLogger<OverlayWindow>();
-        _graphicsPackLoader = graphicsPackLoader;
+        _items = items;
+        if (items.Count == 0) { Visible = false; return; }
 
-        FormBorderStyle = FormBorderStyle.None;
-        ShowInTaskbar = false;
-        TopMost = true;
-        StartPosition = FormStartPosition.Manual;
-
-        _topmostTimer = new System.Windows.Forms.Timer { Interval = 5000 };
-        _topmostTimer.Tick += (_, _) =>
-        {
-            if (IsHandleCreated)
-                PInvokeOverlay.ReapplyTopMost(Handle);
-        };
-
-        Load += (_, _) => _topmostTimer.Start();
-    }
-
-    private const int MaxVisibleSessions = 50;
-
-    public void UpdateSessions(IReadOnlyList<OverlaySessionInfo> sessions)
-    {
-        if (sessions.Count == 0) { Visible = false; return; }
-
-        var visibleCount = Math.Min(sessions.Count, MaxVisibleSessions);
+        var visibleCount = Math.Min(items.Count, MaxVisibleItems);
         var totalWidth = visibleCount * _config.Size + (visibleCount - 1) * _config.Spacing;
         using var composite = new Bitmap(totalWidth, _config.Size, PixelFormat.Format32bppPArgb);
         using var g = Graphics.FromImage(composite);
@@ -69,8 +79,8 @@ internal sealed class OverlayWindow : Form
 
         for (int i = 0; i < visibleCount; i++)
         {
-            var s = sessions[i];
-            var bmp = GetOrCreateBitmap(s.IconStyle, s.Status, s.AgingTier);
+            var item = items[i];
+            var bmp = GetOrCreateBitmap(item.IconStyle, item.Status, item.AgingTier);
             var x = i * (_config.Size + _config.Spacing);
             g.DrawImageUnscaled(bmp, x, 0);
         }
@@ -81,9 +91,23 @@ internal sealed class OverlayWindow : Form
     }
 
     /// <summary>
-    /// Clears and disposes all cached bitmaps. Does not eagerly re-render;
-    /// the cache refills lazily on the next UpdateSessions call.
+    /// Maps a client X coordinate to an icon index. Used only by InteractiveOverlayWindow's
+    /// WndProc — lives here so both classes share the same slot math without duplication.
     /// </summary>
+    protected bool HitIconIndex(int clientX, out int index)
+    {
+        index = -1;
+        if (clientX < 0) return false;
+        var slot = _config.Size + _config.Spacing;
+        if (slot <= 0) return false;
+        var i = clientX / slot;
+        var inSlot = clientX % slot;
+        if (inSlot >= _config.Size) return false;
+        if (i >= _items.Count) return false;
+        index = i;
+        return true;
+    }
+
     public void InvalidateStyleCache()
     {
         foreach (var bmp in _cache.Values) bmp.Dispose();
@@ -93,8 +117,7 @@ internal sealed class OverlayWindow : Form
     private Bitmap GetOrCreateBitmap(string style, string status, int tier)
     {
         var key = (style, status, tier);
-        if (_cache.TryGetValue(key, out var cached))
-            return cached;
+        if (_cache.TryGetValue(key, out var cached)) return cached;
 
         Bitmap? bitmap = null;
         try
@@ -106,7 +129,7 @@ internal sealed class OverlayWindow : Form
         catch (Exception ex)
         {
             bitmap?.Dispose();
-            _logger.LogWarning(ex, "OverlayWindow: failed to render bitmap for style='{Style}' status='{Status}' tier={Tier}, falling back to circle.", style, status, tier);
+            _logger.LogWarning(ex, "Overlay: failed to render bitmap for style='{Style}' status='{Status}' tier={Tier}, falling back to circle.", style, status, tier);
             var fallback = RenderCircleFallback(status, tier);
             _cache[key] = fallback;
             return fallback;
@@ -124,7 +147,6 @@ internal sealed class OverlayWindow : Form
         if (style.StartsWith("pack:", StringComparison.OrdinalIgnoreCase))
             return RenderFromPack(style, status, tier, size);
 
-        // Unknown style — fall through to circle fallback
         throw new InvalidOperationException($"Unknown icon style '{style}'.");
     }
 
@@ -161,9 +183,7 @@ internal sealed class OverlayWindow : Form
         var packsRoot = Path.GetFullPath(ImrdyPaths.GraphicsPacksDir);
         var packDir = Path.GetFullPath(Path.Combine(packsRoot, packName));
         if (!packDir.StartsWith(packsRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
-        {
             throw new InvalidOperationException($"Invalid pack name '{packName}' — path traversal detected.");
-        }
 
         var packJsonPath = Path.Combine(packDir, "pack.json");
         var pack = _graphicsPackLoader.LoadPack(packDir, packJsonPath)
@@ -171,7 +191,6 @@ internal sealed class OverlayWindow : Form
 
         if (!pack.StateFilePaths.TryGetValue(status, out var filePath))
         {
-            // Status not in pack — try "unknown" then "idle"
             if (!pack.StateFilePaths.TryGetValue("unknown", out filePath) &&
                 !pack.StateFilePaths.TryGetValue("idle", out filePath))
             {
@@ -179,7 +198,7 @@ internal sealed class OverlayWindow : Form
             }
         }
 
-        // SvgDocument does not implement IDisposable in Svg.NET 3.4.7 — do not wrap in using
+        // SvgDocument does not implement IDisposable in Svg.NET 3.4.7
         var doc = SvgDocument.Open(filePath);
         using var baseBitmap = EnsurePArgb(doc.Draw(size, size), size);
 
@@ -206,8 +225,7 @@ internal sealed class OverlayWindow : Form
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "OverlayWindow: even circle fallback failed for status='{Status}' tier={Tier}.", status, tier);
-            // Last resort: return transparent bitmap so rendering doesn't crash
+            _logger.LogError(ex, "Overlay: even circle fallback failed for status='{Status}' tier={Tier}.", status, tier);
             return new Bitmap(_config.Size, _config.Size, PixelFormat.Format32bppPArgb);
         }
     }
@@ -233,14 +251,9 @@ internal sealed class OverlayWindow : Form
         return new Point(x, y);
     }
 
-    /// <summary>
-    /// Ensures source bitmap is Format32bppPArgb. Converts if needed, disposing the source.
-    /// </summary>
     private static Bitmap EnsurePArgb(Bitmap source, int size)
     {
-        if (source.PixelFormat == PixelFormat.Format32bppPArgb)
-            return source;
-
+        if (source.PixelFormat == PixelFormat.Format32bppPArgb) return source;
         var converted = new Bitmap(size, size, PixelFormat.Format32bppPArgb);
         using var g = Graphics.FromImage(converted);
         g.DrawImage(source, 0, 0, size, size);
@@ -256,18 +269,10 @@ internal sealed class OverlayWindow : Form
         return clone;
     }
 
-    /// <summary>
-    /// Applies aging desaturation + dim toward gray via ColorMatrix.
-    /// Mirrors PackIconRenderer.ApplyAgingColorMatrix but outputs Format32bppPArgb per D18.
-    /// </summary>
     private static Bitmap ApplyAgingColorMatrix(Bitmap source, int size, int tier)
     {
-        // agingScale: how much of the original color to keep (vs. blend to 0.5 gray)
-        // tier 1 → 0.75, tier 2 → 0.5, tier 3 → 0.25, tier 4 → 0.0 (fully gray)
         var agingScale = 1.0f - (tier / 4.0f);
         var grayOffset = (1.0f - agingScale) * 0.5f;
-
-        // Alpha dim: tier 1 → 0.9, tier 2 → 0.8, tier 3 → 0.7, tier 4 → 0.6
         var alphaMul = 1.0f - (tier * 0.1f);
 
         var matrix = new ColorMatrix(new float[][]
@@ -292,8 +297,6 @@ internal sealed class OverlayWindow : Form
     {
         if (disposing)
         {
-            _topmostTimer?.Stop();
-            _topmostTimer?.Dispose();
             foreach (var bmp in _cache.Values) bmp.Dispose();
             _cache.Clear();
         }

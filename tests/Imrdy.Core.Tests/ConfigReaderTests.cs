@@ -227,4 +227,37 @@ public class ConfigReaderTests : IDisposable
 
         config.Overlay.Position.Should().Be("bottom-right");
     }
+
+    [Fact]
+    public void Read_ConfigMissingInteractiveField_DefaultsToTrue()
+    {
+        File.WriteAllText(_configPath, """{"overlay":{"enabled":true,"position":"bottom-left","size":48,"spacing":2}}""");
+
+        var config = ConfigReader.Read();
+
+        config.Overlay.Interactive.Should().BeTrue();
+        config.Overlay.Position.Should().Be("bottom-left");
+        config.Overlay.Size.Should().Be(48);
+        config.Overlay.Spacing.Should().Be(2);
+    }
+
+    [Fact]
+    public void Read_ConfigInteractiveFalse_Preserved()
+    {
+        File.WriteAllText(_configPath, """{"overlay":{"interactive":false}}""");
+
+        var config = ConfigReader.Read();
+
+        config.Overlay.Interactive.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Read_MissingOverlay_InteractiveDefaultsToTrue()
+    {
+        File.WriteAllText(_configPath, "{}");
+
+        var config = ConfigReader.Read();
+
+        config.Overlay.Interactive.Should().BeTrue();
+    }
 }

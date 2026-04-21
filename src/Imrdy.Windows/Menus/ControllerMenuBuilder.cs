@@ -13,6 +13,8 @@ internal static class ControllerMenuBuilder
     public static ContextMenuStrip Create(
         Func<ControllerMenuState> stateProvider,
         Action<ImrdyConfig> onConfigChanged,
+        Action<string> onSwitchSession,
+        Action<string> onSwitchWorkspace,
         Action onExit,
         ILogger? logger = null)
     {
@@ -23,7 +25,9 @@ internal static class ControllerMenuBuilder
             {
                 var state = stateProvider();
                 var items = ControllerMenuModel.Build(state);
-                MenuRenderer.Apply(menu, items, tag => OnClick(tag, state, onConfigChanged, onExit, logger), logger);
+                MenuRenderer.Apply(menu, items,
+                    tag => OnClick(tag, state, onConfigChanged, onSwitchSession, onSwitchWorkspace, onExit, logger),
+                    logger);
             }
             catch (Exception ex)
             {
@@ -37,6 +41,8 @@ internal static class ControllerMenuBuilder
         string tag,
         ControllerMenuState state,
         Action<ImrdyConfig> onConfigChanged,
+        Action<string> onSwitchSession,
+        Action<string> onSwitchWorkspace,
         Action onExit,
         ILogger? logger)
     {
@@ -79,6 +85,28 @@ internal static class ControllerMenuBuilder
                 await Task.Run(() => ConfigReader.Update(c => c with { Overlay = c.Overlay with { Enabled = !state.Config.Overlay.Enabled } }));
                 onConfigChanged(ConfigReader.Read());
             }
+            else if (tag == "toggle-tray")
+            {
+                await Task.Run(() => ConfigReader.Update(c => c with { Tray = c.Tray with { Enabled = !state.Config.Tray.Enabled } }));
+                onConfigChanged(ConfigReader.Read());
+            }
+            else if (tag == "toggle-overlay-interactive")
+            {
+                await Task.Run(() => ConfigReader.Update(c => c with { Overlay = c.Overlay with { Interactive = !(state.Config.Overlay.Interactive ?? true) } }));
+                onConfigChanged(ConfigReader.Read());
+            }
+            else if (tag.StartsWith("switch-session:", StringComparison.Ordinal))
+            {
+                var sessionId = tag["switch-session:".Length..];
+                if (!string.IsNullOrEmpty(sessionId))
+                    onSwitchSession(sessionId);
+            }
+            else if (tag.StartsWith("switch-workspace:", StringComparison.Ordinal))
+            {
+                var workspacePath = tag["switch-workspace:".Length..];
+                if (!string.IsNullOrEmpty(workspacePath))
+                    onSwitchWorkspace(workspacePath);
+            }
             else if (tag.StartsWith("set-overlay-position:", StringComparison.Ordinal))
             {
                 var position = tag["set-overlay-position:".Length..];
@@ -94,10 +122,6 @@ internal static class ControllerMenuBuilder
             else if (tag == "open-config")
             {
                 OpenFolder("explorer.exe", ImrdyPaths.Home, logger);
-            }
-            else if (tag == "open-sounds")
-            {
-                OpenFolder("explorer.exe", ImrdyPaths.SoundsDir, logger);
             }
             else if (tag == "open-log")
             {

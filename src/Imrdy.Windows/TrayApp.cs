@@ -1,7 +1,7 @@
 using System.Collections.Concurrent;
-using System.Reflection;
 using Imrdy.Core;
 using Imrdy.Core.Desktop;
+using Imrdy.Core.Display;
 using Imrdy.Core.Graphics;
 using Imrdy.Core.Icons;
 using Imrdy.Core.Menus;
@@ -12,6 +12,7 @@ using Imrdy.Core.Tooltip;
 using Imrdy.Core.Workspace;
 using Imrdy.Windows.Desktop;
 using Imrdy.Windows.Icons;
+using Imrdy.Windows.Interaction;
 using Imrdy.Windows.Menus;
 using Imrdy.Windows.Models;
 using Imrdy.Windows.Notifications;
@@ -26,19 +27,11 @@ namespace Imrdy.Windows;
 /// WinForms ApplicationContext that manages the system tray monitor.
 /// Owns FileSystemWatchers, debounce/sweep/stale timers, and session/workspace lifecycle.
 /// </summary>
-internal sealed class TrayApp : ApplicationContext
+internal sealed class TrayApp : ApplicationContext, ISessionInteractionRouter
 {
     private static readonly TimeSpan GracePeriod = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan TeammatePresenceTimeout = TimeSpan.FromMinutes(2);
     private static readonly TimeSpan TeammateQuietThreshold = TimeSpan.FromSeconds(15);
-
-    /// <summary>
-    /// Cached reflection accessor for NotifyIcon's private ShowContextMenu method.
-    /// Calling this directly handles SetForegroundWindow + menu positioning, fixing
-    /// the well-known "first right-click eaten" bug on tray icons.
-    /// </summary>
-    private static readonly MethodInfo? s_showContextMenu =
-        typeof(NotifyIcon).GetMethod("ShowContextMenu", BindingFlags.Instance | BindingFlags.NonPublic);
 
     private readonly ILogger _logger;
     private readonly ILoggerFactory _loggerFactory;
@@ -53,9 +46,10 @@ internal sealed class TrayApp : ApplicationContext
     private readonly TrayIconRendererFactory _rendererFactory;
     private readonly GraphicsPackLoader _graphicsPackLoader;
     private string _currentIconStyle;
-    private OverlayWindow? _overlayWindow;
+    private OverlayWindowBase? _overlayWindow;
     private bool _overlayEnabled;
     private OverlayConfig _overlayConfig = new();
+    private bool _trayEnabled = true;
     private readonly BalloonTipManager _balloonTipManager;
     private readonly WorkspaceVisibility _workspaceVisibility = new();
     private readonly WinFormsSoundPlayer _soundPlayer = new();
@@ -136,22 +130,37 @@ internal sealed class TrayApp : ApplicationContext
             Icon = new Icon(typeof(TrayApp), "Resources.imrdy.ico"),
             Text = "imrdy",
             Visible = true,
-            ContextMenuStrip = ControllerMenuBuilder.Create(GetControllerState, OnConfigChanged, () => ExitThread(), _logger),
+            ContextMenuStrip = ControllerMenuBuilder.Create(
+                GetControllerState,
+                OnConfigChanged,
+                sessionId => ActivateSession(sessionId),
+                workspacePath => ActivateWorkspace(workspacePath),
+                () => ExitThread(),
+                _logger),
         };
+
+        // UI marshaler: force the controller menu's native window handle to exist
+        // on the current (UI) thread so BeginInvoke from background threads (toast
+        // activation, etc.) works even when the user never opens the menu. Without
+        // this, Control.BeginInvoke silently fails for overlay-only users whose
+        // ContextMenuStrip is never shown.
+        _ = _controllerIcon.ContextMenuStrip!.Handle;
 
         InitializeDirectories();
         LoadSoundConfig();
         InitializeWatchers();
         InitializeTimers();
 
-        var overlayConfig = ConfigReader.Read().Overlay;
+        var startupConfig = ConfigReader.Read();
+        _trayEnabled = startupConfig.Tray.Enabled;
+        var overlayConfig = startupConfig.Overlay;
         _overlayEnabled = overlayConfig.Enabled;
         _overlayConfig = overlayConfig;
         if (_overlayEnabled)
         {
             try
             {
-                _overlayWindow = new OverlayWindow(overlayConfig, _loggerFactory, _graphicsPackLoader);
+                _overlayWindow = CreateOverlay(overlayConfig);
                 _overlayWindow.Show();
             }
             catch (Exception ex)
@@ -166,7 +175,8 @@ internal sealed class TrayApp : ApplicationContext
         BootstrapSessions();
         IsBootstrapping = false;
 
-        _logger.LogInformation("TrayApp started — monitoring {Dir}", ImrdyPaths.Sessions);
+        _logger.LogInformation("TrayApp started — monitoring {Dir} (NotifyIcon reflection: {Avail})",
+            ImrdyPaths.Sessions, NotifyIconMenuHost.ReflectionAvailable);
     }
 
     private void InitializeDirectories()
@@ -906,7 +916,7 @@ internal sealed class TrayApp : ApplicationContext
 
             if (wsEntry.Icon is not null)
             {
-                wsEntry.Icon.Visible = result.IsVisible;
+                wsEntry.Icon.Visible = _trayEnabled && result.IsVisible;
             }
 
             // Persist desktop on hidden→visible transition (D22)
@@ -925,6 +935,7 @@ internal sealed class TrayApp : ApplicationContext
                 }
             }
         }
+        RefreshOverlay();
     }
 
     // --- Icon Management ---
@@ -976,7 +987,7 @@ internal sealed class TrayApp : ApplicationContext
 
         entry.Icon = new NotifyIcon
         {
-            Visible = true,
+            Visible = _trayEnabled,
             Icon = icon,
             Text = FormatSessionTooltip(entry),
         };
@@ -984,7 +995,7 @@ internal sealed class TrayApp : ApplicationContext
         entry.Menu = SessionMenuBuilder.Create(
             entry,
             new SessionMenuCallbacks(
-                OnSwitchDesktop: () => SwitchToSessionDesktop(entry),
+                OnSwitchDesktop: () => ActivateSession(entry.SessionId),
                 OnAssignDesktop: () =>
                 {
                     var currentDesktop = _desktopManager.GetCurrentDesktopIndex();
@@ -1067,30 +1078,28 @@ internal sealed class TrayApp : ApplicationContext
 
         entry.Icon.MouseClick += (_, e) =>
         {
-            entry.LastSeenAt = DateTimeOffset.UtcNow;
-            UpdateSessionIcon(entry);
-
+            // Route through the same interface as overlay clicks — age reset and icon
+            // refresh live inside the router, not duplicated per surface.
             if (e.Button == MouseButtons.Left)
-            {
-                SwitchToSessionDesktop(entry);
-            }
+                ActivateSession(entry.SessionId);
             else if (e.Button == MouseButtons.Right)
-            {
-                s_showContextMenu?.Invoke(entry.Icon, null);
-            }
+                OpenSessionMenu(entry.SessionId, MenuAnchor.AtTrayIcon(entry.Icon));
         };
 
         RefreshOverlay();
     }
 
     /// <summary>
-    /// Called from the toast activation background thread — marshals to UI thread.
+    /// Called from the toast activation background thread — marshals to UI thread
+    /// and routes through the interaction router for age-reset parity with every
+    /// other surface. The controller menu's handle is force-created in the ctor
+    /// so <c>BeginInvoke</c> works even when the user never opens the menu (see
+    /// "UI marshaler" in the ctor).
     /// </summary>
     private void OnToastClicked(string sessionId)
     {
         if (_disposed) return;
 
-        // Toast activation fires on a background thread — marshal to UI
         if (_controllerIcon.ContextMenuStrip?.InvokeRequired == true)
         {
             try
@@ -1102,11 +1111,7 @@ internal sealed class TrayApp : ApplicationContext
             return;
         }
 
-        if (!_sessions.TryGetValue(sessionId, out var entry)) return;
-
-        entry.LastSeenAt = DateTimeOffset.UtcNow;
-        UpdateSessionIcon(entry);
-        SwitchToSessionDesktop(entry);
+        ActivateSession(sessionId);
     }
 
     private void SwitchToSessionDesktop(SessionEntry entry)
@@ -1187,6 +1192,92 @@ internal sealed class TrayApp : ApplicationContext
         }
     }
 
+    // --- ISessionInteractionRouter ---
+    //
+    // Single entry point for every user-initiated session/workspace interaction.
+    // Every public method here follows the same two-phase shape:
+    //   1. Mark interaction (reset age, refresh icon — uniform across all surfaces)
+    //   2. Dispatch the intent-specific action (switch desktop / show menu)
+    //
+    // Callers must NOT call SwitchToSessionDesktop / SwitchToWorkspaceDesktop /
+    // menu.Show / NotifyIconMenuHost.Show directly from event handlers.
+
+    public void ActivateSession(string sessionId)
+    {
+        if (!_sessions.TryGetValue(sessionId, out var entry))
+        {
+            _logger.LogDebug("ActivateSession: unknown session {SessionId}", sessionId);
+            return;
+        }
+        MarkSessionInteracted(entry);
+        SwitchToSessionDesktop(entry);
+    }
+
+    public void ActivateWorkspace(string workspacePath)
+    {
+        // _workspaces is keyed by path.ToUpperInvariant() (see workspace load logic)
+        var key = workspacePath.ToUpperInvariant();
+        if (!_workspaces.TryGetValue(key, out var entry))
+        {
+            _logger.LogDebug("ActivateWorkspace: unknown workspace {Path}", workspacePath);
+            return;
+        }
+        MarkWorkspaceInteracted(entry);
+        SwitchToWorkspaceDesktop(entry);
+    }
+
+    public void OpenSessionMenu(string sessionId, MenuAnchor anchor)
+    {
+        if (!_sessions.TryGetValue(sessionId, out var entry))
+        {
+            _logger.LogDebug("OpenSessionMenu: unknown session {SessionId}", sessionId);
+            return;
+        }
+        MarkSessionInteracted(entry);
+        ShowContextMenuAt(entry.Menu, anchor);
+    }
+
+    public void OpenWorkspaceMenu(string workspacePath, MenuAnchor anchor)
+    {
+        var key = workspacePath.ToUpperInvariant();
+        if (!_workspaces.TryGetValue(key, out var entry))
+        {
+            _logger.LogDebug("OpenWorkspaceMenu: unknown workspace {Path}", workspacePath);
+            return;
+        }
+        MarkWorkspaceInteracted(entry);
+        ShowContextMenuAt(entry.Menu, anchor);
+    }
+
+    // Dispatches a menu to the right mechanism for the anchor:
+    //   - Tray NotifyIcon (shell-delivered click): NotifyIconMenuHost (reflects the
+    //     NotifyIcon's private ShowContextMenu via AttachThreadInput).
+    //   - Control owner (overlay form click): vanilla menu.Show(owner, location).
+    // Callers always use MenuAnchor.AtTrayIcon / MenuAnchor.AtControl, so exactly one
+    // branch fires.
+    private static void ShowContextMenuAt(ContextMenuStrip? menu, MenuAnchor anchor)
+    {
+        if (menu is null) return;
+        if (anchor.TrayIcon is { } icon)
+            NotifyIconMenuHost.Show(icon);
+        else if (anchor.Owner is { } owner)
+            menu.Show(owner, anchor.Location);
+    }
+
+    // Resets interaction age and refreshes icon/tooltip/overlay to brightest tier.
+    // Shared by every ActivateSession / OpenSessionMenu path.
+    private void MarkSessionInteracted(SessionEntry entry)
+    {
+        entry.LastSeenAt = DateTimeOffset.UtcNow;
+        UpdateSessionIcon(entry);
+    }
+
+    private void MarkWorkspaceInteracted(WorkspaceSessionEntry entry)
+    {
+        // Workspace icons always render at tier 0 (never dim), so no icon refresh.
+        entry.LastSeenAt = DateTimeOffset.UtcNow;
+    }
+
     private void UpdateSessionIcon(SessionEntry entry)
     {
         if (entry.Icon is null)
@@ -1208,7 +1299,7 @@ internal sealed class TrayApp : ApplicationContext
 
         entry.Icon = new NotifyIcon
         {
-            Visible = true,
+            Visible = _trayEnabled,
             Icon = icon,
             Text = TooltipFormatter.FormatWorkspace(entry.Workspace.Name, entry.Workspace.Desktop),
         };
@@ -1253,16 +1344,11 @@ internal sealed class TrayApp : ApplicationContext
 
         entry.Icon.MouseClick += (_, e) =>
         {
-            entry.LastSeenAt = DateTimeOffset.UtcNow;
-
+            // Route through the same interface as overlay clicks.
             if (e.Button == MouseButtons.Left)
-            {
-                SwitchToWorkspaceDesktop(entry);
-            }
+                ActivateWorkspace(entry.Workspace.Path);
             else if (e.Button == MouseButtons.Right)
-            {
-                s_showContextMenu?.Invoke(entry.Icon, null);
-            }
+                OpenWorkspaceMenu(entry.Workspace.Path, MenuAnchor.AtTrayIcon(entry.Icon));
         };
     }
 
@@ -1289,11 +1375,13 @@ internal sealed class TrayApp : ApplicationContext
                 SessionId = e.SessionId,
                 Status = e.State.Status,
                 Project = e.State.Project,
+                DesktopIndex = e.DesktopIndex,
             }).ToList(),
             Workspaces = _workspaces.Values.Select(w => new WorkspaceMenuState
             {
                 WorkspaceName = w.Workspace.Name,
                 WorkspacePath = w.Workspace.Path,
+                DesktopIndex = w.Workspace.Desktop,
             }).ToList(),
             InstalledPacks = _loadedPacks.Select(p => p.Name).ToList(),
             InstalledGraphicsPacks = _graphicsPackLoader.LoadPacks(ImrdyPaths.GraphicsPacksDir)
@@ -1324,9 +1412,20 @@ internal sealed class TrayApp : ApplicationContext
             _logger.LogInformation("Icon style changed to {IconStyle}", newIconStyle);
         }
 
+        var newTrayEnabled = config.Tray.Enabled;
+        if (newTrayEnabled != _trayEnabled)
+        {
+            _trayEnabled = newTrayEnabled;
+            ApplyTrayEnabledToAll();
+            _logger.LogInformation("Tray icons {State}", _trayEnabled ? "enabled" : "disabled");
+        }
+
         var overlayNowEnabled = config.Overlay.Enabled;
         if (config.Overlay != _overlayConfig || overlayNowEnabled != _overlayEnabled)
         {
+            // Any overlay config change — including Interactive toggling — recreates the
+            // window. Interactive is class-level now (PassiveOverlayWindow vs
+            // InteractiveOverlayWindow), so switching it means switching class.
             _overlayWindow?.Dispose();
             _overlayWindow = null;
             _overlayConfig = config.Overlay;
@@ -1335,11 +1434,11 @@ internal sealed class TrayApp : ApplicationContext
             {
                 try
                 {
-                    _overlayWindow = new OverlayWindow(config.Overlay, _loggerFactory, _graphicsPackLoader);
+                    _overlayWindow = CreateOverlay(config.Overlay);
                     _overlayWindow.Show();
                     RefreshOverlay();
-                    _logger.LogInformation("Overlay enabled with position={Position}, size={Size}",
-                        config.Overlay.Position, config.Overlay.Size);
+                    _logger.LogInformation("Overlay enabled with position={Position}, size={Size}, interactive={Interactive}",
+                        config.Overlay.Position, config.Overlay.Size, config.Overlay.Interactive ?? true);
                 }
                 catch (Exception ex)
                 {
@@ -1354,6 +1453,14 @@ internal sealed class TrayApp : ApplicationContext
             }
             _overlayEnabled = overlayNowEnabled;
         }
+    }
+
+    private OverlayWindowBase CreateOverlay(OverlayConfig config)
+    {
+        var interactive = config.Interactive ?? true;
+        return interactive
+            ? new InteractiveOverlayWindow(config, this, _loggerFactory, _graphicsPackLoader)
+            : new PassiveOverlayWindow(config, _loggerFactory, _graphicsPackLoader);
     }
 
     private void RefreshAllSessionIcons()
@@ -1373,18 +1480,90 @@ internal sealed class TrayApp : ApplicationContext
         }
     }
 
+    private BuiltDisplayItems BuildDisplayItems()
+    {
+        // Pre-compute workspace visibility via the existing _workspaceVisibility instance (D11).
+        // Do NOT create a second WorkspaceVisibility — that would split hidden→visible tracking state.
+        var workspaceEntries = _workspaces.Values.Select(ws => ws.Workspace).ToList();
+        var activeSessions = _sessions.Values
+            .Where(s => !s.Dismissed && s.State.Status != "end")
+            .Select(s => s.State)
+            .ToList();
+        var visibilityResults = _workspaceVisibility.Evaluate(workspaceEntries, activeSessions);
+        var workspaceVisible = visibilityResults.ToDictionary(
+            r => r.Workspace.Path.ToUpperInvariant(),
+            r => r.IsVisible,
+            StringComparer.OrdinalIgnoreCase);
+
+        var inputs = new List<DisplayItemInput>(_sessions.Count + _workspaces.Count);
+
+        foreach (var s in _sessions.Values)
+        {
+            if (s.Icon is null || s.State is null) continue;
+            // Logical visibility — independent of the tray god toggle. The tray toggle
+            // is applied separately by DisplayItemCollection.Build via the trayEnabled
+            // parameter (ForTray is empty when off; ForOverlay is unaffected). Using
+            // s.Icon.Visible here would cause tray-off to also blank the overlay,
+            // because Step 8's ApplyTrayEnabledToAll ties Icon.Visible to _trayEnabled.
+            var sessionVisible = !s.Dismissed
+                && (s.RemoveAfter is null || s.RemoveAfter > DateTimeOffset.UtcNow)
+                && s.State.Status != "end";
+            inputs.Add(new DisplayItemInput(
+                Id: s.SessionId,
+                ItemType: DisplayItemType.Session,
+                Status: s.State.Status,
+                DesktopIndex: s.DesktopIndex,
+                IconStyle: ResolveSessionIconStyle(s),
+                AgingTier: s.LastAgingTier,
+                IsVisible: sessionVisible,
+                Label: s.State.Project ?? s.SessionId));
+        }
+
+        foreach (var ws in _workspaces.Values)
+        {
+            var key = ws.Workspace.Path.ToUpperInvariant();
+            var isVisible = workspaceVisible.TryGetValue(key, out var v) ? v : ws.Visible;
+            inputs.Add(new DisplayItemInput(
+                Id: ws.Workspace.Path,
+                ItemType: DisplayItemType.Workspace,
+                Status: "workspace",
+                DesktopIndex: ws.Workspace.Desktop,
+                IconStyle: StyleNames.NormalizeStyleName(ws.IconStyle) ?? _currentIconStyle,
+                AgingTier: 0,
+                IsVisible: isVisible,
+                Label: ws.Workspace.Name));
+        }
+
+        // Use cached _trayEnabled — NEVER call ConfigReader.Read() here (hot path; called every drain tick).
+        return DisplayItemCollection.Build(inputs, _trayEnabled);
+    }
+
+    private void ApplyTrayEnabledToAll()
+    {
+        foreach (var entry in _sessions.Values)
+        {
+            if (entry.Icon is null) continue;
+            // Off: all session icons hidden regardless of other state.
+            // On: restore per the existing visibility rules — dismissed sessions stay hidden,
+            // sessions pending removal stay hidden, all other sessions become visible.
+            // Mirrors CreateSessionIcon's Visible=_trayEnabled default plus the explicit "not
+            // dismissed and not past RemoveAfter" guard that governs steady-state visibility.
+            // Unconditionally setting Visible = _trayEnabled would resurrect dismissed sessions
+            // or those inside RemoveAfter grace (regression against sweep-removal fix 4702e86).
+            var shouldShow = !entry.Dismissed
+                && (entry.RemoveAfter is null || entry.RemoveAfter > DateTimeOffset.UtcNow);
+            entry.Icon.Visible = _trayEnabled && shouldShow;
+        }
+        // Workspaces honor both the god toggle and the per-workspace visibility rule.
+        // UpdateWorkspaceVisibility already reads _trayEnabled in the gated assignment.
+        UpdateWorkspaceVisibility();
+    }
+
     private void RefreshOverlay()
     {
         if (_overlayWindow is null || !_overlayEnabled) return;
-        var sessions = _sessions.Values
-            .Where(e => e.Icon?.Visible == true && e.State is not null)
-            .Select(e => new OverlaySessionInfo(
-                e.SessionId,
-                e.State.Status,
-                e.LastAgingTier,
-                ResolveSessionIconStyle(e)))
-            .ToList();
-        _overlayWindow.UpdateSessions(sessions);
+        var items = BuildDisplayItems();
+        _overlayWindow.UpdateItems(items.ForOverlay);
     }
 
     // --- Sound Triggers (port of PS1:700-750) ---
@@ -1514,12 +1693,12 @@ internal sealed class TrayApp : ApplicationContext
                 if (!token.IsCancellationRequested)
                 {
                     _logger.LogInformation("Stop signal received — exiting");
-                    try
-                    {
-                        _controllerIcon.ContextMenuStrip?.BeginInvoke(ExitThread);
-                    }
-                    catch (ObjectDisposedException) { }
-                    catch (InvalidOperationException) { }
+                    // Application.Exit() is thread-safe and posts WM_QUIT to the UI pump.
+                    // It triggers Application.ApplicationExit → OnApplicationExit → Shutdown().
+                    // Do NOT use ContextMenuStrip.BeginInvoke — that silently fails when the
+                    // strip's native handle hasn't been created (i.e. the user has never
+                    // right-clicked the tray to open the menu), leaving the tray unable to exit.
+                    Application.Exit();
                 }
             }
             catch (Exception ex)
@@ -1572,6 +1751,7 @@ internal sealed class TrayApp : ApplicationContext
         _staleTimer?.Dispose();
         _agingTimer?.Stop();
         _agingTimer?.Dispose();
+
 
         // Stop watchers
         if (_sessionWatcher is not null)

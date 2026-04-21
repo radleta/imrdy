@@ -13,87 +13,210 @@ internal static class ControllerMenuModel
             new() { Type = MenuItemType.Separator },
         };
 
-        // Sound toggle
-        items.Add(new MenuItemModel
-        {
-            Label = "Sounds",
-            Checked = state.Config.Sound.Enabled,
-            Tag = "toggle-sound",
-        });
-
-        // Sound Pack submenu (default selection: Random | packs... | None)
-        items.Add(BuildSoundPackSubmenu(state));
-
-        // Enabled Packs submenu (checkbox toggles)
-        items.Add(BuildEnabledPacksSubmenu(state));
-
-        // Icon Style submenu
-        items.Add(BuildIconStyleSubmenu(state));
-
-        // Overlay submenu
+        items.Add(BuildSoundSubmenu(state));
+        items.Add(BuildTraySubmenu(state));
         items.Add(BuildOverlaySubmenu(state));
 
         items.Add(new MenuItemModel { Type = MenuItemType.Separator });
 
-        // Sessions submenu
-        var sessionChildren = new List<MenuItemModel>();
-        foreach (var s in state.Sessions)
-        {
-            sessionChildren.Add(new MenuItemModel
-            {
-                Label = $"{s.Project} [{s.Status}]",
-                Enabled = false,
-            });
-        }
-
-        if (sessionChildren.Count == 0)
-        {
-            sessionChildren.Add(new MenuItemModel { Label = "(no active sessions)", Enabled = false });
-        }
-
-        items.Add(new MenuItemModel
-        {
-            Label = $"Sessions ({state.Sessions.Count})",
-            Type = MenuItemType.Submenu,
-            Children = sessionChildren,
-        });
-
-        // Workspaces submenu
-        var workspaceChildren = new List<MenuItemModel>();
-        foreach (var ws in state.Workspaces)
-        {
-            workspaceChildren.Add(new MenuItemModel
-            {
-                Label = ws.WorkspaceName,
-                Enabled = false,
-            });
-        }
-
-        if (workspaceChildren.Count == 0)
-        {
-            workspaceChildren.Add(new MenuItemModel { Label = "(no workspaces)", Enabled = false });
-        }
-
-        items.Add(new MenuItemModel
-        {
-            Label = "Workspaces",
-            Type = MenuItemType.Submenu,
-            Children = workspaceChildren,
-        });
+        items.Add(BuildSessionItems(state));
+        items.Add(BuildWorkspaceItems(state));
 
         items.Add(new MenuItemModel { Type = MenuItemType.Separator });
 
-        // Folder / log items
-        items.Add(new MenuItemModel { Label = "Open Config Folder", Tag = "open-config" });
-        items.Add(new MenuItemModel { Label = "Open Sounds Folder", Tag = "open-sounds" });
-        items.Add(new MenuItemModel { Label = "View Log", Tag = "open-log" });
+        items.Add(BuildManageSubmenu());
 
         items.Add(new MenuItemModel { Type = MenuItemType.Separator });
 
-        // Exit
         items.Add(new MenuItemModel { Label = "Exit", Tag = "exit" });
 
         return items;
+    }
+
+    private static MenuItemModel BuildSoundSubmenu(ControllerMenuState state)
+    {
+        var children = new List<MenuItemModel>
+        {
+            new MenuItemModel
+            {
+                Label = "Sounds",
+                Tag = "toggle-sound",
+                Checked = state.Config.Sound.Enabled,
+            },
+            BuildSoundPackSubmenu(state),
+            BuildEnabledPacksSubmenu(state),
+        };
+
+        return new MenuItemModel
+        {
+            Label = "Sound",
+            Type = MenuItemType.Submenu,
+            Children = children,
+        };
+    }
+
+    private static MenuItemModel BuildTraySubmenu(ControllerMenuState state)
+    {
+        var children = new List<MenuItemModel>
+        {
+            new MenuItemModel
+            {
+                Label = "Enabled",
+                Tag = "toggle-tray",
+                Checked = state.Config.Tray.Enabled,
+            },
+            new MenuItemModel { Type = MenuItemType.Separator },
+            BuildIconStyleSubmenu(state),
+        };
+
+        return new MenuItemModel
+        {
+            Label = "Tray",
+            Type = MenuItemType.Submenu,
+            Children = children,
+        };
+    }
+
+    private static MenuItemModel BuildOverlaySubmenu(ControllerMenuState state)
+    {
+        var overlay = state.Config.Overlay;
+        var children = new List<MenuItemModel>
+        {
+            new MenuItemModel
+            {
+                Label = "Enabled",
+                Tag = "toggle-overlay",
+                Checked = overlay.Enabled,
+            },
+            new MenuItemModel
+            {
+                Label = "Interactive",
+                Tag = "toggle-overlay-interactive",
+                Checked = overlay.Interactive ?? true,
+            },
+            new MenuItemModel { Type = MenuItemType.Separator },
+            new MenuItemModel
+            {
+                Label = "Bottom Right",
+                Tag = "set-overlay-position:bottom-right",
+                Checked = string.Equals(overlay.Position, "bottom-right", StringComparison.OrdinalIgnoreCase),
+            },
+            new MenuItemModel
+            {
+                Label = "Bottom Left",
+                Tag = "set-overlay-position:bottom-left",
+                Checked = string.Equals(overlay.Position, "bottom-left", StringComparison.OrdinalIgnoreCase),
+            },
+            new MenuItemModel { Type = MenuItemType.Separator },
+            new MenuItemModel
+            {
+                Label = "Small (48px)",
+                Tag = "set-overlay-size:48",
+                Checked = overlay.Size == 48,
+            },
+            new MenuItemModel
+            {
+                Label = "Medium (64px)",
+                Tag = "set-overlay-size:64",
+                Checked = overlay.Size == 64,
+            },
+            new MenuItemModel
+            {
+                Label = "Large (96px)",
+                Tag = "set-overlay-size:96",
+                Checked = overlay.Size == 96,
+            },
+            new MenuItemModel
+            {
+                Label = "Extra Large (128px)",
+                Tag = "set-overlay-size:128",
+                Checked = overlay.Size == 128,
+            },
+        };
+
+        return new MenuItemModel
+        {
+            Label = "Overlay",
+            Type = MenuItemType.Submenu,
+            Children = children,
+        };
+    }
+
+    private static MenuItemModel BuildSessionItems(ControllerMenuState state)
+    {
+        var children = new List<MenuItemModel>();
+
+        var sorted = state.Sessions
+            .OrderBy(s => s.DesktopIndex.HasValue ? 0 : 1)
+            .ThenBy(s => s.DesktopIndex ?? 0);
+
+        foreach (var s in sorted)
+        {
+            children.Add(new MenuItemModel
+            {
+                Label = $"{s.Project ?? s.SessionId} [{s.Status}]",
+                Tag = $"switch-session:{s.SessionId}",
+                Enabled = true,
+            });
+        }
+
+        if (children.Count == 0)
+        {
+            children.Add(new MenuItemModel { Label = "(no active sessions)", Enabled = false });
+        }
+
+        return new MenuItemModel
+        {
+            Label = $"Sessions ({state.Sessions.Count})",
+            Type = MenuItemType.Submenu,
+            Children = children,
+        };
+    }
+
+    private static MenuItemModel BuildWorkspaceItems(ControllerMenuState state)
+    {
+        var children = new List<MenuItemModel>();
+
+        var sorted = state.Workspaces
+            .OrderBy(ws => ws.DesktopIndex);
+
+        foreach (var ws in sorted)
+        {
+            children.Add(new MenuItemModel
+            {
+                Label = ws.WorkspaceName,
+                Tag = $"switch-workspace:{ws.WorkspacePath}",
+                Enabled = true,
+            });
+        }
+
+        if (children.Count == 0)
+        {
+            children.Add(new MenuItemModel { Label = "(no workspaces)", Enabled = false });
+        }
+
+        return new MenuItemModel
+        {
+            Label = "Workspaces",
+            Type = MenuItemType.Submenu,
+            Children = children,
+        };
+    }
+
+    private static MenuItemModel BuildManageSubmenu()
+    {
+        var children = new List<MenuItemModel>
+        {
+            new MenuItemModel { Label = "Open Config Folder", Tag = "open-config" },
+            new MenuItemModel { Label = "View Log", Tag = "open-log" },
+        };
+
+        return new MenuItemModel
+        {
+            Label = "Manage",
+            Type = MenuItemType.Submenu,
+            Children = children,
+        };
     }
 
     private static MenuItemModel BuildSoundPackSubmenu(ControllerMenuState state)
@@ -181,65 +304,6 @@ internal static class ControllerMenuModel
         return new MenuItemModel
         {
             Label = "Icon Style",
-            Type = MenuItemType.Submenu,
-            Children = children,
-        };
-    }
-
-    private static MenuItemModel BuildOverlaySubmenu(ControllerMenuState state)
-    {
-        var overlay = state.Config.Overlay;
-        var children = new List<MenuItemModel>
-        {
-            new MenuItemModel
-            {
-                Label = "Enabled",
-                Tag = "toggle-overlay",
-                Checked = overlay.Enabled,
-            },
-            new MenuItemModel { Type = MenuItemType.Separator },
-            new MenuItemModel
-            {
-                Label = "Bottom Right",
-                Tag = "set-overlay-position:bottom-right",
-                Checked = string.Equals(overlay.Position, "bottom-right", StringComparison.OrdinalIgnoreCase),
-            },
-            new MenuItemModel
-            {
-                Label = "Bottom Left",
-                Tag = "set-overlay-position:bottom-left",
-                Checked = string.Equals(overlay.Position, "bottom-left", StringComparison.OrdinalIgnoreCase),
-            },
-            new MenuItemModel { Type = MenuItemType.Separator },
-            new MenuItemModel
-            {
-                Label = "Small (48px)",
-                Tag = "set-overlay-size:48",
-                Checked = overlay.Size == 48,
-            },
-            new MenuItemModel
-            {
-                Label = "Medium (64px)",
-                Tag = "set-overlay-size:64",
-                Checked = overlay.Size == 64,
-            },
-            new MenuItemModel
-            {
-                Label = "Large (96px)",
-                Tag = "set-overlay-size:96",
-                Checked = overlay.Size == 96,
-            },
-            new MenuItemModel
-            {
-                Label = "Extra Large (128px)",
-                Tag = "set-overlay-size:128",
-                Checked = overlay.Size == 128,
-            },
-        };
-
-        return new MenuItemModel
-        {
-            Label = "Overlay",
             Type = MenuItemType.Submenu,
             Children = children,
         };
