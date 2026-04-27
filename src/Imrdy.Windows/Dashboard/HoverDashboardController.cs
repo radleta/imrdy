@@ -42,6 +42,10 @@ internal sealed class HoverDashboardController : IDisposable
     // that the cursor moved away. Must be < DismissThresholdTicks (3) so normal exits still
     // trigger dismissal once grace is consumed.
     private const int BridgeTraversalGraceTicks = 2;
+    // Live-refresh cadence: rebuild the VM and apply it to the visible dashboard every
+    // 10 ticks (~1s at 100ms tick rate) so hook events, turn counts, and state changes
+    // are reflected while the cursor lingers on the same session icon.
+    private const int RefreshIntervalTicks = 10;
 
     private readonly InteractiveOverlayWindow _overlayWindow;
     private readonly HookAccumulationStore _hookAccumulationStore;
@@ -73,6 +77,9 @@ internal sealed class HoverDashboardController : IDisposable
     //   1 = reveal in progress (stepping Opacity toward 1.0)
     //  -1 = dismiss in progress (stepping Opacity toward 0.0, then Hide())
     private int _opacityDirection;
+
+    // Tick counter for throttled live-refresh while the dashboard is visible.
+    private int _ticksSinceLastRefresh;
 
     // Diagnostic fields — no behavioral effect.
     // F3: tick counter for per-10th-tick heartbeat log.
@@ -261,6 +268,7 @@ internal sealed class HoverDashboardController : IDisposable
                         _logger.LogDebug(
                             "HoverCtrl: switch-applied to={NewId} heightBefore={HB} heightAfter={HA} formBounds={FB}",
                             _hoveredSessionId, heightBeforeSwitch, heightAfterSwitch, _form?.Bounds ?? Rectangle.Empty);
+                        _ticksSinceLastRefresh = 0; // restart cadence after session switch
                     }
                 }
             }
@@ -282,6 +290,21 @@ internal sealed class HoverDashboardController : IDisposable
                     if (_form.IsPinned)
                         _form.Unpin();
                     HideForm();
+                }
+            }
+
+            // Throttled live refresh — rebuild the VM and apply it in place every
+            // RefreshIntervalTicks (~1s) so the dashboard reflects fresh hook events,
+            // session state, and turn counts while the cursor lingers on the same
+            // session icon. Skipped while dismissing (Opacity stepping down).
+            if (_hoveredSessionId is not null && _opacityDirection != -1)
+            {
+                _ticksSinceLastRefresh++;
+                if (_ticksSinceLastRefresh >= RefreshIntervalTicks)
+                {
+                    _ticksSinceLastRefresh = 0;
+                    _logger.LogDebug("HoverCtrl: throttled-refresh sessionId={SessionId}", _hoveredSessionId);
+                    RebuildAndApplyUpdate(_hoveredSessionId);
                 }
             }
 
@@ -490,6 +513,7 @@ internal sealed class HoverDashboardController : IDisposable
         _logger.LogDebug(
             "HoverCtrl: form shown at Location={Location} Bounds={Bounds} hwnd={Handle}",
             _form.Location, _form.Bounds, _form.Handle);
+        _ticksSinceLastRefresh = 0; // first throttled refresh fires ~1s after show
 
         // Post-show anchor verification: log expected vs actual edge so drift is visible.
         var expectedEdgeY = anchorMode == DashboardAnchor.Top ? anchorY : anchorY;
