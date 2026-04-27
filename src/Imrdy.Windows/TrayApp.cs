@@ -3,6 +3,7 @@ using Imrdy.Core;
 using Imrdy.Core.Desktop;
 using Imrdy.Core.Display;
 using Imrdy.Core.Graphics;
+using Imrdy.Core.Hooks;
 using Imrdy.Core.Icons;
 using Imrdy.Core.Menus;
 using Imrdy.Core.Sound;
@@ -10,6 +11,7 @@ using Imrdy.Core.State;
 using Imrdy.Core.Status;
 using Imrdy.Core.Tooltip;
 using Imrdy.Core.Workspace;
+using Imrdy.Windows.Dashboard;
 using Imrdy.Windows.Desktop;
 using Imrdy.Windows.Icons;
 using Imrdy.Windows.Interaction;
@@ -78,6 +80,21 @@ internal sealed class TrayApp : ApplicationContext, ISessionInteractionRouter
 
     private volatile bool _disposed;
 
+    // Dev-build preview-dashboard processes launched from Manage → Dev menu.
+    // Tracked so the same menu's Close-All item can kill unreachable preview windows
+    // without the user dropping to a PowerShell one-liner. Prod builds never populate.
+    private readonly List<System.Diagnostics.Process> _previewProcesses = new();
+    private readonly object _previewProcessesLock = new();
+
+    private readonly HookAccumulationStore _hookAccumulationStore;
+    private HoverDashboardController? _hoverController;
+    // F6: one-shot null-controller warning guard — prevents log spam when controller is absent.
+    // Reset to false whenever _hoverController becomes non-null so each absence is reported once.
+    private bool _loggedNullHoverControllerWarning;
+    // Typed reference to the overlay when it is an InteractiveOverlayWindow.
+    // Null when the overlay is passive or disabled.
+    private InteractiveOverlayWindow? _interactiveOverlayWindow;
+
     /// <summary>
     /// True during initial sweep — suppresses toasts and sounds until first sweep completes.
     /// Checked by icon/sound/notification logic in Steps 9+.
@@ -107,6 +124,7 @@ internal sealed class TrayApp : ApplicationContext, ISessionInteractionRouter
         _options = options;
         _rendererFactory = rendererFactory;
         _graphicsPackLoader = graphicsPackLoader;
+        _hookAccumulationStore = new HookAccumulationStore();
         _currentIconStyle = StyleNames.NormalizeStyleName(ConfigReader.Read().Tray.IconStyle) ?? "circles";
         _balloonTipManager = new BalloonTipManager(loggerFactory)
         {
@@ -136,6 +154,8 @@ internal sealed class TrayApp : ApplicationContext, ISessionInteractionRouter
                 sessionId => ActivateSession(sessionId),
                 workspacePath => ActivateWorkspace(workspacePath),
                 () => ExitThread(),
+                LaunchPreview,
+                CloseAllPreviews,
                 _logger),
         };
 
@@ -161,14 +181,29 @@ internal sealed class TrayApp : ApplicationContext, ISessionInteractionRouter
             try
             {
                 _overlayWindow = CreateOverlay(overlayConfig);
+                _interactiveOverlayWindow = _overlayWindow as InteractiveOverlayWindow;
                 _overlayWindow.Show();
             }
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "Failed to create overlay window — overlay disabled");
                 _overlayWindow = null;
+                _interactiveOverlayWindow = null;
                 _overlayEnabled = false;
             }
+        }
+
+        if (_interactiveOverlayWindow is not null)
+        {
+            _hoverController = new HoverDashboardController(
+                _interactiveOverlayWindow,
+                _hookAccumulationStore,
+                () => _sessions.Values.ToList(),
+                _desktopManager,
+                _loggerFactory);
+            _loggedNullHoverControllerWarning = false; // F6: reset so next absence is reported
+            _interactiveOverlayWindow.SurfaceInteracted += _hoverController.HandleSurfaceInteraction;
+            _logger.LogDebug("TrayApp: subscribed _hoverController.HandleSurfaceInteraction to _interactiveOverlayWindow.SurfaceInteracted");
         }
 
         // Initial load to pick up existing sessions
@@ -225,6 +260,7 @@ internal sealed class TrayApp : ApplicationContext, ISessionInteractionRouter
         // Drain timer: processes FSW events on UI thread (100ms)
         _drainTimer = new System.Windows.Forms.Timer { Interval = 100 };
         _drainTimer.Tick += OnDrainTimerTick;
+        _drainTimer.Tick += OnHoverDrainTick;
         _drainTimer.Start();
 
         // Cleanup timer: removes sessions whose state files are gone (10s)
@@ -390,6 +426,22 @@ internal sealed class TrayApp : ApplicationContext, ISessionInteractionRouter
         {
             _logger.LogError(ex, "Error in drain timer");
         }
+    }
+
+    private void OnHoverDrainTick(object? sender, EventArgs e)
+    {
+        if (_hoverController is null)
+        {
+            // F6: log once when the tick fires but controller is absent (overlay disabled or
+            // between config-change races). Guard prevents repeat spam.
+            if (!_loggedNullHoverControllerWarning)
+            {
+                _loggedNullHoverControllerWarning = true;
+                _logger.LogDebug("TrayApp: OnHoverDrainTick fired but _hoverController is null (overlay disabled or between config-change races)");
+            }
+            return;
+        }
+        _hoverController.OnDrainTick(DateTimeOffset.UtcNow);
     }
 
     private void OnCleanupTimerTick(object? sender, EventArgs e)
@@ -585,6 +637,7 @@ internal sealed class TrayApp : ApplicationContext, ISessionInteractionRouter
                 DesktopIndex = state.DesktopIndex,
                 IconStyle = normalizedStyle,
                 LastProcessedTimestamp = state.Timestamp,
+                StartedAt = state.StartedAt ?? state.Timestamp,
             };
 
             // Write resolved pack and icon style to state file so the hook preserves them
@@ -608,6 +661,22 @@ internal sealed class TrayApp : ApplicationContext, ISessionInteractionRouter
 
             _logger.LogInformation("Session started: {SessionId} ({Project})",
                 state.SessionId, state.Project);
+        }
+
+        // Feed the hook event into the accumulation store so the hover dashboard
+        // sees live sparkline/chip/turn-count data. Runs synchronously on the UI thread
+        // (same FSW callback). BootstrapSessions intentionally does NOT call Apply —
+        // accumulators start empty and refill organically from new events.
+        if (!IsBootstrapping && entry is not null)
+        {
+            var evt = new HookEventModel
+            {
+                HookEventName = state.HookEvent,
+                SessionId = state.SessionId,
+                ToolName = state.ToolName,
+                NotificationType = state.NotificationType,
+            };
+            _hookAccumulationStore.Apply(evt, derivedStatus: entry.State.Status);
         }
 
         // Update workspace visibility after any session change (D11)
@@ -1388,7 +1457,132 @@ internal sealed class TrayApp : ApplicationContext, ISessionInteractionRouter
                 .Select(p => p.Name).ToList(),
             Config = ConfigReader.Read(),
             LogPath = ImrdyPaths.MonitorLog,
+            DevBuild = BuildDevState(),
         };
+    }
+
+    // --- Dev-build fixtures & preview-dashboard processes ---
+
+    private DevBuildState? BuildDevState()
+    {
+        if (!File.Exists(ImrdyPaths.DevBuildMarker))
+            return null;
+
+        var fixtures = new List<DevFixture>();
+        try
+        {
+            var repoPath = File.ReadAllText(ImrdyPaths.DevBuildMarker).Trim();
+            if (!string.IsNullOrEmpty(repoPath) && Directory.Exists(repoPath))
+            {
+                var dir = Path.Combine(repoPath, "tests", "fixtures", "dashboards");
+                if (Directory.Exists(dir))
+                {
+                    foreach (var path in Directory.EnumerateFiles(dir, "*.json").OrderBy(p => p, StringComparer.OrdinalIgnoreCase))
+                        fixtures.Add(new DevFixture(Path.GetFileNameWithoutExtension(path), path));
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Failed to enumerate dev fixtures");
+        }
+
+        return new DevBuildState
+        {
+            Fixtures = fixtures,
+            RunningPreviewCount = CountAndPruneAlivePreviews(),
+        };
+    }
+
+    private void LaunchPreview(string fixturePath)
+    {
+        try
+        {
+            var exe = Environment.ProcessPath;
+            if (string.IsNullOrEmpty(exe))
+            {
+                _logger.LogWarning("Cannot launch preview: Environment.ProcessPath is null");
+                return;
+            }
+            var psi = new System.Diagnostics.ProcessStartInfo(exe)
+            {
+                UseShellExecute = false,
+                CreateNoWindow = false,
+            };
+            psi.ArgumentList.Add("preview-dashboard");
+            psi.ArgumentList.Add(fixturePath);
+            var proc = System.Diagnostics.Process.Start(psi);
+            if (proc is not null)
+            {
+                lock (_previewProcessesLock)
+                    _previewProcesses.Add(proc);
+                _logger.LogInformation("Launched preview: pid={Pid} fixture={Fixture}", proc.Id, fixturePath);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to launch preview for {Path}", fixturePath);
+        }
+    }
+
+    private void CloseAllPreviews()
+    {
+        List<System.Diagnostics.Process> snapshot;
+        lock (_previewProcessesLock)
+        {
+            snapshot = new List<System.Diagnostics.Process>(_previewProcesses);
+            _previewProcesses.Clear();
+        }
+        var killed = 0;
+        foreach (var proc in snapshot)
+        {
+            try
+            {
+                if (!proc.HasExited)
+                {
+                    proc.Kill(entireProcessTree: true);
+                    killed++;
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to kill preview pid={Pid}", SafePid(proc));
+            }
+            finally
+            {
+                proc.Dispose();
+            }
+        }
+        _logger.LogInformation("Closed all previews: killed={Killed}, tracked={Tracked}", killed, snapshot.Count);
+    }
+
+    private int CountAndPruneAlivePreviews()
+    {
+        lock (_previewProcessesLock)
+        {
+            for (var i = _previewProcesses.Count - 1; i >= 0; i--)
+            {
+                try
+                {
+                    if (_previewProcesses[i].HasExited)
+                    {
+                        _previewProcesses[i].Dispose();
+                        _previewProcesses.RemoveAt(i);
+                    }
+                }
+                catch
+                {
+                    _previewProcesses.RemoveAt(i);
+                }
+            }
+            return _previewProcesses.Count;
+        }
+    }
+
+    private static int SafePid(System.Diagnostics.Process proc)
+    {
+        try { return proc.Id; }
+        catch { return -1; }
     }
 
     private void OnConfigChanged(ImrdyConfig config)
@@ -1426,8 +1620,17 @@ internal sealed class TrayApp : ApplicationContext, ISessionInteractionRouter
             // Any overlay config change — including Interactive toggling — recreates the
             // window. Interactive is class-level now (PassiveOverlayWindow vs
             // InteractiveOverlayWindow), so switching it means switching class.
+            // Unsubscribe from the old overlay BEFORE disposing controller and window.
+            if (_interactiveOverlayWindow is not null && _hoverController is not null)
+            {
+                _interactiveOverlayWindow.SurfaceInteracted -= _hoverController.HandleSurfaceInteraction;
+                _logger.LogDebug("TrayApp: unsubscribed _hoverController.HandleSurfaceInteraction from _interactiveOverlayWindow.SurfaceInteracted");
+            }
+            _hoverController?.Dispose();
+            _hoverController = null;
             _overlayWindow?.Dispose();
             _overlayWindow = null;
+            _interactiveOverlayWindow = null;
             _overlayConfig = config.Overlay;
 
             if (overlayNowEnabled)
@@ -1435,6 +1638,7 @@ internal sealed class TrayApp : ApplicationContext, ISessionInteractionRouter
                 try
                 {
                     _overlayWindow = CreateOverlay(config.Overlay);
+                    _interactiveOverlayWindow = _overlayWindow as InteractiveOverlayWindow;
                     _overlayWindow.Show();
                     RefreshOverlay();
                     _logger.LogInformation("Overlay enabled with position={Position}, size={Size}, interactive={Interactive}",
@@ -1444,7 +1648,21 @@ internal sealed class TrayApp : ApplicationContext, ISessionInteractionRouter
                 {
                     _logger.LogWarning(ex, "Failed to create overlay window during config change");
                     _overlayWindow = null;
+                    _interactiveOverlayWindow = null;
                     overlayNowEnabled = false;
+                }
+
+                if (_interactiveOverlayWindow is not null)
+                {
+                    _hoverController = new HoverDashboardController(
+                        _interactiveOverlayWindow,
+                        _hookAccumulationStore,
+                        () => _sessions.Values.ToList(),
+                        _desktopManager,
+                        _loggerFactory);
+                    _loggedNullHoverControllerWarning = false; // F6: reset so next absence is reported
+                    _interactiveOverlayWindow.SurfaceInteracted += _hoverController.HandleSurfaceInteraction;
+                    _logger.LogDebug("TrayApp: subscribed _hoverController.HandleSurfaceInteraction to _interactiveOverlayWindow.SurfaceInteracted");
                 }
             }
             else
@@ -1772,6 +1990,18 @@ internal sealed class TrayApp : ApplicationContext, ISessionInteractionRouter
             _configWatcher.Dispose();
         }
 
+        // Dispose hover dashboard controller before overlay and session entries
+        if (_interactiveOverlayWindow is not null && _hoverController is not null)
+        {
+            _interactiveOverlayWindow.SurfaceInteracted -= _hoverController.HandleSurfaceInteraction;
+            _logger.LogDebug("TrayApp: unsubscribed _hoverController.HandleSurfaceInteraction from _interactiveOverlayWindow.SurfaceInteracted");
+        }
+        _hoverController?.Dispose();
+        _hoverController = null;
+
+        // Close any dev-build preview windows we launched, so they don't linger after tray exit.
+        CloseAllPreviews();
+
         // Dispose controller icon
         _controllerIcon.Visible = false;
         _controllerIcon.Icon?.Dispose();
@@ -1781,6 +2011,7 @@ internal sealed class TrayApp : ApplicationContext, ISessionInteractionRouter
         // Dispose overlay window
         _overlayWindow?.Dispose();
         _overlayWindow = null;
+        _interactiveOverlayWindow = null;
 
         // Dispose all session icons
         foreach (var entry in _sessions.Values)

@@ -49,6 +49,31 @@ internal static class Program
                 return CommandRouter.Route(services, args);
             }
 
+            // Developer preview harness — opens a DashboardForm from a fixture JSON.
+            // Placed BETWEEN the Spectre CLI branch and the tray fallback: Spectre skips
+            // WinForms init; preview needs it. Bypasses Global\ImrdyMonitor mutex intentionally
+            // (preview is a standalone dev tool that must run while the real tray is running).
+            if (args.Length > 0 && args[0] == "preview-dashboard")
+            {
+                Application.SetHighDpiMode(HighDpiMode.SystemAware);
+                Application.EnableVisualStyles();
+                Application.SetCompatibleTextRenderingDefault(false);
+                return PreviewDashboardCommand.Run(args);
+            }
+
+            // Render verb — produces artifacts (PNGs, JSON trees) of UI surfaces in-process.
+            // Same placement rationale as preview-dashboard: Spectre branch skipped WinForms init,
+            // but render needs it (Form.DrawToBitmap requires CreateControl/PerformLayout on an STA
+            // thread with visual-styles enabled). Bypasses Global\ImrdyMonitor — render is a dev
+            // tool that must run while the real tray is running.
+            if (args.Length > 0 && args[0] == "render")
+            {
+                Application.SetHighDpiMode(HighDpiMode.SystemAware);
+                Application.EnableVisualStyles();
+                Application.SetCompatibleTextRenderingDefault(false);
+                return RenderCommand.Run(args);
+            }
+
             // Default: start the system tray monitor
             Application.SetHighDpiMode(HighDpiMode.SystemAware);
             Application.EnableVisualStyles();

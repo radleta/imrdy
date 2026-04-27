@@ -29,4 +29,22 @@ mv "$DEST" "$DEST.old" 2>/dev/null || true
 cp "$PUBLISH_EXE" "$DEST"
 rm -f "$DEST.old"
 
-echo "Deployed. Tray will respawn on next hook event."
+# 5. Drop a dev-build marker so the tray defaults to Debug logging.
+#    ServiceRegistration.AddSerilog reads ~/.imrdy/.dev-build to flip the level
+#    without requiring IMRDY_LOG=1 in every shell that triggers a hook.
+#    The file body contains the repo root so the tray's Manage → Dev menu
+#    can enumerate fixtures from tests/fixtures/dashboards/.
+#    Remove the file (rm ~/.imrdy/.dev-build) to test prod-like log levels.
+mkdir -p "$HOME/.imrdy"
+# `pwd -W` yields the Windows-form path (D:/…) that .NET understands.
+# Plain $PWD is MSYS form (/d/…) which fails Directory.Exists on the tray side.
+REPO_WIN=$(pwd -W 2>/dev/null || pwd)
+printf '%s\n' "$REPO_WIN" > "$HOME/.imrdy/.dev-build"
+
+# 6. Spawn the tray immediately so we don't wait for the next Claude hook event
+#    to respawn it. `cmd //c start` detaches the process from this shell's tree,
+#    so the tray survives after build-dev.sh exits and is not tied to the Claude
+#    process that invoked the script.
+cmd //c start "" "$DEST" >/dev/null 2>&1
+
+echo "Deployed and relaunched. (Debug logging enabled via ~/.imrdy/.dev-build)"

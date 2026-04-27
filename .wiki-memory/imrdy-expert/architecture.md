@@ -1,17 +1,19 @@
 ---
 tags: [imrdy/architecture]
-updated: 2026-04-14
-summary: "Three entry points, timer interactions, field preservation, and state file lifecycle"
+updated: 2026-04-25
+summary: "Five entry points, timer interactions, field preservation, and state file lifecycle"
 ---
 
 # Architecture
 
-## Three Entry Points (Program.cs)
+## Five Entry Points (Program.cs)
 
 | Command | Class | Purpose |
 |---------|-------|---------|
 | `imrdy hook` | HookCommand | Fast-path: read stdin JSON, derive status, write state file. No WinForms. Lightweight DI via HookServiceBuilder. |
 | `imrdy <cmd>` | CommandRouter | CLI commands (status, packs, config, workspace, stop). Spectre.Console output. |
+| `imrdy preview-dashboard <fixture>` | PreviewDashboardCommand | Standalone WinForms dev tool; inline ServiceCollection, bypasses mutex, runs DashboardForm pinned from fixture JSON. |
+| `imrdy render <component> [args]` | RenderCommand | In-process PNG capture of WinForms surfaces; bypasses mutex; sequential STA execution. See [Render Verb Architecture](render-verb-architecture.md). |
 | `imrdy` | TrayApp | WinForms ApplicationContext. Application.Run with message pump. Full DI via MonitorServiceBuilder. |
 
 The hook runs hundreds of times per session. It must be fast (~50ms). No COM, no WinForms initialization.

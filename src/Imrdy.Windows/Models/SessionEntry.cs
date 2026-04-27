@@ -33,6 +33,10 @@ internal sealed class SessionEntry : IDisposable
     /// <summary>Assigned virtual desktop index.</summary>
     public int? DesktopIndex { get; set; }
 
+    /// <summary>When this session was first started (from state file StartedAt or Timestamp fallback).
+    /// Populated on first observation by TrayApp; never reset after that.</summary>
+    public DateTimeOffset StartedAt { get; set; }
+
     /// <summary>Last computed aging tier. Used to avoid unnecessary icon updates.</summary>
     public int LastAgingTier { get; set; } = 0;
 

@@ -49,4 +49,14 @@ public interface IDesktopManager : IDisposable
     /// Call after Explorer restart or COM failure detection.
     /// </summary>
     void Reinitialize();
+
+    /// <summary>
+    /// Pins a top-level window so it appears on all virtual desktops (the COM equivalent
+    /// of the user's Task View right-click → "Show this window on all desktops"). Used by
+    /// hover-preview windows like DashboardForm that aren't WS_EX_LAYERED shell-helpers —
+    /// without pinning, non-layered top-level windows are bound to their creation desktop.
+    /// Idempotent — safe to call multiple times for the same hwnd.
+    /// No-op when unavailable, hwnd is IntPtr.Zero, or COM fails.
+    /// </summary>
+    void PinWindowToAllDesktops(IntPtr hwnd);
 }

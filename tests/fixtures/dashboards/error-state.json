@@ -1,0 +1,46 @@
+{
+  "sessionId": "preview-error-state-00000000000000",
+  "sessionName": "service-refactor",
+  "project": "my-api",
+  "cwdPath": "/d/dev/github/my-api",
+  "desktopIndex": 0,
+  "soundPack": null,
+  "status": "error",
+  "lastHookAt": "2026-04-24T15:00:00+00:00",
+  "startedAt": "2026-04-24T14:50:00+00:00",
+  "turnCount": 5,
+  "failureCount": 3,
+  "subagentCount": 0,
+  "currentTool": null,
+  "recentTools": [
+    { "toolName": "Bash",  "at": "2026-04-24T14:59:00+00:00" },
+    { "toolName": "Read",  "at": "2026-04-24T14:59:20+00:00" },
+    { "toolName": "Bash",  "at": "2026-04-24T14:59:45+00:00" }
+  ],
+  "activityTimestamps": [],
+  "lastPrompt": "Run the integration test suite and fix any failures you find",
+  "permissionTool": null,
+  "git": {
+    "branch": "fix/integration-tests",
+    "dirtyCount": 4
+  },
+  "fleetItems": [
+    {
+      "sessionId": "preview-error-state-00000000000000",
+      "sessionName": "service-refactor",
+      "status": "error",
+      "isHovered": true
+    },
+    {
+      "sessionId": "preview-fleet-11-000000000000000",
+      "sessionName": "overlay-dashboard-context",
+      "status": "idle",
+      "isHovered": false
+    }
+  ],
+  "contextTokens": null,
+  "contextWindowSize": null,
+  "costUsd": null,
+  "modelDisplayName": null,
+  "rateLimits": null
+}

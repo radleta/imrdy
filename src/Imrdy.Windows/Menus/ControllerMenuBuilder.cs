@@ -16,6 +16,8 @@ internal static class ControllerMenuBuilder
         Action<string> onSwitchSession,
         Action<string> onSwitchWorkspace,
         Action onExit,
+        Action<string>? onLaunchPreview = null,
+        Action? onCloseAllPreviews = null,
         ILogger? logger = null)
     {
         var menu = new ContextMenuStrip();
@@ -26,7 +28,8 @@ internal static class ControllerMenuBuilder
                 var state = stateProvider();
                 var items = ControllerMenuModel.Build(state);
                 MenuRenderer.Apply(menu, items,
-                    tag => OnClick(tag, state, onConfigChanged, onSwitchSession, onSwitchWorkspace, onExit, logger),
+                    tag => OnClick(tag, state, onConfigChanged, onSwitchSession, onSwitchWorkspace, onExit,
+                        onLaunchPreview, onCloseAllPreviews, logger),
                     logger);
             }
             catch (Exception ex)
@@ -44,6 +47,8 @@ internal static class ControllerMenuBuilder
         Action<string> onSwitchSession,
         Action<string> onSwitchWorkspace,
         Action onExit,
+        Action<string>? onLaunchPreview,
+        Action? onCloseAllPreviews,
         ILogger? logger)
     {
         try
@@ -126,6 +131,16 @@ internal static class ControllerMenuBuilder
             else if (tag == "open-log")
             {
                 OpenFolder("explorer.exe", "/select," + state.LogPath, logger);
+            }
+            else if (tag.StartsWith("dev-preview:", StringComparison.Ordinal))
+            {
+                var fixturePath = tag["dev-preview:".Length..];
+                if (!string.IsNullOrEmpty(fixturePath))
+                    onLaunchPreview?.Invoke(fixturePath);
+            }
+            else if (tag == "dev-preview-close-all")
+            {
+                onCloseAllPreviews?.Invoke();
             }
             else if (tag == "exit")
             {

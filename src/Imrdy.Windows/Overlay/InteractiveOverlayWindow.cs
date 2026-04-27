@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Windows.Forms;
 using Imrdy.Core;
 using Imrdy.Core.Display;
@@ -27,6 +28,23 @@ internal sealed class InteractiveOverlayWindow : OverlayWindowBase
 {
     private readonly ISessionInteractionRouter _router;
 
+    /// <summary>
+    /// Set to <c>true</c> by <see cref="Dashboard.HoverDashboardController"/> while the
+    /// hover dashboard is visible. When true, WM_NCHITTEST returns HTCLIENT across the
+    /// full icon row (not just over icons) so the cursor remains captive during icon-gap
+    /// crossings — preventing flicker as the user moves from an icon toward the dashboard.
+    /// </summary>
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    public bool IsDashboardHoverActive { get; set; } = false;
+
+    /// <summary>
+    /// Raised after a left-click successfully dispatches a session or workspace activation.
+    /// Subscribers (notably <see cref="Dashboard.HoverDashboardController"/>) can use this
+    /// to dismiss any preview UI that should not outlive the activating click.
+    /// Right-click does not raise this event — menu dismissal is handled by WinForms naturally.
+    /// </summary>
+    public event Action? SurfaceInteracted;
+
     public InteractiveOverlayWindow(OverlayConfig config, ISessionInteractionRouter router, ILoggerFactory loggerFactory, GraphicsPackLoader graphicsPackLoader)
         : base(config, loggerFactory, graphicsPackLoader)
     {
@@ -36,8 +54,36 @@ internal sealed class InteractiveOverlayWindow : OverlayWindowBase
         Cursor = Cursors.Hand;
     }
 
+    /// <summary>
+    /// Maps a screen-coordinate point to the session id of the icon under it.
+    /// Returns <c>false</c> when the point is not over a session icon (gap, workspace item,
+    /// or outside the overlay entirely).
+    /// </summary>
+    public bool TryGetSessionIdAtScreenPoint(Point screenPt, out string sessionId)
+    {
+        sessionId = string.Empty;
+
+        int cx = screenPt.X, cy = screenPt.Y;
+        if (!PInvokeOverlay.ScreenToClientPoint(Handle, ref cx, ref cy))
+            return false;
+
+        if (!HitIconIndex(cx, out var index))
+            return false;
+
+        if (index < 0 || index >= _items.Count)
+            return false;
+
+        var item = _items[index];
+        if (item.ItemType != DisplayItemType.Session)
+            return false;
+
+        sessionId = item.Id;
+        return true;
+    }
+
     protected override void OnMouseDown(MouseEventArgs e)
     {
+        _logger.LogDebug("Overlay: OnMouseDown button={Button} x={X} y={Y}", e.Button, e.X, e.Y);
         if (e.Button == MouseButtons.Left && HitIconIndex(e.X, out var idx) && idx < _items.Count)
         {
             var item = _items[idx];
@@ -47,6 +93,10 @@ internal sealed class InteractiveOverlayWindow : OverlayWindowBase
                     _router.ActivateSession(item.Id);
                 else
                     _router.ActivateWorkspace(item.Id);
+                _logger.LogDebug("Overlay: router dispatch succeeded for {ItemType} {Id}, firing SurfaceInteracted", item.ItemType, item.Id);
+                var subscriberCount = SurfaceInteracted?.GetInvocationList().Length ?? 0;
+                _logger.LogDebug("Overlay: SurfaceInteracted firing to {Count} subscriber(s)", subscriberCount);
+                SurfaceInteracted?.Invoke();
             }
             catch (Exception ex)
             {
@@ -89,7 +139,19 @@ internal sealed class InteractiveOverlayWindow : OverlayWindowBase
         {
             var (sx, sy) = PInvokeOverlay.DecodeLParamPoint(m.LParam); // SCREEN coords
             PInvokeOverlay.ScreenToClientPoint(Handle, ref sx, ref sy);
-            m.Result = HitIconIndex(sx, out _) ? (IntPtr)HTCLIENT : (IntPtr)HTTRANSPARENT;
+
+            if (IsDashboardHoverActive)
+            {
+                // While the hover dashboard is visible, return HTCLIENT across the full
+                // icon row so the cursor doesn't fall through gaps during traversal to
+                // the dashboard. Existing click handlers (OnMouseDown/OnMouseUp) still
+                // guard on HitIconIndex — non-icon clicks are ignored there, not here.
+                m.Result = (IntPtr)HTCLIENT;
+            }
+            else
+            {
+                m.Result = HitIconIndex(sx, out _) ? (IntPtr)HTCLIENT : (IntPtr)HTTRANSPARENT;
+            }
             return;
         }
 

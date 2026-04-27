@@ -8,7 +8,7 @@ namespace Imrdy.Core.State;
 /// </summary>
 public sealed record StateFileModel
 {
-    private const int MaxMessageLength = 120;
+    internal const int MaxMessageLength = 120;
 
     [JsonPropertyName("session_id")]
     public required string SessionId { get; init; }
@@ -54,6 +54,9 @@ public sealed record StateFileModel
 
     [JsonPropertyName("last_teammate_at")]
     public DateTimeOffset? LastTeammateAt { get; init; }
+
+    [JsonPropertyName("started_at")]
+    public DateTimeOffset? StartedAt { get; init; }
 
     /// <summary>
     /// Truncates a message to the maximum allowed length.

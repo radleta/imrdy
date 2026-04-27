@@ -53,3 +53,6 @@ scratch/
 
 # chrome-devtools working dir
 .chrome-devtools
+
+# Claude working files
+.claude/scheduled_tasks.lock

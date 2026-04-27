@@ -1,0 +1,40 @@
+{
+  "sessionId": "preview-long-prompt-0000000000000",
+  "sessionName": "dwell-refactor",
+  "project": "imrdy",
+  "cwdPath": "/d/dev/github/imrdy",
+  "desktopIndex": 0,
+  "soundPack": null,
+  "status": "idle",
+  "lastHookAt": "2026-04-24T14:58:00+00:00",
+  "startedAt": "2026-04-24T14:50:00+00:00",
+  "turnCount": 2,
+  "failureCount": 0,
+  "subagentCount": 0,
+  "currentTool": null,
+  "recentTools": [
+    { "toolName": "Read",  "at": "2026-04-24T14:57:00+00:00" },
+    { "toolName": "Edit",  "at": "2026-04-24T14:57:30+00:00" },
+    { "toolName": "Bash",  "at": "2026-04-24T14:57:55+00:00" }
+  ],
+  "activityTimestamps": [],
+  "lastPrompt": "Refactor the notification dwell state to support per-session cooldown windows of variable duration, based on status type",
+  "permissionTool": null,
+  "git": {
+    "branch": "develop",
+    "dirtyCount": 1
+  },
+  "fleetItems": [
+    {
+      "sessionId": "preview-long-prompt-0000000000000",
+      "sessionName": "dwell-refactor",
+      "status": "idle",
+      "isHovered": true
+    }
+  ],
+  "contextTokens": null,
+  "contextWindowSize": null,
+  "costUsd": null,
+  "modelDisplayName": null,
+  "rateLimits": null
+}

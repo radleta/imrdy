@@ -1,0 +1,53 @@
+{
+  "sessionId": "preview-awaiting-permission-000000",
+  "sessionName": "db-migrations",
+  "project": "my-api",
+  "cwdPath": "/d/dev/github/my-api",
+  "desktopIndex": 1,
+  "soundPack": null,
+  "status": "permission",
+  "lastHookAt": "2026-04-24T15:00:00+00:00",
+  "startedAt": "2026-04-24T14:55:00+00:00",
+  "turnCount": 3,
+  "failureCount": 0,
+  "subagentCount": 0,
+  "currentTool": null,
+  "recentTools": [
+    { "toolName": "Read",  "at": "2026-04-24T14:58:30+00:00" },
+    { "toolName": "Grep",  "at": "2026-04-24T14:58:45+00:00" },
+    { "toolName": "Bash",  "at": "2026-04-24T14:59:10+00:00" }
+  ],
+  "activityTimestamps": [
+    "2026-04-24T14:58:30+00:00",
+    "2026-04-24T14:58:45+00:00",
+    "2026-04-24T14:59:10+00:00",
+    "2026-04-24T14:59:30+00:00",
+    "2026-04-24T14:59:55+00:00",
+    "2026-04-24T15:00:00+00:00"
+  ],
+  "lastPrompt": "Install the dotnet-ef tool globally so we can run migrations",
+  "permissionTool": "Bash",
+  "git": {
+    "branch": "feature/add-ef-migrations",
+    "dirtyCount": 2
+  },
+  "fleetItems": [
+    {
+      "sessionId": "preview-awaiting-permission-000000",
+      "sessionName": "db-migrations",
+      "status": "permission",
+      "isHovered": true
+    },
+    {
+      "sessionId": "preview-fleet-10-000000000000000",
+      "sessionName": "overlay-dashboard-context",
+      "status": "busy",
+      "isHovered": false
+    }
+  ],
+  "contextTokens": null,
+  "contextWindowSize": null,
+  "costUsd": null,
+  "modelDisplayName": null,
+  "rateLimits": null
+}

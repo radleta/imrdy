@@ -24,7 +24,7 @@ internal static class ControllerMenuModel
 
         items.Add(new MenuItemModel { Type = MenuItemType.Separator });
 
-        items.Add(BuildManageSubmenu());
+        items.Add(BuildManageSubmenu(state));
 
         items.Add(new MenuItemModel { Type = MenuItemType.Separator });
 
@@ -203,7 +203,7 @@ internal static class ControllerMenuModel
         };
     }
 
-    private static MenuItemModel BuildManageSubmenu()
+    private static MenuItemModel BuildManageSubmenu(ControllerMenuState state)
     {
         var children = new List<MenuItemModel>
         {
@@ -211,9 +211,53 @@ internal static class ControllerMenuModel
             new MenuItemModel { Label = "View Log", Tag = "open-log" },
         };
 
+        if (state.DevBuild is { } dev)
+        {
+            children.Add(new MenuItemModel { Type = MenuItemType.Separator });
+            children.Add(BuildDevSubmenu(dev));
+        }
+
         return new MenuItemModel
         {
             Label = "Manage",
+            Type = MenuItemType.Submenu,
+            Children = children,
+        };
+    }
+
+    private static MenuItemModel BuildDevSubmenu(DevBuildState dev)
+    {
+        var children = new List<MenuItemModel>();
+
+        if (dev.Fixtures.Count == 0)
+        {
+            children.Add(new MenuItemModel { Label = "(no fixtures found)", Enabled = false });
+        }
+        else
+        {
+            foreach (var fixture in dev.Fixtures)
+            {
+                children.Add(new MenuItemModel
+                {
+                    Label = fixture.DisplayName,
+                    Tag = $"dev-preview:{fixture.FullPath}",
+                });
+            }
+        }
+
+        children.Add(new MenuItemModel { Type = MenuItemType.Separator });
+        children.Add(new MenuItemModel
+        {
+            Label = dev.RunningPreviewCount > 0
+                ? $"Close All ({dev.RunningPreviewCount})"
+                : "Close All",
+            Tag = "dev-preview-close-all",
+            Enabled = dev.RunningPreviewCount > 0,
+        });
+
+        return new MenuItemModel
+        {
+            Label = "Dev",
             Type = MenuItemType.Submenu,
             Children = children,
         };

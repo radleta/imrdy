@@ -569,6 +569,125 @@ public class ControllerMenuModelTests
     }
 
     [Fact]
+    public void Build_ManageSubmenu_OmitsDev_WhenNotDevBuild()
+    {
+        var state = MenuTestHelper.EmptyControllerState();
+
+        var items = ControllerMenuModel.Build(state);
+
+        var manageMenu = items.First(i => i.Label == "Manage");
+        manageMenu.Children.Should().NotContain(c => c.Label == "Dev");
+    }
+
+    [Fact]
+    public void Build_ManageSubmenu_IncludesDev_WhenDevBuild()
+    {
+        var state = MenuTestHelper.EmptyControllerState() with
+        {
+            DevBuild = new DevBuildState
+            {
+                Fixtures = [new DevFixture("fresh-idle", @"D:\repo\tests\fixtures\dashboards\fresh-idle.json")],
+                RunningPreviewCount = 0,
+            },
+        };
+
+        var items = ControllerMenuModel.Build(state);
+
+        var manageMenu = items.First(i => i.Label == "Manage");
+        var devMenu = manageMenu.Children.FirstOrDefault(c => c.Label == "Dev");
+        devMenu.Should().NotBeNull();
+        devMenu!.Type.Should().Be(MenuItemType.Submenu);
+    }
+
+    [Fact]
+    public void Build_DevSubmenu_ListsFixturesByDisplayName()
+    {
+        var state = MenuTestHelper.EmptyControllerState() with
+        {
+            DevBuild = new DevBuildState
+            {
+                Fixtures =
+                [
+                    new DevFixture("aged-done", @"C:\r\tests\fixtures\dashboards\aged-done.json"),
+                    new DevFixture("long-busy", @"C:\r\tests\fixtures\dashboards\long-busy.json"),
+                ],
+                RunningPreviewCount = 0,
+            },
+        };
+
+        var items = ControllerMenuModel.Build(state);
+
+        var devMenu = items.First(i => i.Label == "Manage")
+            .Children.First(c => c.Label == "Dev");
+        var fixtureItems = devMenu.Children.Where(c => c.Type == MenuItemType.Item && c.Tag!.StartsWith("dev-preview:")).ToList();
+        fixtureItems.Should().HaveCount(2);
+        fixtureItems[0].Label.Should().Be("aged-done");
+        fixtureItems[0].Tag.Should().Be(@"dev-preview:C:\r\tests\fixtures\dashboards\aged-done.json");
+        fixtureItems[1].Label.Should().Be("long-busy");
+    }
+
+    [Fact]
+    public void Build_DevSubmenu_ShowsPlaceholder_WhenNoFixtures()
+    {
+        var state = MenuTestHelper.EmptyControllerState() with
+        {
+            DevBuild = new DevBuildState
+            {
+                Fixtures = [],
+                RunningPreviewCount = 0,
+            },
+        };
+
+        var items = ControllerMenuModel.Build(state);
+
+        var devMenu = items.First(i => i.Label == "Manage")
+            .Children.First(c => c.Label == "Dev");
+        devMenu.Children.Should().Contain(c => c.Label == "(no fixtures found)" && !c.Enabled);
+    }
+
+    [Fact]
+    public void Build_DevSubmenu_CloseAllDisabled_WhenNoRunningPreviews()
+    {
+        var state = MenuTestHelper.EmptyControllerState() with
+        {
+            DevBuild = new DevBuildState
+            {
+                Fixtures = [new DevFixture("f", "f.json")],
+                RunningPreviewCount = 0,
+            },
+        };
+
+        var items = ControllerMenuModel.Build(state);
+
+        var devMenu = items.First(i => i.Label == "Manage")
+            .Children.First(c => c.Label == "Dev");
+        var closeAll = devMenu.Children.First(c => c.Tag == "dev-preview-close-all");
+        closeAll.Enabled.Should().BeFalse();
+        closeAll.Label.Should().Be("Close All");
+    }
+
+    [Fact]
+    public void Build_DevSubmenu_CloseAllEnabled_WithCount_WhenPreviewsRunning()
+    {
+        var state = MenuTestHelper.EmptyControllerState() with
+        {
+            DevBuild = new DevBuildState
+            {
+                Fixtures = [new DevFixture("f", "f.json")],
+                RunningPreviewCount = 3,
+            },
+        };
+
+        var items = ControllerMenuModel.Build(state);
+
+        var devMenu = items.First(i => i.Label == "Manage")
+            .Children.First(c => c.Label == "Dev");
+        var closeAll = devMenu.Children.First(c => c.Tag == "dev-preview-close-all");
+        closeAll.Enabled.Should().BeTrue();
+        closeAll.Label.Should().Be("Close All (3)");
+    }
+
+    [Fact]
     public void Build_TrayDisabled_TraySubmenuEnabledToggleUnchecked()
     {
         var state = MenuTestHelper.EmptyControllerState() with

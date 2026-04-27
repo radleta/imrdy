@@ -22,15 +22,17 @@ tests/Imrdy.Core.Tests/  Unit tests (xunit + FluentAssertions)
 tests/Imrdy.Integration.Tests/  Integration tests (require built binary)
 ```
 
-### Three Entry Points (Program.cs)
+### Five Entry Points (Program.cs)
 
 ```
-imrdy hook        → HookCommand (fast-path, no WinForms, reads stdin JSON, writes state file)
-imrdy <command>   → CommandRouter (status|packs|config|workspace|stop, Spectre.Console output)
-imrdy             → TrayApp (WinForms ApplicationContext, Application.Run, message pump)
+imrdy hook                          → HookCommand (fast-path, no WinForms, reads stdin JSON, writes state file)
+imrdy <command>                     → CommandRouter (status|packs|config|workspace|stop, Spectre.Console output)
+imrdy preview-dashboard <fixture>   → PreviewDashboardCommand (standalone WinForms dev tool; inline ServiceCollection, bypasses mutex, deserializes DashboardViewModel fixture via ImrdyJsonContext, runs DashboardForm pinned)
+imrdy render <component> [args]     → RenderCommand (in-process UI artifact capture; bypasses mutex; placed between preview-dashboard and tray fallback)
+imrdy                               → TrayApp (WinForms ApplicationContext, Application.Run, message pump)
 ```
 
-The hook runs hundreds of times per session. It uses `HookServiceBuilder` (lightweight DI, no COM/WinForms). The tray uses `MonitorServiceBuilder` (full DI with COM desktop manager).
+The hook runs hundreds of times per session. It uses `HookServiceBuilder` (lightweight DI, no COM/WinForms). The tray uses `MonitorServiceBuilder` (full DI with COM desktop manager). The preview-dashboard branch is placed between the Spectre CLI branch and the tray fallback — Spectre skips WinForms init; preview needs it. Mutex check is intentionally bypassed so preview runs alongside the real tray.
 
 ### Graphics Packs
 
@@ -41,7 +43,7 @@ The hook runs hundreds of times per session. It uses `HookServiceBuilder` (light
 Two concrete classes share an abstract base in `src/Imrdy.Windows/Overlay/`:
 - `OverlayWindowBase` — owns rendering, bitmap cache, layered-window plumbing (`WS_EX_LAYERED + WS_EX_TOOLWINDOW`, `TopMost = true`)
 - `PassiveOverlayWindow` — adds `WS_EX_TRANSPARENT + WS_EX_NOACTIVATE`; purely visual, no input
-- `InteractiveOverlayWindow` — activatable (no `WS_EX_NOACTIVATE`); handles input via `OnMouseDown`/`OnMouseUp` overrides plus `WM_NCHITTEST` for click-through policy
+- `InteractiveOverlayWindow` — activatable (no `WS_EX_NOACTIVATE`); handles input via `OnMouseDown`/`OnMouseUp` overrides plus `WM_NCHITTEST` for click-through policy; exposes `SurfaceInteracted` event, `IsDashboardHoverActive` flag, and `TryGetSessionIdAtScreenPoint` for the hover dashboard controller
 
 The factory in `TrayApp.CreateOverlay` picks one or the other based on `config.Overlay.Interactive`. No runtime style toggling — interactivity is settled at construction. `PInvokeOverlay.cs` in `src/Imrdy.Windows/Desktop/` holds the layered-window P/Invokes (`UpdateLayeredWindow`, `ScreenToClient`, `DecodeLParamPoint`). No topmost watchdog — `Form.TopMost = true` is sufficient and re-asserting `HWND_TOPMOST` on a timer would clip any open menu.
 
@@ -59,6 +61,24 @@ Renders session characters as a horizontal row at the bottom screen edge via `Up
 
 **Tray god toggle**: `TrayConfig.Enabled` (default `true`). `TrayApp` caches `_trayEnabled` at ctor and updates it in `OnConfigChanged`; `ApplyTrayEnabledToAll` shows/hides tray icons without affecting `OverlayWindow`. Re-enable predicate: `shouldShow = !Dismissed && (RemoveAfter is null || RemoveAfter > now)` — prevents dismissed sessions from reappearing.
 
+### Hover Dashboard (Phase 1)
+
+`src/Imrdy.Windows/Dashboard/` contains `DashboardForm` (non-layered WinForms form; full child-control tree implemented — Label+Panel layout per spec mockup at 520 px width; `Form.Opacity` fade animation driven by `HoverDashboardController.OnDrainTick`; DWM mica/acrylic backdrop applied in `OnHandleCreated`; layout complete with visual seal PASSED on all 4 baseline fixtures via mockup-parity sub-plan; Step 06 edge fixtures pending) and `SparklineControl` (UserControl; `ReferenceTime` anchor property so fixture-preview paths render correctly — defaults to `DateTimeOffset.UtcNow` when unset; `DesignerSerializationVisibility.Hidden` on `Timestamps` to suppress WFO1000 build error). `HoverDashboardController` (sealed `IDisposable`; 200ms dwell timer + 300ms grace corridor + 12px bridge gap; create-and-dispose-per-show lifecycle; subscribes to `InteractiveOverlayWindow.SurfaceInteracted` to reset state on user interaction; Debug-level state-machine diagnostics). `TrayApp` instantiates `HoverDashboardController` on construction and wires/unwires it in `OnConfigChanged` and `ExitThreadCore`. `DashboardForm` is pinned to all virtual desktops via `IDesktopManager.PinWindowToAllDesktops` on show so it follows the user across desktops. Dev logging: `ImrdyPaths.DevBuildMarker` (`~/.imrdy/.dev-build`) — when this file exists, `ServiceRegistration.AddSerilog` sets minimum log level to Debug for all processes; `build-dev.sh` touches it after each deploy.
+
+**Focus guard**: `DashboardForm.WndProc` intercepts `WM_MOUSEACTIVATE` and returns `MA_NOACTIVATE` when unpinned / `MA_ACTIVATE` when pinned (early return — no `base.WndProc` for that message, per Raymond Chen). Two-click pin-then-activate is a locked invariant: first body click fires `OnMouseDown → Pin()` WITHOUT `this.Activate()` so terminal focus is preserved; second click activates normally. `OnKeyDown` unpins + hides on Escape. `Pin()` / `Unpin()` / `IsPinned` are the only API around `_isPinned`.
+
+**Post-interaction cooldown**: `HoverDashboardController._awaitingOverlayExit` is set true in `HandleSurfaceInteraction` (after user clicks overlay to activate a session) and cleared on the first drain tick where `cursorInOverlay == false`. While true, `OnDrainTick` short-circuits the dwell branch — prevents ghost re-show of the dashboard when the cursor remains on the overlay row after a click. Distinct from the 300ms grace corridor, which protects cursor traversal while the form is visible.
+
+**Diagnostic heartbeat**: `HoverDashboardController` emits a state-dump Debug log every 10th drain tick (~1/sec when tray runs) with cursor position, overlay bounds, `cursorInOverlay`, `_awaitingOverlayExit`, `_dwellTicks`, `_wasInOverlayLastTick`, form-visible. Plus symmetric enter/exit-overlay transition logs, bounds-change log, and null-controller guard log in `TrayApp.OnHoverDrainTick`. Gated by the `.dev-build` marker; prod-silent.
+
+### Render Verb
+
+`imrdy render <component> [inputs] [--output <path> | --output-dir <dir>]` produces in-process artifacts of imrdy UI surfaces. Phase 1 ships only the `dashboard` component — `DashboardForm` rendered from a `DashboardViewModel` fixture JSON, via `Form.DrawToBitmap` (no screen, deterministic, integration-test friendly). `imrdy render --list` enumerates registered components; `imrdy render --all --output-dir <dir>` renders every fixture of every component. Sequential execution on the main STA thread; SIGINT cancels between fixtures with exit 130.
+
+Pure contracts (`IRenderableSurface`, `RenderContext`, `RenderResult`) live in `Imrdy.Core/Rendering/`; concrete renderers and the `RenderRegistry` live in `Imrdy.Windows/Rendering/` (WinForms-dependent). The `"render"` branch in `Program.cs` sits between `preview-dashboard` and the tray fallback, bypasses `Global\ImrdyMonitor` (same as preview-dashboard), and initialises WinForms before dispatching.
+
+Protocol: for any UI-bearing change (DashboardForm, overlay, tray icons, menus) run `imrdy render --all` after a successful build and inspect every PNG before declaring work complete. A passing verifier wave is not a substitute for visual verification (see `~/.wiki-memory/verify-fix-loop-expert/platform-boundary-three-seal-gate.md`).
+
 ### Notification Dwell
 
 `NotificationDwellState` in `Imrdy.Core/Sound/` gates toast and sound notifications behind per-status dwell timers. Icon updates remain immediate; notifications only fire after a session's status has "settled" for its dwell duration (2-5s depending on status). Per-session 10s toast cooldown provides additional backstop. Dwell check piggybacks on the existing 100ms drain timer — no new timer object. `CooldownTracker` (5s per-session sound cooldown) remains as defense-in-depth. `FiredNotification` record carries `PreviousStatus` and `NotificationType` for correct dispatch.
@@ -69,8 +89,8 @@ Renders session characters as a horizontal row at the bottom screen edge via `Up
 
 ```bash
 dotnet build                                    # Debug build
-dotnet test --filter "Category!=Integration&Category!=Benchmark"  # Unit tests only (421 tests)
-./build-dev.sh                                  # Publish → stop tray → deploy to ~/.local/bin/ → auto-respawn
+dotnet test --filter "Category!=Integration&Category!=Benchmark"  # Unit tests only (537 tests)
+./build-dev.sh                                  # Publish → stop tray → deploy to ~/.local/bin/ → auto-respawn → touches ~/.imrdy/.dev-build (enables default-Debug dev logging)
 ```
 
 Target: `net10.0-windows10.0.17763.0` | PublishSingleFile + SelfContained | No IL trimming (WinForms incompatible)
@@ -88,7 +108,7 @@ Target: `net10.0-windows10.0.17763.0` | PublishSingleFile + SelfContained | No I
 
 ## Critical Constraints
 
-**COM Virtual Desktop Interop**: Uses undocumented `IVirtualDesktopManagerInternal` with build-keyed GUIDs (`VirtualDesktopGuids.cs`). Gracefully degrades on unknown Windows builds. Recovers from Explorer restart via lazy re-init on COMException.
+**COM Virtual Desktop Interop**: Uses undocumented `IVirtualDesktopManagerInternal` with build-keyed GUIDs (`VirtualDesktopGuids.cs`). Gracefully degrades on unknown Windows builds. Recovers from Explorer restart via lazy re-init on COMException. `PinWindowToAllDesktops(IntPtr)` on `IDesktopManager`/`ComVirtualDesktop` uses raw vtable dispatch (`UnmanagedFunctionPointer` delegates, `PinningGuids` static class, `IApplicationView` as opaque `IntPtr`) — no `ComImport` interface, since pinning requires locating the `IApplicationViewCollection` vtable slot at runtime.
 
 **Single Instance**: Mutex-gated via `MutexAcl.TryOpenExisting` (`Global\ImrdyMonitor`). Hook fast-path probes mutex to decide whether to spawn tray.
 

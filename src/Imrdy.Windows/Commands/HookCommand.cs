@@ -194,7 +194,16 @@ internal static class HookCommand
             ToolName = hookEvent.ToolName,
         };
 
-        // Preserve sound_pack, desktop_index, icon_style, and has_teammates from existing state
+        // Populate StartedAt on the first SessionStart — persisted via FieldPreservation on all
+        // subsequent writes. Guard on existing?.StartedAt so a second SessionStart (reconnect or
+        // tray restart) does not overwrite the original session start time.
+        if (string.Equals(hookEvent.HookEventName, "SessionStart", StringComparison.OrdinalIgnoreCase)
+            && existing?.StartedAt is null)
+        {
+            newState = newState with { StartedAt = DateTimeOffset.UtcNow };
+        }
+
+        // Preserve sound_pack, desktop_index, icon_style, started_at, and has_teammates from existing state
         newState = FieldPreservation.PreserveFields(newState, existing);
 
         // Write atomic state file (StateFileReader.WriteStateFile creates the directory if needed)

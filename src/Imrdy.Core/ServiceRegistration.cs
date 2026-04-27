@@ -39,6 +39,8 @@ public static class ServiceRegistration
     /// <summary>
     /// Configures Serilog with stderr console sink and optional file sink.
     /// Respects IMRDY_LOG=1 env var to switch to Debug level.
+    /// Also defaults to Debug when the dev-build marker file exists at <see cref="ImrdyPaths.DevBuildMarker"/>
+    /// (written by build-dev.sh) so local dev builds get diagnostic logging without env-var fiddling.
     /// </summary>
     public static IServiceCollection AddSerilog(
         this IServiceCollection services,
@@ -63,8 +65,12 @@ public static class ServiceRegistration
             levelSwitch.MinimumLevel = LogEventLevel.Information;
         }
 
-        // IMRDY_LOG=1 overrides to Debug (only if no explicit verbose/quiet)
-        if (!verbose && !quiet && Environment.GetEnvironmentVariable("IMRDY_LOG") == "1")
+        // IMRDY_LOG=1 OR dev-build marker overrides to Debug (only if no explicit verbose/quiet).
+        // The marker is written by build-dev.sh so local dev deploys get Debug logging by default
+        // without requiring IMRDY_LOG=1 to be set in every shell that triggers a hook.
+        if (!verbose && !quiet
+            && (Environment.GetEnvironmentVariable("IMRDY_LOG") == "1"
+                || File.Exists(ImrdyPaths.DevBuildMarker)))
         {
             levelSwitch.MinimumLevel = LogEventLevel.Debug;
         }

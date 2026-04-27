@@ -1,0 +1,52 @@
+{
+  "sessionId": "preview-aged-done-00000000000000",
+  "sessionName": "log-noise-fixes",
+  "project": "imrdy",
+  "cwdPath": "/d/dev/github/imrdy",
+  "desktopIndex": 1,
+  "soundPack": null,
+  "status": "done",
+  "lastHookAt": "2026-04-24T14:45:00+00:00",
+  "startedAt": "2026-04-24T14:30:00+00:00",
+  "turnCount": 4,
+  "failureCount": 0,
+  "subagentCount": 0,
+  "currentTool": null,
+  "recentTools": [
+    { "toolName": "Read",  "at": "2026-04-24T14:44:00+00:00" },
+    { "toolName": "Edit",  "at": "2026-04-24T14:44:20+00:00" },
+    { "toolName": "Bash",  "at": "2026-04-24T14:44:45+00:00" }
+  ],
+  "activityTimestamps": [],
+  "lastPrompt": "Summarize what we changed",
+  "permissionTool": null,
+  "git": {
+    "branch": "main",
+    "dirtyCount": 0
+  },
+  "fleetItems": [
+    {
+      "sessionId": "preview-aged-done-00000000000000",
+      "sessionName": "log-noise-fixes",
+      "status": "done",
+      "isHovered": true
+    },
+    {
+      "sessionId": "preview-fleet-03-000000000000000",
+      "sessionName": "overlay-dashboard-context",
+      "status": "busy",
+      "isHovered": false
+    },
+    {
+      "sessionId": "preview-fleet-04-000000000000000",
+      "sessionName": "tray-refactor",
+      "status": "idle",
+      "isHovered": false
+    }
+  ],
+  "contextTokens": null,
+  "contextWindowSize": null,
+  "costUsd": null,
+  "modelDisplayName": null,
+  "rateLimits": null
+}

@@ -29,6 +29,12 @@ internal sealed class ComVirtualDesktop : IDesktopManager
     // Undocumented COM interface — accessed via raw vtable calls
     private IntPtr _internalPtr;
 
+    // Pinning COM interface pointers — raw IntPtr to avoid .NET 10 CLR marshaler
+    // refusing to generate a dispatch stub for `out IInspectable` on a ComImport IUnknown method.
+    // Pattern matches _internalPtr / IVirtualDesktopManagerInternal raw vtable dispatch below.
+    private IntPtr _applicationViewCollectionPtr;
+    private IntPtr _pinnedAppsPtr;
+
     public bool IsAvailable => _available && !_disposed;
 
     private bool IsWindows11 => _buildNumber >= 22000;
@@ -243,6 +249,68 @@ internal sealed class ComVirtualDesktop : IDesktopManager
         }
     }
 
+    public void PinWindowToAllDesktops(IntPtr hwnd)
+    {
+        if (!IsAvailable || hwnd == IntPtr.Zero
+            || _applicationViewCollectionPtr == IntPtr.Zero
+            || _pinnedAppsPtr == IntPtr.Zero)
+        {
+            return;
+        }
+
+        try
+        {
+            WithComRecovery(() =>
+            {
+                // GetViewForHwnd — vtable slot 6 on IApplicationViewCollection
+                // (IUnknown: 0=QI, 1=AddRef, 2=Release; methods: 3=GetViews, 4=GetViewsByZOrder,
+                //  5=GetViewsByAppUserModelId, 6=GetViewForHwnd)
+                var getView = GetVtableDelegate<GetViewForHwndDelegate>(_applicationViewCollectionPtr, 6);
+                var hrGet = getView(_applicationViewCollectionPtr, hwnd, out var viewPtr);
+                if (hrGet < 0 || viewPtr == IntPtr.Zero)
+                {
+                    _logger.LogDebug("GetViewForHwnd HRESULT {Hr:X8} for hwnd {Hwnd}", hrGet, hwnd);
+                    return;
+                }
+
+                try
+                {
+                    // IsViewPinned — vtable slot 6 on IVirtualDesktopPinnedApps
+                    // (IUnknown: 0,1,2; methods: 3=IsAppIdPinned, 4=PinAppID, 5=UnpinAppID,
+                    //  6=IsViewPinned, 7=PinView, 8=UnpinView)
+                    var isPinned = GetVtableDelegate<IsViewPinnedDelegate>(_pinnedAppsPtr, 6);
+                    var hrIs = isPinned(_pinnedAppsPtr, viewPtr, out var pinnedFlag);
+                    if (hrIs < 0)
+                    {
+                        _logger.LogDebug("IsViewPinned HRESULT {Hr:X8} for hwnd {Hwnd}", hrIs, hwnd);
+                        return;
+                    }
+
+                    if (pinnedFlag != 0)
+                    {
+                        return; // already pinned — idempotent no-op
+                    }
+
+                    // PinView — vtable slot 7 on IVirtualDesktopPinnedApps
+                    var pinView = GetVtableDelegate<PinViewDelegate>(_pinnedAppsPtr, 7);
+                    var hrPin = pinView(_pinnedAppsPtr, viewPtr);
+                    if (hrPin < 0)
+                    {
+                        _logger.LogDebug("PinView HRESULT {Hr:X8} for hwnd {Hwnd}", hrPin, hwnd);
+                    }
+                }
+                finally
+                {
+                    Marshal.Release(viewPtr);
+                }
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Failed to pin window {Hwnd} to all desktops", hwnd);
+        }
+    }
+
     public void Dispose()
     {
         if (_disposed)
@@ -288,6 +356,44 @@ internal sealed class ComVirtualDesktop : IDesktopManager
                 // Still partially available — can query window desktops via documented API
                 _available = true;
                 return;
+            }
+
+            // Acquire pinning interfaces via ImmersiveShell service (stable GUIDs, no build-keying).
+            // Store raw IntPtr — do NOT wrap via GetObjectForIUnknown. .NET 10's built-in COM
+            // marshaler throws PlatformNotSupportedException when generating a dispatch stub for
+            // `out IInspectable` on a [ComImport][InterfaceIsIUnknown] method. Raw vtable dispatch
+            // via GetVtableDelegate<> (same pattern as _internalPtr above) sidesteps the marshaler.
+            try
+            {
+                var shellType2 = Type.GetTypeFromCLSID(VirtualDesktopGuids.CLSID_ImmersiveShell);
+                var shell2 = shellType2 is not null ? Activator.CreateInstance(shellType2) : null;
+                if (shell2 is IServiceProvider10 sp)
+                {
+                    try
+                    {
+                        var avcSid = PinningGuids.IID_IApplicationViewCollection;
+                        var avcIid = PinningGuids.IID_IApplicationViewCollection;
+                        if (sp.QueryService(ref avcSid, ref avcIid, out var avcPtr) >= 0 && avcPtr != IntPtr.Zero)
+                        {
+                            _applicationViewCollectionPtr = avcPtr; // keep raw pointer; released in ReleaseCom
+                        }
+
+                        var pinSid = PinningGuids.CLSID_VirtualDesktopPinnedApps;
+                        var pinIid = PinningGuids.IID_IVirtualDesktopPinnedApps;
+                        if (sp.QueryService(ref pinSid, ref pinIid, out var pinPtr) >= 0 && pinPtr != IntPtr.Zero)
+                        {
+                            _pinnedAppsPtr = pinPtr; // keep raw pointer; released in ReleaseCom
+                        }
+                    }
+                    finally
+                    {
+                        Marshal.ReleaseComObject(shell2);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Failed to acquire IApplicationViewCollection or IVirtualDesktopPinnedApps");
             }
 
             _available = true;
@@ -378,6 +484,34 @@ internal sealed class ComVirtualDesktop : IDesktopManager
             }
 
             _internalPtr = IntPtr.Zero;
+        }
+
+        if (_applicationViewCollectionPtr != IntPtr.Zero)
+        {
+            try
+            {
+                Marshal.Release(_applicationViewCollectionPtr);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Error releasing IApplicationViewCollection");
+            }
+
+            _applicationViewCollectionPtr = IntPtr.Zero;
+        }
+
+        if (_pinnedAppsPtr != IntPtr.Zero)
+        {
+            try
+            {
+                Marshal.Release(_pinnedAppsPtr);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Error releasing IVirtualDesktopPinnedApps");
+            }
+
+            _pinnedAppsPtr = IntPtr.Zero;
         }
 
         _available = false;
@@ -692,6 +826,23 @@ internal sealed class ComVirtualDesktop : IDesktopManager
     private delegate int GetAtDelegate(IntPtr @this, uint index, ref Guid riid,
         out IntPtr ppvObject);
 
+    // Pinning delegates — raw vtable dispatch; IApplicationView treated as opaque IntPtr.
+    // .NET 10's built-in COM marshaler cannot generate a dispatch stub for `out IInspectable`
+    // on a [ComImport][InterfaceIsIUnknown] method (PlatformNotSupportedException at first call).
+    // Raw vtable dispatch via GetVtableDelegate<> sidesteps the marshaler entirely.
+
+    // IApplicationViewCollection vtable slot 6
+    [UnmanagedFunctionPointer(CallingConvention.StdCall)]
+    private delegate int GetViewForHwndDelegate(IntPtr @this, IntPtr hwnd, out IntPtr view);
+
+    // IVirtualDesktopPinnedApps vtable slot 6
+    [UnmanagedFunctionPointer(CallingConvention.StdCall)]
+    private delegate int IsViewPinnedDelegate(IntPtr @this, IntPtr view, out int pinned);
+
+    // IVirtualDesktopPinnedApps vtable slot 7
+    [UnmanagedFunctionPointer(CallingConvention.StdCall)]
+    private delegate int PinViewDelegate(IntPtr @this, IntPtr view);
+
     // --- Documented COM Interfaces ---
 
     /// <summary>
@@ -725,5 +876,22 @@ internal sealed class ComVirtualDesktop : IDesktopManager
     {
         [PreserveSig]
         int QueryService(ref Guid guidService, ref Guid riid, out IntPtr ppvObject);
+    }
+
+    /// <summary>
+    /// GUIDs for the pinning COM interfaces. Stable across Win10 1809 → Win11 24H2 —
+    /// no build-keying needed (unlike IVirtualDesktopManagerInternal).
+    /// Sources: MScholtes/VirtualDesktop.
+    /// </summary>
+    private static class PinningGuids
+    {
+        public static readonly Guid CLSID_VirtualDesktopPinnedApps =
+            new("B5A399E7-1C87-46B8-88E9-FC5747B171BD");
+
+        public static readonly Guid IID_IVirtualDesktopPinnedApps =
+            new("4CE81583-1E4C-4632-A621-07A53543148F");
+
+        public static readonly Guid IID_IApplicationViewCollection =
+            new("1841C6D7-4F9D-42C0-AF41-8747538F10E5");
     }
 }

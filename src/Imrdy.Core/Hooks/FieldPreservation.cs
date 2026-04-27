@@ -25,6 +25,7 @@ public static class FieldPreservation
             DesktopIndex = newState.DesktopIndex ?? existing.DesktopIndex,
             IconStyle = newState.IconStyle ?? existing.IconStyle,
             LastTeammateAt = newState.LastTeammateAt ?? existing.LastTeammateAt,
+            StartedAt = newState.StartedAt ?? existing.StartedAt,
         };
     }
 

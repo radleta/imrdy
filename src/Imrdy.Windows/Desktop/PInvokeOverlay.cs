@@ -10,6 +10,54 @@ namespace Imrdy.Windows.Desktop;
 /// </summary>
 internal static class PInvokeOverlay
 {
+    // GetWindowRect for reading the actual HWND screen rect.
+    // WinForms' Form.Bounds caches its value in internal fields that only refresh on
+    // WM_WINDOWPOSCHANGED; UpdateLayeredWindow positions the HWND via Win32 without
+    // reliably firing that message in a way WinForms catches for layered+toolwindow forms.
+    // SetBounds() also fails to refresh the cache in this configuration.
+    // Go straight to Win32 for the ground-truth rect.
+    [StructLayout(LayoutKind.Sequential)]
+    private struct RECT { public int Left, Top, Right, Bottom; }
+
+    // Separate struct for WindowFromPoint to avoid name collision with the existing POINT
+    // used by UpdateLayeredWindow/ScreenToClient.
+    [StructLayout(LayoutKind.Sequential)]
+    private struct POINT_WFP { public int X; public int Y; }
+
+    [DllImport("user32.dll", EntryPoint = "WindowFromPoint")]
+    private static extern IntPtr WindowFromPoint(POINT_WFP pt);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetWindowRect(IntPtr hwnd, out RECT lpRect);
+
+    /// <summary>
+    /// Returns the actual screen rectangle of the HWND via Win32 GetWindowRect.
+    /// Bypasses WinForms' cached <see cref="System.Windows.Forms.Form.Bounds"/>, which
+    /// does not refresh after <see cref="SetBitmap"/> positioning on layered+toolwindow
+    /// forms. Returns <see cref="Rectangle.Empty"/> if the call fails or hwnd is zero.
+    /// </summary>
+    public static Rectangle GetActualWindowRect(IntPtr hwnd)
+    {
+        if (hwnd == IntPtr.Zero) return Rectangle.Empty;
+        if (!GetWindowRect(hwnd, out var r)) return Rectangle.Empty;
+        return new Rectangle(r.Left, r.Top, r.Right - r.Left, r.Bottom - r.Top);
+    }
+
+    /// <summary>
+    /// Returns the HWND of the window directly under the given screen point via
+    /// <c>WindowFromPoint</c>. Used for z-order hit-testing: <c>Rectangle.Contains</c>
+    /// alone is insufficient because other topmost windows (taskbar popups, system shells,
+    /// dragged windows) can geometrically overlap the overlay's screen rect even when our
+    /// overlay isn't the visually-topmost window at that point.
+    /// Returns <see cref="IntPtr.Zero"/> if no window is found.
+    /// </summary>
+    public static IntPtr WindowAtPoint(Point screenPoint)
+    {
+        var p = new POINT_WFP { X = screenPoint.X, Y = screenPoint.Y };
+        return WindowFromPoint(p);
+    }
+
     // GDI device context
     [DllImport("gdi32.dll")]
     private static extern IntPtr CreateCompatibleDC(IntPtr hdc);

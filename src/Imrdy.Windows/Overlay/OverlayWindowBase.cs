@@ -66,6 +66,20 @@ internal abstract class OverlayWindowBase : Form
     protected int IconSize => _config.Size;
     protected int IconCount => _items.Count;
 
+    /// <summary>
+    /// Returns the overlay's actual screen bounds via Win32 GetWindowRect.
+    /// Use this instead of <see cref="Form.Bounds"/> — WinForms caches Bounds in
+    /// internal fields that only refresh on WM_WINDOWPOSCHANGED, and
+    /// UpdateLayeredWindow (which positions this window) does not fire that message
+    /// in a way WinForms catches for layered+toolwindow forms. SetBounds() also
+    /// fails to refresh the cache in this configuration. Bounds returns the WinForms
+    /// default (0,0,300,300) for the entire tray-process life; this property returns
+    /// the live OS-truth rect on every read.
+    /// Returns <see cref="Rectangle.Empty"/> before the handle is created.
+    /// </summary>
+    public Rectangle ActualScreenBounds =>
+        IsHandleCreated ? PInvokeOverlay.GetActualWindowRect(Handle) : Rectangle.Empty;
+
     public virtual void UpdateItems(IReadOnlyList<DisplayItem> items)
     {
         _items = items;
@@ -86,7 +100,27 @@ internal abstract class OverlayWindowBase : Form
         }
 
         var position = CalculatePosition(totalWidth);
+
+        _logger.LogDebug(
+            "Overlay UpdateItems: items={Count}, position={X},{Y}, totalWidth={W}, iconSize={H}, currentBounds={Bounds}, currentVisible={Visible}, handleCreated={HC}",
+            items.Count, position.X, position.Y, totalWidth, _config.Size, this.Bounds, this.Visible, this.IsHandleCreated);
+
         PInvokeOverlay.SetBitmap(Handle, composite, position);
+
+        _logger.LogDebug(
+            "Overlay after SetBitmap: GetWindowRect={Rect}",
+            PInvokeOverlay.GetActualWindowRect(Handle));
+
+        // Defense-in-depth: try to keep WinForms' cached Bounds close to reality.
+        // On layered+toolwindow forms UpdateLayeredWindow does not reliably fire
+        // WM_WINDOWPOSCHANGED so the cache stays stale regardless; external code
+        // must use ActualScreenBounds (GetWindowRect) rather than Bounds.
+        SetBounds(position.X, position.Y, totalWidth, _config.Size);
+
+        _logger.LogDebug(
+            "Overlay after SetBounds: Form.Bounds={Bounds}, GetWindowRect={Rect}",
+            this.Bounds, PInvokeOverlay.GetActualWindowRect(Handle));
+
         Visible = true;
     }
 

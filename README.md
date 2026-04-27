@@ -177,7 +177,7 @@ All packs must declare a `license` field in `pack.json`. A stub `dev-test` pack 
 
 ## Overlay (Mode B)
 
-An alternative to the 16px tray icons: a floating borderless window that renders session characters as a horizontal row along the bottom screen edge. Uses the active graphics pack (or colored circles in dots mode). Stays on top via a 5-second `SetWindowPos` watchdog.
+An alternative to the 16px tray icons: a floating borderless window that renders session characters as a horizontal row along the bottom screen edge. Uses the active graphics pack (or colored circles in dots mode). Stays on top via `Form.TopMost = true`.
 
 **Enable:**
 ```bash
@@ -192,6 +192,7 @@ imrdy config set overlay.enabled true
 | `overlay.position` | `"bottom-right"` | `"bottom-right"` or `"bottom-left"` |
 | `overlay.size` | `64` | Icon size in pixels (32–256) |
 | `overlay.spacing` | `4` | Gap between icons in pixels (0–32) |
+| `overlay.interactive` | `true` | Click icons to switch sessions and right-click for session menus; set to `false` for full click-through |
 
 **CLI examples:**
 ```bash
@@ -201,7 +202,7 @@ imrdy config set overlay.size 128
 
 **Controller menu:** Right-click the controller icon → **Overlay** — toggle enabled, select position, select size.
 
-**V1 limitations:** Primary monitor only. No animation, no click interaction (full click-through), no drag to reposition, no peek mode.
+**V1 limitations:** Primary monitor only. No animation, no drag to reposition, no peek mode.
 
 ## Controller Tray Icon
 

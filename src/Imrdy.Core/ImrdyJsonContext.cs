@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
+using Imrdy.Core.Display;
 using Imrdy.Core.Graphics;
 using Imrdy.Core.Hooks;
 using Imrdy.Core.Sound;
@@ -17,6 +18,12 @@ namespace Imrdy.Core;
 [JsonSerializable(typeof(ImrdyConfig))]
 [JsonSerializable(typeof(WorkspaceConfig))]
 [JsonSerializable(typeof(WorkspaceEntry))]
+[JsonSerializable(typeof(DashboardViewModel))]
+[JsonSerializable(typeof(HookAccumulation))]
+[JsonSerializable(typeof(RecentToolEntry))]
+[JsonSerializable(typeof(GitInfo))]
+[JsonSerializable(typeof(RateLimits))]
+[JsonSerializable(typeof(FleetItem))]
 [JsonSerializable(typeof(JsonDocument))]
 [JsonSerializable(typeof(JsonElement))]
 [JsonSerializable(typeof(JsonNode))]

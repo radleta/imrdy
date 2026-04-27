@@ -1,0 +1,42 @@
+{
+  "sessionId": "preview-no-git-repo-000000000000",
+  "sessionName": "scratch-notes",
+  "project": "my-notes",
+  "cwdPath": "/d/users/richard/notes",
+  "desktopIndex": 0,
+  "soundPack": null,
+  "status": "idle",
+  "lastHookAt": "2026-04-24T14:55:00+00:00",
+  "startedAt": "2026-04-24T14:50:00+00:00",
+  "turnCount": 1,
+  "failureCount": 0,
+  "subagentCount": 0,
+  "currentTool": null,
+  "recentTools": [
+    { "toolName": "Read",  "at": "2026-04-24T14:54:00+00:00" },
+    { "toolName": "Write", "at": "2026-04-24T14:54:30+00:00" }
+  ],
+  "activityTimestamps": [],
+  "lastPrompt": "Summarize the key points from my notes on the architecture review",
+  "permissionTool": null,
+  "git": null,
+  "fleetItems": [
+    {
+      "sessionId": "preview-no-git-repo-000000000000",
+      "sessionName": "scratch-notes",
+      "status": "idle",
+      "isHovered": true
+    },
+    {
+      "sessionId": "preview-fleet-12-000000000000000",
+      "sessionName": "overlay-dashboard-context",
+      "status": "busy",
+      "isHovered": false
+    }
+  ],
+  "contextTokens": null,
+  "contextWindowSize": null,
+  "costUsd": null,
+  "modelDisplayName": null,
+  "rateLimits": null
+}
