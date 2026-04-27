@@ -49,6 +49,8 @@ internal static class CommandRouter
             "config" => ConfigCommand.Run(services, cleanArgs, json),
             "workspace" => WorkspaceCommand.Run(services, cleanArgs, json),
             "stop" => StopCommand.Run(services),
+            "inspect-live" => InspectLiveCommand.Run(cleanArgs),
+            "render-live" => RenderLiveCommand.Run(cleanArgs),
             _ => ShowHelp(services),
         };
     }
@@ -59,11 +61,13 @@ internal static class CommandRouter
         console.MarkupLine("[bold]imrdy[/] — System tray monitor for Claude Code sessions");
         console.WriteLine();
         console.MarkupLine("[bold]Commands:[/]");
-        console.MarkupLine("  [green]status[/]      Show active sessions and workspaces");
-        console.MarkupLine("  [green]packs[/]       Manage sound packs");
-        console.MarkupLine("  [green]config[/]      Manage configuration");
-        console.MarkupLine("  [green]workspace[/]   Manage pinned workspaces");
-        console.MarkupLine("  [green]stop[/]        Stop the running tray app");
+        console.MarkupLine("  [green]status[/]          Show active sessions and workspaces");
+        console.MarkupLine("  [green]packs[/]           Manage sound packs");
+        console.MarkupLine("  [green]config[/]          Manage configuration");
+        console.MarkupLine("  [green]workspace[/]       Manage pinned workspaces");
+        console.MarkupLine("  [green]stop[/]            Stop the running tray app");
+        console.MarkupLine("  [green]inspect-live[/]    Walk live DashboardForm tree, emit JSON layout + diagnostics (agent diagnostic; tray must be running)");
+        console.MarkupLine("  [green]render-live[/]     Render live DashboardForm to PNG (agent diagnostic; tray must be running)");
         console.WriteLine();
         console.MarkupLine("[bold]Global Flags:[/]");
         console.MarkupLine("  [dim]--json[/]       Output as JSON");
@@ -124,6 +128,16 @@ internal static class CommandRouter
                 console.MarkupLine("[bold]imrdy stop[/]");
                 console.MarkupLine("  Signal the running tray app to exit gracefully.");
                 console.MarkupLine("  The tray auto-restarts on the next hook event.");
+                break;
+            case "inspect-live":
+                console.MarkupLine("[bold]imrdy inspect-live[/] <session-id> [[--output <path>]]");
+                console.MarkupLine("  Returns the live dashboard's control tree as JSON with rounded-corner clip-risk,");
+                console.MarkupLine("  sibling-overlap, edge-proximity, and collapsed-row diagnostics.");
+                console.MarkupLine("  Pipe to jq: [dim]imrdy inspect-live abc123 | jq .diagnostics[/]");
+                break;
+            case "render-live":
+                console.MarkupLine("[bold]imrdy render-live[/] <session-id> --output <path>");
+                console.MarkupLine("  Captures the live dashboard for the given session as a PNG, mirroring what the user would see on hover.");
                 break;
             default:
                 return ShowHelp(services);

@@ -22,17 +22,19 @@ tests/Imrdy.Core.Tests/  Unit tests (xunit + FluentAssertions)
 tests/Imrdy.Integration.Tests/  Integration tests (require built binary)
 ```
 
-### Five Entry Points (Program.cs)
+### Seven Entry Points (Program.cs)
 
 ```
 imrdy hook                          → HookCommand (fast-path, no WinForms, reads stdin JSON, writes state file)
-imrdy <command>                     → CommandRouter (status|packs|config|workspace|stop, Spectre.Console output)
+imrdy <command>                     → CommandRouter (status|packs|config|workspace|stop|inspect-live|render-live, Spectre.Console output)
 imrdy preview-dashboard <fixture>   → PreviewDashboardCommand (standalone WinForms dev tool; inline ServiceCollection, bypasses mutex, deserializes DashboardViewModel fixture via ImrdyJsonContext, runs DashboardForm pinned)
 imrdy render <component> [args]     → RenderCommand (in-process UI artifact capture; bypasses mutex; placed between preview-dashboard and tray fallback)
+imrdy inspect-live <id>             → InspectLiveCommand (CLI client; connects to tray via Local\ImrdyInspect pipe; prints/writes walker+analyzer JSON)
+imrdy render-live <id> --output F   → RenderLiveCommand (CLI client; connects to tray via Local\ImrdyInspect pipe; captures live DashboardForm PNG)
 imrdy                               → TrayApp (WinForms ApplicationContext, Application.Run, message pump)
 ```
 
-The hook runs hundreds of times per session. It uses `HookServiceBuilder` (lightweight DI, no COM/WinForms). The tray uses `MonitorServiceBuilder` (full DI with COM desktop manager). The preview-dashboard branch is placed between the Spectre CLI branch and the tray fallback — Spectre skips WinForms init; preview needs it. Mutex check is intentionally bypassed so preview runs alongside the real tray.
+The hook runs hundreds of times per session. It uses `HookServiceBuilder` (lightweight DI, no COM/WinForms). The tray uses `MonitorServiceBuilder` (full DI with COM desktop manager). The preview-dashboard branch is placed between the Spectre CLI branch and the tray fallback — Spectre skips WinForms init; preview needs it. Mutex check is intentionally bypassed so preview runs alongside the real tray. The `inspect-live` and `render-live` CLI commands are thin clients — they send a request over the named pipe and print/write the response; all heavy work (walking, rendering) runs inside the already-running tray process on the UI thread.
 
 ### Graphics Packs
 
@@ -71,6 +73,22 @@ Renders session characters as a horizontal row at the bottom screen edge via `Up
 
 **Diagnostic heartbeat**: `HoverDashboardController` emits a state-dump Debug log every 10th drain tick (~1/sec when tray runs) with cursor position, overlay bounds, `cursorInOverlay`, `_awaitingOverlayExit`, `_dwellTicks`, `_wasInOverlayLastTick`, form-visible. Plus symmetric enter/exit-overlay transition logs, bounds-change log, and null-controller guard log in `TrayApp.OnHoverDrainTick`. Gated by the `.dev-build` marker; prod-silent.
 
+### Live-Inspect IPC
+
+`InspectIpcServer` (`src/Imrdy.Windows/Diagnostics/`) listens on `Local\ImrdyInspect` (named pipe). Two registered verbs: `"inspect-live"` (walker + analyzer, returns JSON control tree + `DiagnosticFinding` list) and `"render-live"` (DrawToBitmap → atomic PNG write). Architecture details:
+
+- **Pipe name**: `Local\ImrdyInspect` (constant `ImrdyPaths.InspectPipeName`).
+- **Protocol**: 4-byte little-endian length prefix + UTF-8 JSON body, both directions. Request: `InspectRequest(Verb, SessionId, OutputPath?)`. Response: `InspectResponse(SchemaVersion, Verb, Error?, Render?, Inspect?)`.
+- **Concurrency**: 4 parallel `NamedPipeServerStream` accept loops (one `Task.Run` per slot); each loop creates a fresh server stream per connection and disposes it after. Max request body: 4 KiB.
+- **Threading**: Each accepted request is dispatched to the UI thread via `Control.BeginInvoke` + `TaskCompletionSource` bridge. Handler has a 2-second budget; `TimeoutException` produces an error response rather than hanging the pipe.
+- **Walker**: `InspectService` in `src/Imrdy.Windows/Diagnostics/` — WinForms-dependent, walks the live `DashboardForm` control tree on the UI thread, emits flat BFS-order `LayoutNode[]`. Stateless per-call.
+- **Analyzer**: `LayoutAnalyzer` in `src/Imrdy.Core/Diagnostics/` — pure/stateless, no WinForms dependency. Four detectors: `regionClipRisk`, `siblingOverlap`, `edgeProximity`, `collapsedRow`. Produces `DiagnosticFinding` list with `ControlPath` (slash-separated), `Severity` (`info`/`warning`/`error`), `Details` dict.
+- **DRY VM builder**: `LiveDashboardVmBuilder` (extracted from `HoverDashboardController`) builds `DashboardViewModel` from session state — shared by `HoverDashboardController`, `InspectLiveHandler`, and `RenderLiveHandler`.
+- **Dev-default gate**: `DiagnosticsConfig.IpcEnabled` (`bool?` in `ImrdyConfig.Diagnostics`). Runtime resolution: `IpcEnabled ?? File.Exists(ImrdyPaths.DevBuildMarker)`. Null = on-in-dev, off-in-prod. Callers use the `?? File.Exists(...)` idiom directly; `EnsureDefaults` does NOT flatten it to a concrete bool (three-state semantics are intentional).
+- **ACL**: `PipeSecurity` restricts to `WindowsIdentity.GetCurrent().User` with `FullControl`. ACL build failure logs a warning and skips server start rather than crashing the tray.
+- **Lifecycle**: `TrayApp` instantiates and `Start`s `InspectIpcServer` during init, passes `_shutdownCts.Token`; accept loops self-terminate on cancellation. `Dispose` is a no-op (loops already winding down when called).
+- **Schema versioning**: `schemaVersion: "1"`. Additive changes (new fields, new `kind` values) stay in v1. Breaking changes (field removal, type change, semantic change) require v2. See `docs/dashboard-inspect-schema.md` for the full JSON shape.
+
 ### Render Verb
 
 `imrdy render <component> [inputs] [--output <path> | --output-dir <dir>]` produces in-process artifacts of imrdy UI surfaces. Phase 1 ships only the `dashboard` component — `DashboardForm` rendered from a `DashboardViewModel` fixture JSON, via `Form.DrawToBitmap` (no screen, deterministic, integration-test friendly). `imrdy render --list` enumerates registered components; `imrdy render --all --output-dir <dir>` renders every fixture of every component. Sequential execution on the main STA thread; SIGINT cancels between fixtures with exit 130.
@@ -89,7 +107,7 @@ Protocol: for any UI-bearing change (DashboardForm, overlay, tray icons, menus) 
 
 ```bash
 dotnet build                                    # Debug build
-dotnet test --filter "Category!=Integration&Category!=Benchmark"  # Unit tests only (537 tests)
+dotnet test --filter "Category!=Integration&Category!=Benchmark"  # Unit tests only (556 tests)
 ./build-dev.sh                                  # Publish → stop tray → deploy to ~/.local/bin/ → auto-respawn → touches ~/.imrdy/.dev-build (enables default-Debug dev logging)
 ```
 
@@ -117,6 +135,8 @@ Target: `net10.0-windows10.0.17763.0` | PublishSingleFile + SelfContained | No I
 **Stop Signal**: Named `EventWaitHandle` (`Local\ImrdyStop`). `imrdy stop` signals it; tray listens on background thread, posts `ExitThread` to UI thread.
 
 **Hook Logging**: `~/.imrdy/logs/hook_.log` with same rotation as monitor log (1MB, 5 retained files). Info-level: one line per hook event (`SessionId → Status (HookEvent)`). Debug-level raw payloads via `IMRDY_LOG=1`. Uses `shared: true` for concurrent hook process writes.
+
+**IPC Dev/Prod Gating**: `DiagnosticsConfig.IpcEnabled` is `bool?` — three-state. Resolution rule: `IpcEnabled ?? File.Exists(ImrdyPaths.DevBuildMarker)`. Null → dev-default-on, off-in-prod (no `.dev-build` file in production). Do NOT flatten null to `false` in `EnsureDefaults` — the three-state semantics are intentional. Explicitly setting `diagnostics.ipcEnabled: true` in `config.json` enables IPC in production.
 
 ## Git Workflow
 

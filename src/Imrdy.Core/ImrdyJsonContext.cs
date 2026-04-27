@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
+using Imrdy.Core.Diagnostics;
 using Imrdy.Core.Display;
 using Imrdy.Core.Graphics;
 using Imrdy.Core.Hooks;
@@ -30,7 +31,16 @@ namespace Imrdy.Core;
 [JsonSerializable(typeof(JsonObject))]
 [JsonSerializable(typeof(JsonArray))]
 [JsonSerializable(typeof(Dictionary<string, string>))]
+[JsonSerializable(typeof(IReadOnlyDictionary<string, string>))]
 [JsonSerializable(typeof(Dictionary<string, JsonElement>))]
+[JsonSerializable(typeof(InspectRequest))]
+[JsonSerializable(typeof(InspectResponse))]
+[JsonSerializable(typeof(RenderResult))]
+[JsonSerializable(typeof(InspectResult))]
+[JsonSerializable(typeof(FormGeometry))]
+[JsonSerializable(typeof(LayoutNode))]
+[JsonSerializable(typeof(DiagnosticFinding))]
+[JsonSerializable(typeof(DiagnosticsConfig))]
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
 internal partial class ImrdyJsonContext : JsonSerializerContext
 {

@@ -16,6 +16,7 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="Imrdy.Integration.Tests" />
+    <InternalsVisibleTo Include="Imrdy.Windows.Tests" />
   </ItemGroup>
 
   <ItemGroup>

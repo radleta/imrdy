@@ -53,7 +53,7 @@ internal sealed class HoverDashboardController : IDisposable
     private readonly IDesktopManager _desktopManager;
     private readonly ILoggerFactory _loggerFactory;
     private readonly ILogger _logger;
-    private readonly GitInfoCache _gitCache;
+    private readonly GitInfoCache _gitCache; // injected from TrayApp (D5 ownership promotion)
 
     private DashboardForm? _form;
     private bool _disposed;
@@ -100,7 +100,8 @@ internal sealed class HoverDashboardController : IDisposable
         HookAccumulationStore hookAccumulationStore,
         Func<IReadOnlyList<SessionEntry>> sessionSource,
         IDesktopManager desktopManager,
-        ILoggerFactory loggerFactory)
+        ILoggerFactory loggerFactory,
+        GitInfoCache gitCache)
     {
         _overlayWindow = overlayWindow;
         _hookAccumulationStore = hookAccumulationStore;
@@ -108,7 +109,7 @@ internal sealed class HoverDashboardController : IDisposable
         _desktopManager = desktopManager;
         _loggerFactory = loggerFactory;
         _logger = loggerFactory.CreateLogger<HoverDashboardController>();
-        _gitCache = new GitInfoCache(loggerFactory);
+        _gitCache = gitCache;
         _logger.LogDebug(
             "HoverCtrl: ctor complete sessionSource-ref-set overlay-window-ref={Handle}",
             overlayWindow.Handle);
@@ -437,19 +438,8 @@ internal sealed class HoverDashboardController : IDisposable
             return;
         }
 
-        var snap = _hookAccumulationStore.GetSnapshot(sessionId);
-        var fleet = ProjectFleetItems(_sessionSource(), hoveredSessionId: sessionId);
         var cachedGit = _gitCache.TryGetCached(entry.State.Cwd);
-
-        var vm = DashboardViewModelBuilder.Build(
-            state: entry.State,
-            startedAt: entry.StartedAt,
-            soundPack: entry.SoundPack,
-            desktopIndex: entry.DesktopIndex ?? 0,
-            accumulation: snap,
-            git: cachedGit,
-            fleet: fleet,
-            now: DateTimeOffset.UtcNow);
+        var vm = LiveDashboardVmBuilder.BuildForSession(entry, _hookAccumulationStore, cachedGit, _sessionSource(), DateTimeOffset.UtcNow);
 
         _form = new DashboardForm(vm, _loggerFactory);
 
@@ -555,18 +545,8 @@ internal sealed class HoverDashboardController : IDisposable
                         if (currentEntry is null)
                             return;
 
-                        var updatedSnap = _hookAccumulationStore.GetSnapshot(sessionId);
-                        var updatedFleet = ProjectFleetItems(_sessionSource(), hoveredSessionId: sessionId);
-                        var updatedVm = DashboardViewModelBuilder.Build(
-                            state: currentEntry.State,
-                            startedAt: currentEntry.StartedAt,
-                            soundPack: currentEntry.SoundPack,
-                            desktopIndex: currentEntry.DesktopIndex ?? 0,
-                            accumulation: updatedSnap,
-                            git: newGit,
-                            fleet: updatedFleet,
-                            now: DateTimeOffset.UtcNow);
-
+                        // Rebuild with the now-available git info.
+                        var updatedVm = LiveDashboardVmBuilder.BuildForSession(currentEntry, _hookAccumulationStore, newGit, _sessionSource(), DateTimeOffset.UtcNow);
                         _logger.LogDebug("HoverCtrl: git async update arrived for {SessionId}, branch={Branch}", sessionId, newGit.Branch);
                         formSnapshot.Update(updatedVm);
                     });
@@ -592,20 +572,8 @@ internal sealed class HoverDashboardController : IDisposable
             return;
         }
 
-        var snap = _hookAccumulationStore.GetSnapshot(sessionId);
-        var fleet = ProjectFleetItems(_sessionSource(), hoveredSessionId: sessionId);
         var cachedGit = _gitCache.TryGetCached(entry.State.Cwd);
-
-        var vm = DashboardViewModelBuilder.Build(
-            state: entry.State,
-            startedAt: entry.StartedAt,
-            soundPack: entry.SoundPack,
-            desktopIndex: entry.DesktopIndex ?? 0,
-            accumulation: snap,
-            git: cachedGit,
-            fleet: fleet,
-            now: DateTimeOffset.UtcNow);
-
+        var vm = LiveDashboardVmBuilder.BuildForSession(entry, _hookAccumulationStore, cachedGit, _sessionSource(), DateTimeOffset.UtcNow);
         _form.Update(vm);
 
         // Kick off async git fetch if not cached — same pattern as TryShowForm.
@@ -633,41 +601,13 @@ internal sealed class HoverDashboardController : IDisposable
                         if (currentEntry is null)
                             return;
 
-                        var updatedSnap = _hookAccumulationStore.GetSnapshot(sessionId);
-                        var updatedFleet = ProjectFleetItems(_sessionSource(), hoveredSessionId: sessionId);
-                        var updatedVm = DashboardViewModelBuilder.Build(
-                            state: currentEntry.State,
-                            startedAt: currentEntry.StartedAt,
-                            soundPack: currentEntry.SoundPack,
-                            desktopIndex: currentEntry.DesktopIndex ?? 0,
-                            accumulation: updatedSnap,
-                            git: newGit,
-                            fleet: updatedFleet,
-                            now: DateTimeOffset.UtcNow);
-
+                        // Rebuild with the now-available git info.
+                        var updatedVm = LiveDashboardVmBuilder.BuildForSession(currentEntry, _hookAccumulationStore, newGit, _sessionSource(), DateTimeOffset.UtcNow);
                         _logger.LogDebug("HoverCtrl: git async update (session-switch) arrived for {SessionId}, branch={Branch}", sessionId, newGit.Branch);
                         formSnapshot.Update(updatedVm);
                     });
                 });
         }
-    }
-
-    /// <summary>
-    /// Projects session entries into fleet items for the dashboard fleet strip.
-    /// Sets <c>IsHovered</c> only for the targeted session.
-    /// </summary>
-    private static IReadOnlyList<FleetItem> ProjectFleetItems(IReadOnlyList<SessionEntry> sessions, string hoveredSessionId)
-    {
-        var fleet = new List<FleetItem>(sessions.Count);
-        foreach (var s in sessions)
-        {
-            fleet.Add(new FleetItem(
-                SessionId: s.SessionId,
-                SessionName: s.State.SessionName ?? "",
-                Status: s.State.Status,
-                IsHovered: s.SessionId == hoveredSessionId));
-        }
-        return fleet;
     }
 
     /// <summary>

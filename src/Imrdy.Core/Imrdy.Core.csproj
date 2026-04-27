@@ -8,6 +8,7 @@
     <InternalsVisibleTo Include="imrdy" />
     <InternalsVisibleTo Include="Imrdy.Core.Tests" />
     <InternalsVisibleTo Include="Imrdy.Integration.Tests" />
+    <InternalsVisibleTo Include="Imrdy.Windows.Tests" />
   </ItemGroup>
 
   <ItemGroup>

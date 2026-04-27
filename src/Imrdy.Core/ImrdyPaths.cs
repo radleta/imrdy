@@ -22,6 +22,7 @@ public static class ImrdyPaths
 
     public const string MutexName = @"Global\ImrdyMonitor";
     public const string StopEventName = @"Local\ImrdyStop";
+    public const string InspectPipeName = @"Local\ImrdyInspect";
 
     static ImrdyPaths()
     {

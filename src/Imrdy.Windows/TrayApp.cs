@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using Imrdy.Core;
 using Imrdy.Core.Desktop;
+using Imrdy.Core.Diagnostics;
 using Imrdy.Core.Display;
 using Imrdy.Core.Graphics;
 using Imrdy.Core.Hooks;
@@ -13,6 +14,7 @@ using Imrdy.Core.Tooltip;
 using Imrdy.Core.Workspace;
 using Imrdy.Windows.Dashboard;
 using Imrdy.Windows.Desktop;
+using Imrdy.Windows.Diagnostics;
 using Imrdy.Windows.Icons;
 using Imrdy.Windows.Interaction;
 using Imrdy.Windows.Menus;
@@ -56,6 +58,7 @@ internal sealed class TrayApp : ApplicationContext, ISessionInteractionRouter
     private readonly WorkspaceVisibility _workspaceVisibility = new();
     private readonly WinFormsSoundPlayer _soundPlayer = new();
     private readonly CancellationTokenSource _shutdownCts = new();
+    private InspectIpcServer? _inspectIpcServer;
     private readonly Dictionary<string, ShuffleBag<string>> _soundBags = new();
 
     private bool _soundEnabled = true;
@@ -87,6 +90,7 @@ internal sealed class TrayApp : ApplicationContext, ISessionInteractionRouter
     private readonly object _previewProcessesLock = new();
 
     private readonly HookAccumulationStore _hookAccumulationStore;
+    private readonly GitInfoCache _gitCache;
     private HoverDashboardController? _hoverController;
     // F6: one-shot null-controller warning guard — prevents log spam when controller is absent.
     // Reset to false whenever _hoverController becomes non-null so each absence is reported once.
@@ -125,6 +129,7 @@ internal sealed class TrayApp : ApplicationContext, ISessionInteractionRouter
         _rendererFactory = rendererFactory;
         _graphicsPackLoader = graphicsPackLoader;
         _hookAccumulationStore = new HookAccumulationStore();
+        _gitCache = new GitInfoCache(loggerFactory);
         _currentIconStyle = StyleNames.NormalizeStyleName(ConfigReader.Read().Tray.IconStyle) ?? "circles";
         _balloonTipManager = new BalloonTipManager(loggerFactory)
         {
@@ -166,6 +171,8 @@ internal sealed class TrayApp : ApplicationContext, ISessionInteractionRouter
         // ContextMenuStrip is never shown.
         _ = _controllerIcon.ContextMenuStrip!.Handle;
 
+        StartIpcServer();
+
         InitializeDirectories();
         LoadSoundConfig();
         InitializeWatchers();
@@ -200,7 +207,8 @@ internal sealed class TrayApp : ApplicationContext, ISessionInteractionRouter
                 _hookAccumulationStore,
                 () => _sessions.Values.ToList(),
                 _desktopManager,
-                _loggerFactory);
+                _loggerFactory,
+                _gitCache);
             _loggedNullHoverControllerWarning = false; // F6: reset so next absence is reported
             _interactiveOverlayWindow.SurfaceInteracted += _hoverController.HandleSurfaceInteraction;
             _logger.LogDebug("TrayApp: subscribed _hoverController.HandleSurfaceInteraction to _interactiveOverlayWindow.SurfaceInteracted");
@@ -1659,7 +1667,8 @@ internal sealed class TrayApp : ApplicationContext, ISessionInteractionRouter
                         _hookAccumulationStore,
                         () => _sessions.Values.ToList(),
                         _desktopManager,
-                        _loggerFactory);
+                        _loggerFactory,
+                        _gitCache);
                     _loggedNullHoverControllerWarning = false; // F6: reset so next absence is reported
                     _interactiveOverlayWindow.SurfaceInteracted += _hoverController.HandleSurfaceInteraction;
                     _logger.LogDebug("TrayApp: subscribed _hoverController.HandleSurfaceInteraction to _interactiveOverlayWindow.SurfaceInteracted");
@@ -1897,6 +1906,47 @@ internal sealed class TrayApp : ApplicationContext, ISessionInteractionRouter
             effectiveEvent, packName, Path.GetFileName(wavPath));
     }
 
+    // --- IPC server ---
+
+    private void StartIpcServer()
+    {
+        var config = ConfigReader.Read();
+        var ipcEnabled = config.Diagnostics.IpcEnabled ?? File.Exists(ImrdyPaths.DevBuildMarker);
+        if (!ipcEnabled)
+        {
+            return;
+        }
+
+        var handlers = new Dictionary<string, Func<InspectRequest, InspectResponse>>(StringComparer.Ordinal)
+        {
+            ["inspect-live"] = req => InspectLiveHandler.Handle(
+                req, _sessions.Values.ToList(), _hookAccumulationStore, _gitCache, _loggerFactory),
+            ["render-live"] = req => RenderLiveHandler.Handle(
+                req, _sessions.Values.ToList(), _hookAccumulationStore, _gitCache, _loggerFactory),
+        };
+
+        // Test-only: when IMRDY_TEST_HOLD_HANDLE is set, register a "ping" verb whose handler
+        // blocks on the named system event until signalled. Used by StressTests.ConcurrentConnections
+        // to hold 4 server slots open and verify the concurrency cap. Never populated in production
+        // (the env var is never set outside test harnesses).
+        var holdHandleName = Environment.GetEnvironmentVariable("IMRDY_TEST_HOLD_HANDLE");
+        if (!string.IsNullOrEmpty(holdHandleName))
+        {
+            handlers["ping"] = _ =>
+            {
+                if (EventWaitHandle.TryOpenExisting(holdHandleName, out var ev))
+                {
+                    using (ev)
+                        ev.WaitOne();
+                }
+                return new InspectResponse("1", "ping", null, null, null);
+            };
+        }
+
+        _inspectIpcServer = new InspectIpcServer(_loggerFactory, _controllerIcon.ContextMenuStrip!, handlers);
+        _inspectIpcServer.Start(_shutdownCts.Token);
+    }
+
     // --- Stop signal ---
 
     private void ListenForStopSignal()
@@ -2035,6 +2085,7 @@ internal sealed class TrayApp : ApplicationContext, ISessionInteractionRouter
         _balloonTipManager.Dispose();
         _soundPlayer.Dispose();
         _desktopManager.Dispose();
+        _inspectIpcServer?.Dispose();
         _shutdownCts.Dispose();
 
         _logger.LogInformation("TrayApp shutdown complete");

@@ -1,22 +1,24 @@
 ---
 tags: [imrdy/architecture]
-updated: 2026-04-25
-summary: "Five entry points, timer interactions, field preservation, and state file lifecycle"
+updated: 2026-04-27
+summary: "Seven entry points, timer interactions, field preservation, and state file lifecycle"
 ---
 
 # Architecture
 
-## Five Entry Points (Program.cs)
+## Seven Entry Points (Program.cs)
 
 | Command | Class | Purpose |
 |---------|-------|---------|
 | `imrdy hook` | HookCommand | Fast-path: read stdin JSON, derive status, write state file. No WinForms. Lightweight DI via HookServiceBuilder. |
-| `imrdy <cmd>` | CommandRouter | CLI commands (status, packs, config, workspace, stop). Spectre.Console output. |
+| `imrdy <cmd>` | CommandRouter | CLI commands (status, packs, config, workspace, stop, inspect-live, render-live). Spectre.Console output. |
 | `imrdy preview-dashboard <fixture>` | PreviewDashboardCommand | Standalone WinForms dev tool; inline ServiceCollection, bypasses mutex, runs DashboardForm pinned from fixture JSON. |
 | `imrdy render <component> [args]` | RenderCommand | In-process PNG capture of WinForms surfaces; bypasses mutex; sequential STA execution. See [Render Verb Architecture](render-verb-architecture.md). |
+| `imrdy inspect-live <id>` | InspectLiveCommand | Thin CLI client: connects to tray via `Local\ImrdyInspect` pipe, emits walker+analyzer JSON. |
+| `imrdy render-live <id> --output F` | RenderLiveCommand | Thin CLI client: connects to tray via `Local\ImrdyInspect` pipe, captures live DashboardForm PNG. |
 | `imrdy` | TrayApp | WinForms ApplicationContext. Application.Run with message pump. Full DI via MonitorServiceBuilder. |
 
-The hook runs hundreds of times per session. It must be fast (~50ms). No COM, no WinForms initialization.
+The hook runs hundreds of times per session. It must be fast (~50ms). No COM, no WinForms initialization. The `inspect-live` and `render-live` commands are thin clients — all heavy work (walking, rendering) runs inside the already-running tray on the UI thread via `BeginInvoke` + `TaskCompletionSource` bridge. See [Tray IPC](inspect-ipc.md) for protocol details.
 
 ## State File Lifecycle
 
@@ -67,3 +69,7 @@ Mutex-gated via `Global\ImrdyMonitor`. Hook fast-path probes mutex to decide whe
 ## Stop Signal
 
 Named `EventWaitHandle` (`Local\ImrdyStop`). `imrdy stop` signals it. Tray listens on background thread, marshals `ExitThread` to UI thread.
+
+## Diagnostics IPC Server
+
+Named pipe `Local\ImrdyInspect`. Controlled by `DiagnosticsConfig.IpcEnabled` (`bool?`); default null = on when `~/.imrdy/.dev-build` exists, off otherwise. `InspectIpcServer` in `src/Imrdy.Windows/Diagnostics/` starts 4 parallel accept loops; each request dispatches to the UI thread via `BeginInvoke` + `TaskCompletionSource` with a 2-second budget. See [Tray IPC](inspect-ipc.md) for full protocol details.

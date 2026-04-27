@@ -79,11 +79,19 @@ internal static class Program
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
 
-            using var mutex = new Mutex(true, ImrdyPaths.MutexName, out bool created);
-            if (!created)
+            // Stress-test harness bypass: when IMRDY_STRESS_TEST=1, skip the single-instance
+            // mutex so the test child can run alongside the developer's real tray. Never set in
+            // production; the isolated IMRDY_HOME keeps config/session state separate.
+            bool stressTest = Environment.GetEnvironmentVariable("IMRDY_STRESS_TEST") == "1";
+            Mutex? mutex = null;
+            if (!stressTest)
             {
-                // Already running
-                return 0;
+                mutex = new Mutex(true, ImrdyPaths.MutexName, out bool created);
+                if (!created)
+                {
+                    mutex.Dispose();
+                    return 0; // Already running
+                }
             }
 
             // Catch WinForms UI thread exceptions and log instead of crashing
@@ -97,7 +105,7 @@ internal static class Program
             using var monitorServices = MonitorServiceBuilder.Build(monitorOptions);
             var trayApp = monitorServices.GetRequiredService<TrayApp>();
             Application.Run(trayApp);
-            GC.KeepAlive(mutex);
+            mutex?.Dispose();
             return 0;
         }
         catch (Exception ex)

@@ -44,7 +44,7 @@ irm https://raw.githubusercontent.com/radleta/imrdy/main/install.ps1 | iex
 
 2. **Monitor** (`imrdy` with no args): WinForms system tray app that watches session state files via FileSystemWatcher. Creates/updates/removes tray icons as sessions change.
 
-3. **CLI** (`imrdy status|packs|config|workspace`): Management commands for checking status, managing sound packs, editing config, and pinning workspaces.
+3. **CLI** (`imrdy status|packs|config|workspace|inspect-live|render-live`): Management commands for checking status, managing sound packs, editing config, pinning workspaces, and live diagnostic inspection of the running tray.
 
 The tray monitor auto-starts on the first hook event (mutex-gated — only one instance runs). To disable auto-start:
 ```bash
@@ -74,6 +74,9 @@ imrdy workspace pin <p>   Pin a workspace (auto-derives name)
 imrdy workspace unpin <p> Unpin a workspace
 
 imrdy stop                Stop the tray app (auto-restarts on next hook)
+
+imrdy inspect-live <id>   Walk the live DashboardForm for <id> and emit control-tree JSON + diagnostics
+imrdy render-live <id>    Capture a live DashboardForm PNG for <id> via the tray IPC server
 
 imrdy --help              Show help
 imrdy --version           Show version
@@ -250,9 +253,12 @@ Supports Windows 10 (20H1+) and Windows 11 (all versions through 24H2).
 {
   "tray": { "enabled": true, "iconStyle": "dots" },
   "sound": { "enabled": true, "defaultPack": "random", "disabledPacks": [] },
-  "overlay": { "enabled": false, "position": "bottom-right", "size": 64, "spacing": 4 }
+  "overlay": { "enabled": false, "position": "bottom-right", "size": 64, "spacing": 4 },
+  "diagnostics": { "ipcEnabled": null }
 }
 ```
+
+`diagnostics.ipcEnabled` is a three-state `bool?`. `null` (default — omit from config) means the IPC server starts only when the `~/.imrdy/.dev-build` dev marker exists. Set `true` to enable in production; set `false` to disable even in dev.
 
 **Environment variables:**
 | Variable | Purpose |

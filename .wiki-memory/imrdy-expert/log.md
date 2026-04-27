@@ -1,5 +1,22 @@
 # imrdy-expert Wiki — Operations Log
 
+## [2026-04-27] update | Live-inspect doc-updater safety-net sweep (boundary 11)
+- Updated: README.md (CLI item 3: added inspect-live/render-live; CLI Commands block: added inspect-live/render-live rows; config schema: added diagnostics.ipcEnabled with three-state explanation)
+- Updated: architecture.md (Five → Seven entry points table; added InspectLiveCommand + RenderLiveCommand rows; added thin-client note; added Diagnostics IPC Server section; updated frontmatter summary + date)
+- Verified: index.md architecture summary line already correct ("Seven entry points") — no change needed
+- Verified: CLAUDE.md Seven Entry Points and Live-Inspect IPC sections already accurate — no change needed
+- Verified: docs/dashboard-inspect-schema.md already accurate (updated in step 09) — no change needed
+- Verified: inspect-ipc.md already accurate (created in step 09) — no change needed
+- Verified: tools/ directory has no README (no file exists there) — no change needed
+- Verified: No HOOKS.md or CHANGELOG.md exists in the repo — no change needed
+
+## [2026-04-27] ingest | Live-inspect step 09 source-doc rollup (boundary 10)
+- New page: inspect-ipc.md (pattern: named-pipe IPC server `Local\ImrdyInspect`, 4-byte LE length-prefix framing, dev-default gate via `bool? IpcEnabled ?? File.Exists(DevBuildMarker)`, 4 parallel accept loops + UI-thread BeginInvoke + TCS bridge, walker+analyzer architecture, current-user ACL)
+- Updated: index.md (+1 page, last updated 2026-04-27, boundary log line)
+- Updated: CLAUDE.md (five→seven entry points, new Live-Inspect IPC architecture section, IpcEnabled Critical Constraint)
+- Updated: docs/dashboard-inspect-schema.md (schema drift fixes: FormGeometry field names formX/formY/formWidth/formHeight, DiagnosticFinding fields controlPath+details replacing nodeIndex, severity includes "info", edgeProximity threshold 4px not 2px, collapsedRow trigger corrected to TableLayoutPanel row[N]==0, sample response corrected)
+- Insight: `DiagnosticFinding` uses `controlPath` (slash-separated path string) not a flat `nodeIndex`. `FormGeometry` camelCase field names include the "form" prefix (`formX`, `formWidth`) — not the bare `x`/`width` names a reader might expect. The `edgeProximity` detector fires at 4px (`EdgeProximityFloor` constant), not 2px. `collapsedRow` triggers on `TableLayoutPanel.Details["row[N]"] == "0"`, not on any control with height 0. All four were schema-doc drift vs as-built code discovered during step 09.
+
 ## [2026-04-26] ingest | Overlay-dashboard-context step 08 final (boundary 10)
 - New page: hover-switch-live-update.md (pattern: poll TryGetSessionIdAtScreenPoint while hover form visible to detect session changes; apply update in place without re-pin/opacity-reset)
 - New page: z-order-gate-obsoletes-menu-paper-over.md (pattern: WindowFromPoint z-order gating eliminates stateful overlay-hide-on-menu logic; pure Rectangle.Contains insufficient when foreign topmost windows can cover the overlay)

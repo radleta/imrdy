@@ -15,6 +15,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Imrdy.Core.Tests", "tests\I
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Imrdy.Integration.Tests", "tests\Imrdy.Integration.Tests\Imrdy.Integration.Tests.csproj", "{3AD4B430-06DF-4288-82A4-3E6BBAF31B80}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Imrdy.Windows.Tests", "tests\Imrdy.Windows.Tests\Imrdy.Windows.Tests.csproj", "{0E0E197F-1BBD-478A-AACD-BF2BA339FCAD}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -73,6 +75,18 @@ Global
 		{3AD4B430-06DF-4288-82A4-3E6BBAF31B80}.Release|x64.Build.0 = Release|Any CPU
 		{3AD4B430-06DF-4288-82A4-3E6BBAF31B80}.Release|x86.ActiveCfg = Release|Any CPU
 		{3AD4B430-06DF-4288-82A4-3E6BBAF31B80}.Release|x86.Build.0 = Release|Any CPU
+		{0E0E197F-1BBD-478A-AACD-BF2BA339FCAD}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{0E0E197F-1BBD-478A-AACD-BF2BA339FCAD}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{0E0E197F-1BBD-478A-AACD-BF2BA339FCAD}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{0E0E197F-1BBD-478A-AACD-BF2BA339FCAD}.Debug|x64.Build.0 = Debug|Any CPU
+		{0E0E197F-1BBD-478A-AACD-BF2BA339FCAD}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{0E0E197F-1BBD-478A-AACD-BF2BA339FCAD}.Debug|x86.Build.0 = Debug|Any CPU
+		{0E0E197F-1BBD-478A-AACD-BF2BA339FCAD}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{0E0E197F-1BBD-478A-AACD-BF2BA339FCAD}.Release|Any CPU.Build.0 = Release|Any CPU
+		{0E0E197F-1BBD-478A-AACD-BF2BA339FCAD}.Release|x64.ActiveCfg = Release|Any CPU
+		{0E0E197F-1BBD-478A-AACD-BF2BA339FCAD}.Release|x64.Build.0 = Release|Any CPU
+		{0E0E197F-1BBD-478A-AACD-BF2BA339FCAD}.Release|x86.ActiveCfg = Release|Any CPU
+		{0E0E197F-1BBD-478A-AACD-BF2BA339FCAD}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -82,5 +96,6 @@ Global
 		{F6D9013B-9A0A-4FDB-ABE3-3A4B5406687F} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 		{E6C2372E-7D49-4A5F-9774-2ACCA47E78F7} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 		{3AD4B430-06DF-4288-82A4-3E6BBAF31B80} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
+		{0E0E197F-1BBD-478A-AACD-BF2BA339FCAD} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 	EndGlobalSection
 EndGlobal
