@@ -189,8 +189,12 @@ internal sealed class DashboardForm : Form
         {
             Dock      = DockStyle.Fill,
             BackColor = BgFleet,
-            Margin    = new Padding(8, 4, 8, 4),
+            // Margin=0 lets BgFleet extend to the form edges so the rounded Region
+            // (radius 14) clips through panel pixels uniformly. A non-zero margin
+            // creates a visible BgForm seam at the top corners.
+            Margin    = new Padding(0),
         };
+        _fleetStrip.Resize += (_, _) => RepositionFleetStripChildren();
 
         _accentBar = new Panel { Width = 3, Dock = DockStyle.Left, BackColor = StatusColor("idle") };
 
@@ -289,7 +293,8 @@ internal sealed class DashboardForm : Form
         {
             Dock      = DockStyle.Fill,
             BackColor = BgFooter,
-            Margin    = new Padding(8, 4, 8, 4),
+            // See _fleetStrip Margin comment — same reason.
+            Margin    = new Padding(0),
         };
 
         BuildLayout();
@@ -356,6 +361,12 @@ internal sealed class DashboardForm : Form
         Update(vm);
         if (!Visible)
             base.Show();
+        _logger.LogDebug(
+            "DashboardForm: post-show-fleet fleetStripBoundsInForm={StripBounds} fleetLabelBoundsInForm={LabelBounds} fleetCountBoundsInForm={CountBounds} fleetDotsBoundsInForm={DotsBounds}",
+            _fleetStrip.Bounds,
+            new System.Drawing.Rectangle(_fleetStrip.Left + _fleetLabel.Left, _fleetStrip.Top + _fleetLabel.Top, _fleetLabel.Width, _fleetLabel.Height),
+            new System.Drawing.Rectangle(_fleetStrip.Left + _fleetCount.Left, _fleetStrip.Top + _fleetCount.Top, _fleetCount.Width, _fleetCount.Height),
+            new System.Drawing.Rectangle(_fleetStrip.Left + _fleetDotsPanel.Left, _fleetStrip.Top + _fleetDotsPanel.Top, _fleetDotsPanel.Width, _fleetDotsPanel.Height));
     }
 
     /// <summary>
@@ -583,6 +594,9 @@ internal sealed class DashboardForm : Form
         }
 
         ApplyRoundedRegion();
+        _logger.LogDebug(
+            "DashboardForm: handle-created formBounds={Bounds} clientSize={CW}x{CH} regionRadius=14",
+            this.Bounds, this.ClientSize.Width, this.ClientSize.Height);
     }
 
     /// <summary>
@@ -746,8 +760,8 @@ internal sealed class DashboardForm : Form
 
         _tableLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
 
-        // Row 0: Fleet strip — Absolute 36px (always visible)
-        _tableLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 36f));
+        // Row 0: Fleet strip — Absolute 40px (always visible; top cushion clears 14px corner Region)
+        _tableLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 40f));
         // Row 1: Session header — Absolute 78px (always visible)
         _tableLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 78f));
         // Row 2: Status row — Absolute 36px (always visible)
@@ -888,26 +902,48 @@ internal sealed class DashboardForm : Form
     {
         _fleetStrip.Controls.Clear();
 
-        _fleetLabel.Left   = 10;
-        _fleetLabel.Top    = 10;
+        // Inner-content positions compensate for the +8/+4 we removed from the
+        // panel's outer Margin (so visual content lands where the cushion fix put it).
+        _fleetLabel.Left   = 18;
+        _fleetLabel.Top    = 18;
         _fleetLabel.Width  = 30;
         _fleetLabel.Height = 14;
         _fleetStrip.Controls.Add(_fleetLabel);
 
-        // fleetDotsPanel and fleetCount use Anchor so they track parent width on resize.
-        // Width seeds are set when added to the parent but Anchor adjusts on layout.
-        _fleetDotsPanel.Left   = 44;
-        _fleetDotsPanel.Top    = 10;
+        // fleetDotsPanel + fleetCount: Anchor seeds are unreliable here because the
+        // parent's final Width isn't known until a Resize fires; RepositionFleetStripChildren
+        // (wired at construction) flush-rights the count and caps the dots panel to fit.
+        _fleetDotsPanel.Left   = 52;
+        _fleetDotsPanel.Top    = 18;
         _fleetDotsPanel.Height = 10;
-        _fleetDotsPanel.Anchor = AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Top;
+        _fleetDotsPanel.Anchor = AnchorStyles.Left | AnchorStyles.Top;
         _fleetStrip.Controls.Add(_fleetDotsPanel);
 
-        _fleetCount.Top    = 8;
+        _fleetCount.Top    = 16;
         _fleetCount.Width  = 40;
         _fleetCount.Height = 14;
-        _fleetCount.Anchor = AnchorStyles.Right | AnchorStyles.Top;
+        _fleetCount.Anchor = AnchorStyles.Top | AnchorStyles.Right;
         _fleetCount.TextAlign = ContentAlignment.MiddleRight;
         _fleetStrip.Controls.Add(_fleetCount);
+    }
+
+    /// <summary>
+    /// Flush-rights <see cref="_fleetCount"/> against the strip's right edge and caps
+    /// <see cref="_fleetDotsPanel"/>.Width so it never overruns the count Label.
+    /// Anchor alone is unreliable here because the strip's final Width isn't known at
+    /// LayoutFleetStrip-call time. Wired to <see cref="_fleetStrip"/>.Resize and called
+    /// once at the end of <see cref="UpdateFleetStrip"/> so it also adapts when the
+    /// count text width changes (AutoSize).
+    /// </summary>
+    private void RepositionFleetStripChildren()
+    {
+        const int RightGap = 14;
+        const int DotsGap  = 8;
+        var stripWidth = _fleetStrip.ClientSize.Width;
+        if (stripWidth <= 0)
+            return;
+        _fleetCount.Left = stripWidth - _fleetCount.Width - RightGap;
+        _fleetDotsPanel.Width = Math.Max(0, _fleetCount.Left - _fleetDotsPanel.Left - DotsGap);
     }
 
     private void LayoutFooter()
@@ -919,7 +955,9 @@ internal sealed class DashboardForm : Form
             FlowDirection = FlowDirection.LeftToRight,
             WrapContents  = false,
             BackColor     = BgFooter,
-            Padding       = new Padding(14, 5, 14, 5),
+            // Padding compensates the +8/+4 removed from the footer panel's outer Margin
+            // (14+8 horiz, 5+4 vert) so footer content stays where the design placed it.
+            Padding       = new Padding(22, 9, 22, 9),
         };
 
         _gitLabel.Margin       = new Padding(0, 0, 10, 0);
@@ -1008,6 +1046,9 @@ internal sealed class DashboardForm : Form
             _fleetCount.Text = "1 / 1";
         else
             _fleetCount.Text = "";
+
+        // Re-flush count after AutoSize may have changed its Width.
+        RepositionFleetStripChildren();
     }
 
     /// <summary>
