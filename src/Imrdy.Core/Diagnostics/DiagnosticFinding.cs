@@ -1,5 +1,3 @@
-using System.Collections.Immutable;
-
 namespace Imrdy.Core.Diagnostics;
 
 /// <summary>
@@ -22,10 +20,4 @@ public record DiagnosticFinding(
     string Severity,
     string ControlPath,
     string Message,
-    IReadOnlyDictionary<string, string> Details)
-{
-    public DiagnosticFinding(string Kind, string Severity, string ControlPath, string Message)
-        : this(Kind, Severity, ControlPath, Message, ImmutableDictionary<string, string>.Empty)
-    {
-    }
-}
+    IReadOnlyDictionary<string, string> Details);
