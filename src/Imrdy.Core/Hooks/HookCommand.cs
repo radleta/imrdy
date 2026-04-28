@@ -1,13 +1,10 @@
 using System.Text.Json;
-using Imrdy.Core;
-using Imrdy.Core.Desktop;
-using Imrdy.Core.Hooks;
 using Imrdy.Core.State;
 using Imrdy.Core.Status;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
-namespace Imrdy.Windows.Commands;
+namespace Imrdy.Core.Hooks;
 
 /// <summary>
 /// Implements the `imrdy hook` fast-path subcommand.
@@ -20,7 +17,7 @@ internal static class HookCommand
     /// processes the hook event, and writes the state file.
     /// Returns exit code 0 on success, 1 on error.
     /// </summary>
-    public static int Run(ServiceProvider services, TextReader stdin)
+    public static int Run(ServiceProvider services, TextReader stdin, IHookEnvironment hookEnvironment)
     {
         var logger = services.GetRequiredService<ILoggerFactory>().CreateLogger("HookCommand");
 
@@ -143,10 +140,10 @@ internal static class HookCommand
             // render UI (state tracking, dwell timers, toasts, sounds, hot-reload of config).
             // Users can toggle display surfaces at runtime; the monitor must be alive to
             // respond. The proper escape hatch for headless/CI is the IMRDY_NO_TRAY env
-            // var, which TraySpawner.EnsureRunning honors.
+            // var, which the platform EnsureTrayRunning implementation honors.
             try
             {
-                TraySpawner.EnsureRunning(logger);
+                hookEnvironment.EnsureTrayRunning();
             }
             catch (Exception ex)
             {
@@ -157,15 +154,15 @@ internal static class HookCommand
         }
 
         // Lead events (no agent_id): full state file write
-        var normalizedCwd = PathNormalizer.Normalize(hookEvent.Cwd);
-        var project = PathNormalizer.DeriveProject(hookEvent.Cwd);
+        var normalizedCwd = hookEnvironment.NormalizeCwd(hookEvent.Cwd);
+        var project = Path.GetFileName(hookEnvironment.NormalizeCwd(hookEvent.Cwd) ?? "");
 
         // Resolve Claude PID (best-effort — don't fail the hook if this fails)
         int? claudePid = null;
         try
         {
             var currentPid = Environment.ProcessId;
-            claudePid = ProcessResolver.ResolveTerminalPid(currentPid, hookEvent.SessionId);
+            claudePid = hookEnvironment.ResolveTerminalPid(currentPid, hookEvent.SessionId);
         }
         catch (Exception ex)
         {
@@ -192,6 +189,7 @@ internal static class HookCommand
             Timestamp = DateTimeOffset.UtcNow,
             SessionName = hookEvent.SessionName,
             ToolName = hookEvent.ToolName,
+            WslDistro = hookEvent.WslDistro,
         };
 
         // Populate StartedAt on the first SessionStart — persisted via FieldPreservation on all
@@ -222,7 +220,7 @@ internal static class HookCommand
         // NOT gated on config flags — see comment at the teammate-path spawn above.
         try
         {
-            TraySpawner.EnsureRunning(logger);
+            hookEnvironment.EnsureTrayRunning();
         }
         catch (Exception ex)
         {
@@ -232,7 +230,7 @@ internal static class HookCommand
         // Clean up session end
         if (string.Equals(hookEvent.HookEventName, "SessionEnd", StringComparison.OrdinalIgnoreCase))
         {
-            ProcessResolver.ClearSession(hookEvent.SessionId);
+            hookEnvironment.OnSessionEnd(hookEvent.SessionId);
         }
 
         return 0;

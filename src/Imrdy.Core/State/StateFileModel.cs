@@ -58,6 +58,9 @@ public sealed record StateFileModel
     [JsonPropertyName("started_at")]
     public DateTimeOffset? StartedAt { get; init; }
 
+    [JsonPropertyName("wsl_distro")]
+    public string? WslDistro { get; init; }
+
     /// <summary>
     /// Truncates a message to the maximum allowed length.
     /// Port of truncateMessage() from hook-lib.mjs.

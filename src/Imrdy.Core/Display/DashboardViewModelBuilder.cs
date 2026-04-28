@@ -17,7 +17,8 @@ public static class DashboardViewModelBuilder
         HookAccumulation accumulation,
         GitInfo? git,
         IReadOnlyList<FleetItem> fleet,
-        DateTimeOffset now)
+        DateTimeOffset now,
+        string? wslDistro = null)
     {
         _ = now; // reserved for future age-based field derivations; injected for testability
 
@@ -28,6 +29,7 @@ public static class DashboardViewModelBuilder
             CwdPath: state.Cwd,
             DesktopIndex: desktopIndex,
             SoundPack: soundPack,
+            WslDistro: wslDistro,
             Status: state.Status,
             LastHookAt: state.Timestamp,
             StartedAt: startedAt,

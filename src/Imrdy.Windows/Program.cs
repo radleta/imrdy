@@ -1,9 +1,11 @@
 using System.Runtime.ExceptionServices;
 using Imrdy.Core;
+using Imrdy.Core.Hooks;
 using Imrdy.Windows.Commands;
 using Imrdy.Windows.DI;
 using Imrdy.Windows.Models;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Serilog;
 
 namespace Imrdy.Windows;
@@ -38,7 +40,8 @@ internal static class Program
             if (args.Length > 0 && args[0] == "hook")
             {
                 using var services = HookServiceBuilder.Build();
-                return HookCommand.Run(services, Console.In);
+                var hookLogger = services.GetRequiredService<ILoggerFactory>().CreateLogger("HookCommand");
+                return HookCommand.Run(services, Console.In, new WindowsHookEnvironment(hookLogger));
             }
 
             // Management commands — Spectre.Console for rich output

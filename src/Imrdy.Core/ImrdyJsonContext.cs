@@ -8,6 +8,7 @@ using Imrdy.Core.Hooks;
 using Imrdy.Core.Sound;
 using Imrdy.Core.State;
 using Imrdy.Core.Workspace;
+using Imrdy.Core.Wsl;
 
 namespace Imrdy.Core;
 
@@ -19,6 +20,10 @@ namespace Imrdy.Core;
 [JsonSerializable(typeof(ImrdyConfig))]
 [JsonSerializable(typeof(WorkspaceConfig))]
 [JsonSerializable(typeof(WorkspaceEntry))]
+[JsonSerializable(typeof(WslDistroConfig))]
+[JsonSerializable(typeof(WslDistroEntry))]
+[JsonSerializable(typeof(List<WslDistroEntry>))]
+[JsonSerializable(typeof(List<string>))]
 [JsonSerializable(typeof(DashboardViewModel))]
 [JsonSerializable(typeof(HookAccumulation))]
 [JsonSerializable(typeof(RecentToolEntry))]

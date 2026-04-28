@@ -1,11 +1,11 @@
-using Imrdy.Core;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace Imrdy.Windows.DI;
+namespace Imrdy.Core.Hooks;
 
 /// <summary>
 /// Minimal DI composition for the hook fast path.
 /// Registers Core services only — no Spectre, no WinForms.
+/// Used by both Imrdy.Windows and Imrdy.Linux.
 /// </summary>
 public static class HookServiceBuilder
 {

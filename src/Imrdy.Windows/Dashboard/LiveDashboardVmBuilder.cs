@@ -36,7 +36,8 @@ internal static class LiveDashboardVmBuilder
             accumulation: snap,
             git: cachedGit,
             fleet: fleet,
-            now: now);
+            now: now,
+            wslDistro: entry.State.WslDistro);
     }
 
     /// <summary>

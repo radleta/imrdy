@@ -104,6 +104,28 @@ public class FieldPreservationTests
     }
 
     [Fact]
+    public void PreserveFields_WslDistro_PreservesFromExistingWhenNewIsNull()
+    {
+        var existing = CreateModel() with { WslDistro = "Ubuntu-22.04" };
+        var newState = CreateModel();
+
+        var result = FieldPreservation.PreserveFields(newState, existing);
+
+        result.WslDistro.Should().Be("Ubuntu-22.04");
+    }
+
+    [Fact]
+    public void PreserveFields_WslDistro_NewValueTakesPrecedence()
+    {
+        var existing = CreateModel() with { WslDistro = "Ubuntu-22.04" };
+        var newState = CreateModel() with { WslDistro = "Ubuntu-24.04" };
+
+        var result = FieldPreservation.PreserveFields(newState, existing);
+
+        result.WslDistro.Should().Be("Ubuntu-24.04");
+    }
+
+    [Fact]
     public void PreserveFields_LastTeammateAt_PreservesFromExisting()
     {
         var ts = new DateTimeOffset(2026, 4, 14, 12, 0, 0, TimeSpan.Zero);

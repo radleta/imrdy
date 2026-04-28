@@ -26,6 +26,7 @@ public static class FieldPreservation
             IconStyle = newState.IconStyle ?? existing.IconStyle,
             LastTeammateAt = newState.LastTeammateAt ?? existing.LastTeammateAt,
             StartedAt = newState.StartedAt ?? existing.StartedAt,
+            WslDistro = newState.WslDistro ?? existing.WslDistro,
         };
     }
 

@@ -11,6 +11,7 @@ public static class ImrdyPaths
     public static string Config { get; }
     public static string Sessions { get; }
     public static string Workspaces { get; }
+    public static string WslDistros { get; }
     public static string SoundsDir { get; }
     public static string PacksDir { get; }
     public static string GraphicsDir { get; }
@@ -32,6 +33,7 @@ public static class ImrdyPaths
         Config = Path.Combine(Home, "config.json");
         Sessions = Path.Combine(Home, "sessions");
         Workspaces = Path.Combine(Home, "workspaces.json");
+        WslDistros = Path.Combine(Home, "wsl-distros.json");
         SoundsDir = Path.Combine(Home, "sounds");
         PacksDir = Path.Combine(Home, "sounds", "packs");
         GraphicsDir = Path.Combine(Home, "graphics");

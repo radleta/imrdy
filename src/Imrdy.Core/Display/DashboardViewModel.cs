@@ -13,6 +13,7 @@ public sealed record DashboardViewModel(
     string CwdPath,
     int DesktopIndex,
     string? SoundPack,
+    string? WslDistro,
 
     // Live state
     string Status,

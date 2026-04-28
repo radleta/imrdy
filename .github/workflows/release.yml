@@ -5,17 +5,17 @@ on:
     tags: ["v*"]
 
 jobs:
-  publish:
+  publish-windows:
     runs-on: windows-latest
     strategy:
       matrix:
         rid: [win-x64, win-arm64]
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
         with:
           dotnet-version: "10.0.x"
           dotnet-quality: "preview"
@@ -43,21 +43,63 @@ jobs:
           Move-Item ./publish/${{ matrix.rid }}/imrdy.exe ./publish/${{ matrix.rid }}/imrdy-${{ matrix.rid }}.exe
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: imrdy-${{ matrix.rid }}
           path: |
             ./publish/${{ matrix.rid }}/imrdy-${{ matrix.rid }}.exe
             ./publish/${{ matrix.rid }}/SHA256SUMS.txt
 
+  publish-linux:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        rid: [linux-x64, linux-arm64]
+
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
+        with:
+          dotnet-version: "10.0.x"
+          dotnet-quality: "preview"
+
+      - name: Publish SingleFile
+        run: |
+          dotnet publish src/Imrdy.Linux/Imrdy.Linux.csproj \
+            --configuration Release \
+            --runtime ${{ matrix.rid }} \
+            --self-contained true \
+            -p:PublishSingleFile=true \
+            --output ./publish/${{ matrix.rid }}
+
+      - name: Create checksum
+        run: |
+          sha256sum ./publish/${{ matrix.rid }}/imrdy | \
+            sed 's|./publish/${{ matrix.rid }}/imrdy|imrdy-${{ matrix.rid }}|' \
+            > ./publish/${{ matrix.rid }}/SHA256SUMS.txt
+
+      - name: Rename binary
+        run: |
+          mv ./publish/${{ matrix.rid }}/imrdy ./publish/${{ matrix.rid }}/imrdy-${{ matrix.rid }}
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: imrdy-${{ matrix.rid }}
+          path: |
+            ./publish/${{ matrix.rid }}/imrdy-${{ matrix.rid }}
+            ./publish/${{ matrix.rid }}/SHA256SUMS.txt
+
   release:
-    needs: publish
+    needs: [publish-windows, publish-linux]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
       - name: Download all artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           path: ./artifacts
 
@@ -65,6 +107,8 @@ jobs:
         run: |
           cat ./artifacts/imrdy-win-x64/SHA256SUMS.txt \
               ./artifacts/imrdy-win-arm64/SHA256SUMS.txt \
+              ./artifacts/imrdy-linux-x64/SHA256SUMS.txt \
+              ./artifacts/imrdy-linux-arm64/SHA256SUMS.txt \
               > ./artifacts/SHA256SUMS.txt
 
       - name: Create GitHub Release
@@ -74,4 +118,6 @@ jobs:
           files: |
             ./artifacts/imrdy-win-x64/imrdy-win-x64.exe
             ./artifacts/imrdy-win-arm64/imrdy-win-arm64.exe
+            ./artifacts/imrdy-linux-x64/imrdy-linux-x64
+            ./artifacts/imrdy-linux-arm64/imrdy-linux-arm64
             ./artifacts/SHA256SUMS.txt

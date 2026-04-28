@@ -42,6 +42,9 @@ public sealed record HookEventModel
     [JsonPropertyName("agent_type")]
     public string? AgentType { get; init; }
 
+    [JsonPropertyName("wsl_distro")]
+    public string? WslDistro { get; init; }
+
     [JsonExtensionData]
     public Dictionary<string, JsonElement>? ExtensionData { get; set; } = null;
 }

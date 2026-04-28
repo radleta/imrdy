@@ -1,0 +1,45 @@
+{
+  "sessionId": "preview-wsl-ubuntu22-000000000000",
+  "sessionName": "wsl-feature-branch",
+  "project": "imrdy",
+  "cwdPath": "/home/richard/dev/imrdy",
+  "desktopIndex": 0,
+  "soundPack": null,
+  "wslDistro": "Ubuntu-22.04",
+  "status": "busy",
+  "lastHookAt": "2026-04-28T12:00:00+00:00",
+  "startedAt": "2026-04-28T11:55:00+00:00",
+  "turnCount": 3,
+  "failureCount": 0,
+  "subagentCount": 0,
+  "currentTool": "Bash",
+  "recentTools": [
+    { "toolName": "Read", "at": "2026-04-28T11:58:00+00:00" },
+    { "toolName": "Edit", "at": "2026-04-28T11:59:00+00:00" },
+    { "toolName": "Bash", "at": "2026-04-28T12:00:00+00:00" }
+  ],
+  "activityTimestamps": [
+    "2026-04-28T11:58:00+00:00",
+    "2026-04-28T11:59:00+00:00",
+    "2026-04-28T12:00:00+00:00"
+  ],
+  "lastPrompt": "Run the unit tests and report any failures",
+  "permissionTool": null,
+  "git": {
+    "branch": "feat/wsl-support",
+    "dirtyCount": 5
+  },
+  "fleetItems": [
+    {
+      "sessionId": "preview-wsl-ubuntu22-000000000000",
+      "sessionName": "wsl-feature-branch",
+      "status": "busy",
+      "isHovered": true
+    }
+  ],
+  "contextTokens": null,
+  "contextWindowSize": null,
+  "costUsd": null,
+  "modelDisplayName": null,
+  "rateLimits": null
+}
