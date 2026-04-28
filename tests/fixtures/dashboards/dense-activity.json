@@ -1,0 +1,43 @@
+{
+  "sessionId": "edge-dense-activity-00000000000000",
+  "sessionName": "dense-activity",
+  "project": "imrdy",
+  "cwdPath": "/d/dev/github/imrdy",
+  "desktopIndex": 1,
+  "soundPack": null,
+  "status": "busy",
+  "lastHookAt": "2026-04-27T16:00:00+00:00",
+  "startedAt": "2026-04-27T15:59:00+00:00",
+  "turnCount": 60,
+  "failureCount": 0,
+  "subagentCount": 0,
+  "currentTool": "Bash",
+  "recentTools": [
+    { "toolName": "Bash", "at": "2026-04-27T15:59:30+00:00" },
+    { "toolName": "Read", "at": "2026-04-27T15:59:40+00:00" },
+    { "toolName": "Edit", "at": "2026-04-27T15:59:50+00:00" }
+  ],
+  "activityTimestamps": [
+    "2026-04-27T15:59:00+00:00", "2026-04-27T15:59:01+00:00", "2026-04-27T15:59:02+00:00",
+    "2026-04-27T15:59:05+00:00", "2026-04-27T15:59:08+00:00", "2026-04-27T15:59:10+00:00",
+    "2026-04-27T15:59:12+00:00", "2026-04-27T15:59:15+00:00", "2026-04-27T15:59:18+00:00",
+    "2026-04-27T15:59:20+00:00", "2026-04-27T15:59:22+00:00", "2026-04-27T15:59:25+00:00",
+    "2026-04-27T15:59:28+00:00", "2026-04-27T15:59:30+00:00", "2026-04-27T15:59:32+00:00",
+    "2026-04-27T15:59:34+00:00", "2026-04-27T15:59:36+00:00", "2026-04-27T15:59:38+00:00",
+    "2026-04-27T15:59:40+00:00", "2026-04-27T15:59:42+00:00", "2026-04-27T15:59:44+00:00",
+    "2026-04-27T15:59:46+00:00", "2026-04-27T15:59:48+00:00", "2026-04-27T15:59:50+00:00",
+    "2026-04-27T15:59:52+00:00", "2026-04-27T15:59:54+00:00", "2026-04-27T15:59:56+00:00",
+    "2026-04-27T15:59:58+00:00", "2026-04-27T15:59:59+00:00", "2026-04-27T16:00:00+00:00"
+  ],
+  "lastPrompt": "stress sparkline with dense activity",
+  "permissionTool": null,
+  "git": { "branch": "develop", "isDirty": false },
+  "fleetItems": [
+    { "sessionId": "edge-dense-activity-00000000000000", "sessionName": "dense-activity", "status": "busy", "isHovered": true }
+  ],
+  "contextTokens": null,
+  "contextWindowSize": null,
+  "costUsd": null,
+  "modelDisplayName": null,
+  "rateLimits": null
+}

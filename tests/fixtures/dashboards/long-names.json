@@ -1,0 +1,28 @@
+{
+  "sessionId": "edge-long-names-00000000000000",
+  "sessionName": "this-is-a-very-very-long-session-name-that-should-test-text-truncation-or-overflow",
+  "project": "this-is-an-extremely-long-project-name-monorepo-package-deeply-nested",
+  "cwdPath": "/d/dev/github/an-organization/with-a-deep-monorepo/packages/services/some-microservice/internal/very/deeply/nested/working-directory",
+  "desktopIndex": 9,
+  "soundPack": null,
+  "status": "busy",
+  "lastHookAt": "2026-04-27T16:00:00+00:00",
+  "startedAt": "2026-04-27T14:00:00+00:00",
+  "turnCount": 99,
+  "failureCount": 7,
+  "subagentCount": 3,
+  "currentTool": "ExtremelyLongToolNameThatShouldOverflow",
+  "recentTools": [],
+  "activityTimestamps": [],
+  "lastPrompt": "Refactor the extremely-long-named-module across all the deeply-nested service boundaries while maintaining backward compatibility for the v1 v2 v3 v4 and v5 API surfaces and document everything in the architecture decision record format with full traceability",
+  "permissionTool": null,
+  "git": { "branch": "feature/very-long-branch-name-for-the-edge-test-with-many-segments-and-words", "isDirty": true },
+  "fleetItems": [
+    { "sessionId": "edge-long-names-00000000000000", "sessionName": "very-long-name", "status": "busy", "isHovered": true }
+  ],
+  "contextTokens": null,
+  "contextWindowSize": null,
+  "costUsd": null,
+  "modelDisplayName": null,
+  "rateLimits": null
+}

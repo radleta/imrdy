@@ -1,0 +1,50 @@
+{
+  "sessionId": "edge-many-tools-00000000000000",
+  "sessionName": "many-recent-tools",
+  "project": "imrdy",
+  "cwdPath": "/d/dev/github/imrdy",
+  "desktopIndex": 0,
+  "soundPack": null,
+  "status": "busy",
+  "lastHookAt": "2026-04-27T16:00:00+00:00",
+  "startedAt": "2026-04-27T15:00:00+00:00",
+  "turnCount": 25,
+  "failureCount": 1,
+  "subagentCount": 2,
+  "currentTool": "Bash",
+  "recentTools": [
+    { "toolName": "Read",      "at": "2026-04-27T15:55:00+00:00" },
+    { "toolName": "Edit",      "at": "2026-04-27T15:55:30+00:00" },
+    { "toolName": "Grep",      "at": "2026-04-27T15:56:00+00:00" },
+    { "toolName": "Glob",      "at": "2026-04-27T15:56:30+00:00" },
+    { "toolName": "Bash",      "at": "2026-04-27T15:57:00+00:00" },
+    { "toolName": "Write",     "at": "2026-04-27T15:57:30+00:00" },
+    { "toolName": "TodoWrite", "at": "2026-04-27T15:58:00+00:00" },
+    { "toolName": "WebFetch",  "at": "2026-04-27T15:58:30+00:00" },
+    { "toolName": "WebSearch", "at": "2026-04-27T15:59:00+00:00" },
+    { "toolName": "Task",      "at": "2026-04-27T15:59:30+00:00" }
+  ],
+  "activityTimestamps": [
+    "2026-04-27T15:55:00+00:00",
+    "2026-04-27T15:55:30+00:00",
+    "2026-04-27T15:56:00+00:00",
+    "2026-04-27T15:56:30+00:00",
+    "2026-04-27T15:57:00+00:00",
+    "2026-04-27T15:57:30+00:00",
+    "2026-04-27T15:58:00+00:00",
+    "2026-04-27T15:58:30+00:00",
+    "2026-04-27T15:59:00+00:00",
+    "2026-04-27T15:59:30+00:00"
+  ],
+  "lastPrompt": "stress chips strip with many recent tools",
+  "permissionTool": null,
+  "git": { "branch": "feature/edge-test-many-recent-tools-very-long-branch-name", "isDirty": true },
+  "fleetItems": [
+    { "sessionId": "edge-many-tools-00000000000000", "sessionName": "many-recent-tools", "status": "busy", "isHovered": true }
+  ],
+  "contextTokens": null,
+  "contextWindowSize": null,
+  "costUsd": null,
+  "modelDisplayName": null,
+  "rateLimits": null
+}

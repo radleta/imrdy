@@ -49,6 +49,10 @@ internal sealed class DashboardRenderer : IRenderableSurface
             if (vm is null)
                 return new RenderResult(false, "fixture parse failed: deserialized to null", 0, 0);
 
+            var validationError = ValidateFixture(vm);
+            if (validationError is not null)
+                return new RenderResult(false, validationError, 0, 0);
+
             using var form = new DashboardForm(vm, ctx.LoggerFactory, isPinned: true, isPreviewMode: false);
 
             // CreateControl() alone gives the form a handle but child controls never paint —
@@ -80,5 +84,42 @@ internal sealed class DashboardRenderer : IRenderableSurface
         {
             return new RenderResult(false, ex.Message, 0, 0);
         }
+    }
+
+    private static string? ValidateFixture(DashboardViewModel vm)
+    {
+        if (string.IsNullOrEmpty(vm.SessionId))
+            return "fixture invalid: sessionId is required";
+        if (string.IsNullOrEmpty(vm.SessionName))
+            return "fixture invalid: sessionName is required";
+        if (vm.Project is null)
+            return "fixture invalid: project is required";
+        if (vm.CwdPath is null)
+            return "fixture invalid: cwdPath is required";
+        if (string.IsNullOrEmpty(vm.Status))
+            return "fixture invalid: status is required";
+
+        if (vm.RecentTools is null)
+            return "fixture invalid: recentTools is required";
+        for (var i = 0; i < vm.RecentTools.Count; i++)
+        {
+            if (string.IsNullOrEmpty(vm.RecentTools[i].ToolName))
+                return $"fixture invalid: recentTools[{i}].toolName is required";
+        }
+
+        if (vm.FleetItems is null)
+            return "fixture invalid: fleetItems is required";
+        for (var i = 0; i < vm.FleetItems.Count; i++)
+        {
+            if (string.IsNullOrEmpty(vm.FleetItems[i].SessionId))
+                return $"fixture invalid: fleetItems[{i}].sessionId is required";
+            if (string.IsNullOrEmpty(vm.FleetItems[i].Status))
+                return $"fixture invalid: fleetItems[{i}].status is required";
+        }
+
+        if (vm.Git is not null && string.IsNullOrEmpty(vm.Git.Branch))
+            return "fixture invalid: git.branch is required when git is non-null";
+
+        return null;
     }
 }

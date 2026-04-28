@@ -25,4 +25,4 @@
 - [Tray IPC: render-live and inspect-live verbs](inspect-ipc.md) — Named-pipe IPC server (`Local\ImrdyInspect`): protocol framing, dev-default gate, walker+analyzer architecture, threading model, and pipe ACL.
 
 ## Log
-Last updated: 2026-04-27 | 21 pages | ingest boundary 10 (live-inspect step 09): added inspect-ipc.md; CLAUDE.md updated (seven entry points, IPC section, IpcEnabled constraint)
+Last updated: 2026-04-27 | 21 pages | update boundary 12 (dashboard-edge-fixes): CLAUDE.md Hover Dashboard section updated — edge-case layout fixes captured, stale "Step 06 pending" note removed

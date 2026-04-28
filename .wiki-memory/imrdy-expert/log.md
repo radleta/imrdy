@@ -1,5 +1,14 @@
 # imrdy-expert Wiki — Operations Log
 
+## [2026-04-27] update | Dashboard edge-fixes doc-updater sweep (boundary 12)
+- Updated: CLAUDE.md Hover Dashboard (Phase 1) section — removed stale "Step 06 edge fixtures pending" note; captured five edge-case layout fixes: chip strip MaxVisibleChips=8 + "+N more" overflow chip; two-column TLP footer (keyboard hints flush-right); session-name 300px cap + AutoEllipsis; sparkline dark background; DashboardRenderer returns structured error on parse failure
+- Verified: README.md — no dashboard layout internals; no change needed
+- Verified: .wiki-memory/imrdy-expert/sparkline-reference-time.md — ReferenceTime anchor pattern still accurate; empty-state rendering not documented there; no change needed
+- Verified: .wiki-memory/imrdy-expert/persona-chip-horizontal-budget.md — Controls.Remove pattern still accurate; not about chip overflow; no change needed
+- Verified: .wiki-memory/imrdy-expert/render-verb-architecture.md — DashboardRenderer described at contract level only; no change needed
+- Verified: .wiki-memory/imrdy-expert/hover-dashboard-form-lifecycle.md — form lifecycle patterns unchanged; no change needed
+- Verified: docs/dashboard-inspect-schema.md — IPC schema unchanged; no change needed
+
 ## [2026-04-27] update | Live-inspect doc-updater safety-net sweep (boundary 11)
 - Updated: README.md (CLI item 3: added inspect-live/render-live; CLI Commands block: added inspect-live/render-live rows; config schema: added diagnostics.ipcEnabled with three-state explanation)
 - Updated: architecture.md (Five → Seven entry points table; added InspectLiveCommand + RenderLiveCommand rows; added thin-client note; added Diagnostics IPC Server section; updated frontmatter summary + date)

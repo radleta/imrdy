@@ -30,10 +30,12 @@ internal sealed class SparklineControl : UserControl
             ControlStyles.UserPaint,
             true);
 
-        // Allocate owned GDI resources — do NOT use Brushes.WhiteSmoke / Pens.SteelBlue
-        // (those return system-cached objects that throw InvalidOperationException on Dispose).
-        _barBrush = new SolidBrush(Color.WhiteSmoke);
-        _axisPen = new Pen(Color.SteelBlue, 1f);
+        // Allocate owned GDI resources — do NOT use system-cached Brush/Pen objects
+        // (those throw InvalidOperationException on Dispose).
+        // Bar color: muted teal matching the busy-status accent (#4EC9B0 at ~55% opacity
+        // blended over the dark form bg). Axis: same hue at lower brightness.
+        _barBrush = new SolidBrush(Color.FromArgb(140, 78, 201, 176));
+        _axisPen = new Pen(Color.FromArgb(60, 78, 201, 176), 1f);
     }
 
     /// <summary>

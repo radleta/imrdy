@@ -812,6 +812,15 @@ internal sealed class DashboardForm : Form
         // nameRow and subtitleRow use Anchor=Left|Right|Top so they track panel width on resize.
         // Width is seeded at FormMinWidth - Left(12) - rightMargin(8) so first render is correct.
         var innerWidth = FormMinWidth - 12 - 8;
+
+        // Session name: cap at 300px so it never fills the nameRow and crowds out other content.
+        // AutoEllipsis requires AutoSize=false (they are mutually exclusive in WinForms).
+        // Width is set to the cap — short names leave blank space but truncation always works.
+        _sessionNameLabel.AutoSize     = false;
+        _sessionNameLabel.AutoEllipsis = true;
+        _sessionNameLabel.Width        = 300;
+        _sessionNameLabel.Height       = 26;
+
         var nameRow = new FlowLayoutPanel
         {
             Left          = 12,
@@ -825,6 +834,18 @@ internal sealed class DashboardForm : Form
         };
         nameRow.Controls.Add(_sessionNameLabel);
         // _personaChip intentionally excluded from layout until persona feature lands (decisions.md D5)
+
+        // Project label: cap at 160px so cwd + Desktop chip always fit on the subtitle row.
+        _projectLabel.AutoSize     = false;
+        _projectLabel.AutoEllipsis = true;
+        _projectLabel.Width        = 160;
+        _projectLabel.Height       = 18;
+
+        // cwd label: already truncated by FrontTruncatePath; cap at 200px so Desktop chip always shows.
+        _cwdLabel.AutoSize     = false;
+        _cwdLabel.AutoEllipsis = true;
+        _cwdLabel.Width        = 200;
+        _cwdLabel.Height       = 18;
 
         var subtitleRow = new FlowLayoutPanel
         {
@@ -949,27 +970,53 @@ internal sealed class DashboardForm : Form
     private void LayoutFooter()
     {
         _footer.Controls.Clear();
-        var footerFlow = new FlowLayoutPanel
+
+        // Two-column footer layout:
+        //   Left column (AutoSize): git chip + subagents + failure — truncate when long
+        //   Right column (Fill):    keyboard hints — always flush-right, never clipped
+        // A TableLayoutPanel with two columns is the correct fix; a single FlowLayoutPanel
+        // with WrapContents=false allowed the git label to squeeze keyboard hints off screen.
+        var footerTlp = new TableLayoutPanel
+        {
+            Dock        = DockStyle.Fill,
+            ColumnCount = 2,
+            RowCount    = 1,
+            BackColor   = BgFooter,
+            Padding     = new Padding(22, 9, 22, 9),
+            Margin      = Padding.Empty,
+        };
+        footerTlp.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));  // left: takes remaining
+        footerTlp.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));         // right: keyboard hints
+        footerTlp.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
+
+        // Left: git + subagents + failure — horizontal FlowLayoutPanel, overflow clips into right padding
+        var leftFlow = new FlowLayoutPanel
         {
             Dock          = DockStyle.Fill,
             FlowDirection = FlowDirection.LeftToRight,
             WrapContents  = false,
-            BackColor     = BgFooter,
-            // Padding compensates the +8/+4 removed from the footer panel's outer Margin
-            // (14+8 horiz, 5+4 vert) so footer content stays where the design placed it.
-            Padding       = new Padding(22, 9, 22, 9),
+            BackColor     = Color.Transparent,
+            Padding       = Padding.Empty,
+            Margin        = Padding.Empty,
         };
+        _gitLabel.AutoSize      = false;
+        _gitLabel.AutoEllipsis  = true;
+        _gitLabel.Width         = 180; // cap git branch at 180px; ellipsis handles overflow
+        _gitLabel.MaximumSize   = new Size(180, 0);
+        _gitLabel.Margin        = new Padding(0, 0, 10, 0);
+        _subagentsLabel.Margin  = new Padding(0, 0, 10, 0);
+        _failureLabel.Margin    = new Padding(0, 0, 0, 0);
+        leftFlow.Controls.Add(_gitLabel);
+        leftFlow.Controls.Add(_subagentsLabel);
+        leftFlow.Controls.Add(_failureLabel);
 
-        _gitLabel.Margin       = new Padding(0, 0, 10, 0);
-        _subagentsLabel.Margin = new Padding(0, 0, 10, 0);
-        _failureLabel.Margin   = new Padding(0, 0, 10, 0);
-        _keyboardHintsLabel.Margin = new Padding(0, 0, 0, 0);
+        // Right: keyboard hints — AutoSize column; no Dock override needed since the
+        // FlowLayoutPanel already has AutoSize=true. Anchor to the top of the cell.
+        _keyboardHintsLabel.Margin = Padding.Empty;
 
-        footerFlow.Controls.Add(_gitLabel);
-        footerFlow.Controls.Add(_subagentsLabel);
-        footerFlow.Controls.Add(_failureLabel);
-        footerFlow.Controls.Add(_keyboardHintsLabel);
-        _footer.Controls.Add(footerFlow);
+        footerTlp.Controls.Add(leftFlow,             0, 0);
+        footerTlp.Controls.Add(_keyboardHintsLabel,  1, 0);
+        _footer.Controls.Add(footerTlp);
     }
 
     private void UpdateFleetStrip(DashboardViewModel vm, DateTimeOffset now)
@@ -1091,19 +1138,31 @@ internal sealed class DashboardForm : Form
         _statusPillDot.Invalidate();
     }
 
+    // Maximum number of tool chips to render before appending a "+N more" overflow chip.
+    // At 520 px width with ~60px per chip, 8 chips fill the row; cap at 8 and show overflow.
+    private const int MaxVisibleChips = 8;
+
     private void UpdateChips(IReadOnlyList<RecentToolEntry> tools)
     {
         foreach (Control c in _chipsPanel.Controls) c.Dispose();
         _chipsPanel.Controls.Clear();
-        SetRowVisible(RowChips, tools.Count > 0, HeightChips);
-        if (tools.Count == 0) return;
 
-        foreach (var tool in tools.Take(8))
+        if (tools.Count == 0)
         {
-            var (bg, fg) = ResolveToolChipColors(tool.ToolName);
+            SetRowVisible(RowChips, false, HeightChips);
+            return;
+        }
+
+        var visibleCount = Math.Min(tools.Count, MaxVisibleChips);
+        var chipAdded = false;
+        for (var i = 0; i < visibleCount; i++)
+        {
+            var toolName = tools[i].ToolName;
+            if (string.IsNullOrEmpty(toolName)) continue;
+            var (bg, fg) = ResolveToolChipColors(toolName);
             var chip = new Label
             {
-                Text        = tool.ToolName,
+                Text        = toolName,
                 Font        = new Font("Consolas", 9f),
                 ForeColor   = fg,
                 BackColor   = bg,
@@ -1113,7 +1172,30 @@ internal sealed class DashboardForm : Form
                 BorderStyle = BorderStyle.None,
             };
             _chipsPanel.Controls.Add(chip);
+            chipAdded = true;
         }
+
+        var overflow = tools.Count - visibleCount;
+        if (overflow > 0)
+        {
+            var overflowChip = new Label
+            {
+                Text        = $"+{overflow} more",
+                Font        = new Font("Consolas", 9f),
+                ForeColor   = FgMuted,
+                BackColor   = Color.FromArgb(12, 255, 255, 255),
+                AutoSize    = true,
+                Padding     = new Padding(5, 2, 5, 2),
+                Margin      = new Padding(0, 0, 0, 0),
+                BorderStyle = BorderStyle.None,
+            };
+            _chipsPanel.Controls.Add(overflowChip);
+            chipAdded = true;
+        }
+
+        // Show the row only if at least one chip was rendered — guards against a list of
+        // entirely null/empty ToolName entries that would otherwise leave a visible empty gap.
+        SetRowVisible(RowChips, chipAdded, HeightChips);
     }
 
     /// <summary>
@@ -1224,8 +1306,9 @@ internal sealed class DashboardForm : Form
         {
             kbdFont = new Font("Cascadia Code", 9.5f, FontStyle.Regular, GraphicsUnit.Point);
         }
-        catch
+        catch (Exception ex)
         {
+            System.Diagnostics.Debug.WriteLine($"DashboardForm: Cascadia Code font unavailable; falling back to Consolas. {ex.Message}");
             kbdFont = new Font("Consolas", 9.5f, FontStyle.Regular, GraphicsUnit.Point);
         }
 

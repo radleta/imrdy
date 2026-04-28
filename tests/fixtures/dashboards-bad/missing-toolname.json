@@ -1,0 +1,32 @@
+{
+  "sessionId": "test-missing-toolname",
+  "sessionName": "test-session",
+  "project": "my-project",
+  "cwdPath": "/d/dev/my-project",
+  "desktopIndex": 0,
+  "soundPack": null,
+  "status": "busy",
+  "lastHookAt": "2026-04-27T15:00:00+00:00",
+  "startedAt": "2026-04-27T14:00:00+00:00",
+  "turnCount": 1,
+  "failureCount": 0,
+  "subagentCount": 0,
+  "currentTool": null,
+  "recentTools": [
+    {"toolName": "Read", "at": "2026-04-27T15:00:00+00:00"},
+    {"at": "2026-04-27T15:01:00+00:00"},
+    {"toolName": "Bash", "at": "2026-04-27T15:02:00+00:00"}
+  ],
+  "activityTimestamps": [],
+  "lastPrompt": null,
+  "permissionTool": null,
+  "git": null,
+  "fleetItems": [
+    {"sessionId": "test-missing-toolname", "sessionName": "test-session", "status": "busy", "isHovered": true}
+  ],
+  "contextTokens": null,
+  "contextWindowSize": null,
+  "costUsd": null,
+  "modelDisplayName": null,
+  "rateLimits": null
+}
