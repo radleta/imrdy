@@ -38,6 +38,7 @@ public class LinuxHookEnvironmentTests : IDisposable
         public void EnsureTrayRunning() { }
         public string NormalizeCwd(string? cwd) => cwd ?? "";
         public void OnSessionEnd(string sessionId) { }
+        public string? GetWslDistro() => Environment.GetEnvironmentVariable("WSL_DISTRO_NAME");
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
@@ -134,5 +135,64 @@ public class LinuxHookEnvironmentTests : IDisposable
         var state = reader.ReadStateFile(StateFilePath(sid));
         state.Should().NotBeNull();
         state!.ClaudePid.Should().BeNull("Linux hook env returns null PID — state file must still be written");
+    }
+
+    [Fact]
+    public void GetWslDistro_WhenEnvVarSet_ReturnsValue()
+    {
+        const string distro = "Ubuntu-22.04-Test";
+        Environment.SetEnvironmentVariable("WSL_DISTRO_NAME", distro);
+        try
+        {
+            var env = new LinuxStyleEnv();
+            env.GetWslDistro().Should().Be(distro);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("WSL_DISTRO_NAME", null);
+        }
+    }
+
+    [Fact]
+    public void GetWslDistro_WhenEnvVarUnset_ReturnsNull()
+    {
+        var prior = Environment.GetEnvironmentVariable("WSL_DISTRO_NAME");
+        Environment.SetEnvironmentVariable("WSL_DISTRO_NAME", null);
+        try
+        {
+            var env = new LinuxStyleEnv();
+            env.GetWslDistro().Should().BeNull();
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("WSL_DISTRO_NAME", prior);
+        }
+    }
+
+    [Fact]
+    public void Run_WslDistroFromEnvVar_PopulatesStateFileWhenJsonFieldAbsent()
+    {
+        const string sid = "linux-env-test-06";
+        const string distro = "Ubuntu-22.04-EnvTest";
+        Environment.SetEnvironmentVariable("WSL_DISTRO_NAME", distro);
+        try
+        {
+            // JSON has NO wsl_distro field — env var must supply it
+            var json = BuildJson("SessionStart", sid, cwd: "/home/foo/project");
+            var env = new LinuxStyleEnv();
+
+            var result = HookCommand.Run(_services, new StringReader(json), env);
+
+            result.Should().Be(0);
+            var reader = _services.GetRequiredService<StateFileReader>();
+            var state = reader.ReadStateFile(StateFilePath(sid));
+            state.Should().NotBeNull();
+            state!.WslDistro.Should().Be(distro,
+                "WslDistro must be populated from WSL_DISTRO_NAME when not present in hook JSON");
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("WSL_DISTRO_NAME", null);
+        }
     }
 }

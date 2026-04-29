@@ -14,4 +14,6 @@ internal sealed class WindowsHookEnvironment(ILogger logger) : IHookEnvironment
     public string NormalizeCwd(string? cwd) => PathNormalizer.Normalize(cwd ?? "");
 
     public void OnSessionEnd(string sessionId) => ProcessResolver.ClearSession(sessionId);
+
+    public string? GetWslDistro() => null;
 }

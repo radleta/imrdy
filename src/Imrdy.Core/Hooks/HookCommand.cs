@@ -189,7 +189,7 @@ internal static class HookCommand
             Timestamp = DateTimeOffset.UtcNow,
             SessionName = hookEvent.SessionName,
             ToolName = hookEvent.ToolName,
-            WslDistro = hookEvent.WslDistro,
+            WslDistro = hookEvent.WslDistro ?? hookEnvironment.GetWslDistro(),
         };
 
         // Populate StartedAt on the first SessionStart — persisted via FieldPreservation on all

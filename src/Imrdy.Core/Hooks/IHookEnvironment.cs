@@ -23,4 +23,11 @@ public interface IHookEnvironment
     /// Imrdy.Windows and cannot be referenced from Imrdy.Core.
     /// </summary>
     void OnSessionEnd(string sessionId);
+
+    /// <summary>
+    /// Returns the WSL distro name when the hook is running inside a WSL2 distro,
+    /// or <c>null</c> on Windows-native runs. The Linux impl reads
+    /// <c>WSL_DISTRO_NAME</c>; the Windows impl returns <c>null</c>.
+    /// </summary>
+    string? GetWslDistro();
 }

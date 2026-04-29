@@ -11,6 +11,7 @@ public class IHookEnvironmentTests
         public void EnsureTrayRunning() { }
         public string NormalizeCwd(string? cwd) => cwd ?? "";
         public void OnSessionEnd(string sessionId) { }
+        public string? GetWslDistro() => "TestDistro-1.0";
     }
 
     [Fact]
@@ -22,6 +23,15 @@ public class IHookEnvironmentTests
         env.EnsureTrayRunning(); // no-op — no throw is the contract
         env.NormalizeCwd("/home/foo").Should().Be("/home/foo");
         env.OnSessionEnd("sid"); // no-op — no throw is the contract
+        env.GetWslDistro().Should().Be("TestDistro-1.0");
+    }
+
+    [Fact]
+    public void LinuxStub_GetWslDistro_ReturnsConfiguredValue()
+    {
+        IHookEnvironment env = new LinuxStyleStub();
+
+        env.GetWslDistro().Should().Be("TestDistro-1.0");
     }
 
     [Fact]

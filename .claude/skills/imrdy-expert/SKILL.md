@@ -16,6 +16,7 @@ resolved relative to the wiki path in the `<!-- wiki: ... -->` comment.
 
 - [WSL→Windows PATH Passthrough Baseline](wsl-interop-baseline.md) — WSL distro-specific PATH passthrough varies; explicit verification needed
 - [WSLENV Distro Identity Gap](wslenv-distro-not-forwarded.md) — Windows binaries can't self-identify source distro via WSLENV
+- [WSL_DISTRO_NAME Env Var Gotcha](wsl-distro-env-var-gotcha.md) — WSL_DISTRO_NAME env var requires explicit pickup via IHookEnvironment; code exists but fallback was never wired
 - [HookServiceBuilder Relocation](hook-service-builder-relocation.md) — Moved to Imrdy.Core.Hooks to enable cross-platform consumer access
 
 ## Meta

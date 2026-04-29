@@ -11,4 +11,6 @@ internal sealed class LinuxHookEnvironment : IHookEnvironment
     public string NormalizeCwd(string? cwd) => cwd ?? "";
 
     public void OnSessionEnd(string sessionId) { /* no-op — no PID cache on Linux */ }
+
+    public string? GetWslDistro() => Environment.GetEnvironmentVariable("WSL_DISTRO_NAME");
 }
