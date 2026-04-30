@@ -280,6 +280,25 @@ public class NotificationDwellStateTests
         fired[0].NotificationType.Should().BeNull();
     }
 
+    // --- Solo Stop: done→idle translation (Step 06) ---
+
+    [Fact]
+    public void SoloStop_DoneToIdle_FiresAsIdleWithPreviousDone()
+    {
+        // Mirrors the solo dwell branch in TrayApp.HandleSessionFileChanged:
+        // when hasActiveTeammates==false and state.Status=="done", TrayApp translates
+        // dwellStatus to "idle" before calling OnStatusChanged (previousStatus stays "done").
+        _dwell.OnStatusChanged("s1", "idle", "done", BaseTime);
+
+        // idle dwell = 5s; fire at +6s
+        var fired = _dwell.GetFiredSessions(BaseTime + TimeSpan.FromSeconds(6));
+
+        fired.Should().HaveCount(1);
+        fired[0].Status.Should().Be("idle");
+        fired[0].PreviousStatus.Should().Be("done");
+        fired[0].NotificationType.Should().BeNull();
+    }
+
     // --- FiredNotification fields ---
 
     [Fact]

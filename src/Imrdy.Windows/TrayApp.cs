@@ -578,7 +578,12 @@ internal sealed class TrayApp : ApplicationContext, ISessionInteractionRouter
                     }
                     else
                     {
-                        _dwellState.OnStatusChanged(entry.SessionId, state.Status, previousStatus, DateTimeOffset.UtcNow);
+                        // Solo Stop → promote done→idle directly, symmetric with the consensus path at
+                        // OnDrainTimerTick:430. Without this, the "done" dwell fires but toast/sound
+                        // dispatch filters it out (done is not in DefaultToastEvents; sound switch has no
+                        // done arm). previousStatus stays "done" so the Finished sound arm matches.
+                        var dwellStatus = (state.Status == "done") ? "idle" : state.Status;
+                        _dwellState.OnStatusChanged(entry.SessionId, dwellStatus, previousStatus, DateTimeOffset.UtcNow);
                     }
                 }
             }
@@ -834,6 +839,14 @@ internal sealed class TrayApp : ApplicationContext, ISessionInteractionRouter
         PersistSessionField(entry, current => current with { IconStyle = entry.IconStyle });
     }
 
+    /// <summary>
+    /// Writes the session's desktop_index to its state file so the hook preserves it.
+    /// </summary>
+    private void PersistSessionDesktopIndex(SessionEntry entry)
+    {
+        PersistSessionField(entry, current => current with { DesktopIndex = entry.DesktopIndex });
+    }
+
     private void PersistSessionField(SessionEntry entry, Func<StateFileModel, StateFileModel> update)
     {
         var statePath = Path.Combine(ImrdyPaths.Sessions, $"{entry.SessionId}.json");
@@ -1079,12 +1092,14 @@ internal sealed class TrayApp : ApplicationContext, ISessionInteractionRouter
                     if (currentDesktop.HasValue)
                     {
                         entry.DesktopIndex = currentDesktop.Value;
+                        PersistSessionDesktopIndex(entry);
                         _logger.LogDebug("Assigned session {SessionId} to desktop {Desktop}", entry.SessionId, currentDesktop.Value);
                     }
                 },
                 OnSetDesktop: index =>
                 {
                     entry.DesktopIndex = index;
+                    PersistSessionDesktopIndex(entry);
                     if (index.HasValue)
                     {
                         _desktopManager.SwitchToDesktop(index.Value);
