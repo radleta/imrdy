@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using Imrdy.Core;
+using Imrdy.Core.Notifications;
 using Imrdy.Core.Desktop;
 using Imrdy.Core.Diagnostics;
 using Imrdy.Core.Display;
@@ -36,6 +37,15 @@ internal sealed class TrayApp : ApplicationContext, ISessionInteractionRouter
     private static readonly TimeSpan GracePeriod = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan TeammatePresenceTimeout = TimeSpan.FromMinutes(2);
     private static readonly TimeSpan TeammateQuietThreshold = TimeSpan.FromSeconds(15);
+    /// <summary>
+    /// Maximum time a session may sit at status "done" before consensus promotes
+    /// to "idle" regardless of teammate activity. Bounds worst-case stuck-at-done
+    /// time when teammates pulse faster than TeammateQuietThreshold (which would
+    /// otherwise keep LastTeammateAt perpetually fresh, blocking the quiet-path
+    /// check). Chosen at 90s to exceed typical teammate-sequence latency (~30s)
+    /// with 3x headroom.
+    /// </summary>
+    private static readonly TimeSpan MaxDoneTime = TimeSpan.FromSeconds(90);
 
     private readonly ILogger _logger;
     private readonly ILoggerFactory _loggerFactory;
@@ -418,8 +428,12 @@ internal sealed class TrayApp : ApplicationContext, ISessionInteractionRouter
                 if (entry.State.LastTeammateAt is null)
                     continue; // No teammates — normal dwell path handles this
 
-                if (now - entry.State.LastTeammateAt < TeammateQuietThreshold)
-                    continue; // Teammates still active
+                if (!ConsensusGate.IsEligibleForPromotion(
+                        entry.State.LastTeammateAt, entry.StatusSince, now,
+                        TeammateQuietThreshold, MaxDoneTime))
+                {
+                    continue;
+                }
 
                 // All teammates quiet + lead done → promote to idle.
                 // Icon deferred to dwell fire (5s settle prevents green/red toggling during rapid tool calls).
