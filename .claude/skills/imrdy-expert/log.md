@@ -1,5 +1,17 @@
 # Operations Log
 
+## 2026-04-30 ingest | State-matrix audit fixes (9 bugs, architectural updates)
+
+- New page: state-matrix-fixes.md (comprehensive record of bugs fixed, wiki corrections, architectural knowledge updates)
+- Pages index updated: added entry to SKILL.md ## Pages (primary position)
+- Source: state-matrix-fixes-summary.md (Step 10 post-approval)
+
+## 2026-04-30 ingest | MaxDoneTime configuration strategy
+
+- New page: maxdonetime-configurability.md (decision on MaxDoneTime configurability timeline)
+- Pages index updated: added entry to SKILL.md ## Pages
+- Source: maxdonetime-config-followup.md (Step 07 post-approval)
+
 ## 2026-04-29 ingest | WSL_DISTRO_NAME env var gotcha
 
 - New page: wsl-distro-env-var-gotcha.md (WSL distro identity extraction from env var)

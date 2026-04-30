@@ -1,6 +1,6 @@
 ---
 tags: [imrdy/hooks]
-updated: 2026-04-15
+updated: 2026-04-30
 summary: "All 20 Claude Code hook events — what they send, status mapping, and real-world behavior"
 ---
 
@@ -43,6 +43,13 @@ Initially mapped to "busy" assuming Claude would process the denial. Real-world 
 
 ### idle_prompt is the authoritative idle signal (solo sessions)
 Notification with notification_type="idle_prompt" fires exactly 60 seconds after Claude's last activity. For solo sessions, this is the definitive "genuinely waiting for user" signal — the backstop for all idle detection. For team sessions, idle_prompt is suppressed when teammates are active (rewritten to "done") — consensus handles promotion instead. See [Teammate Detection](teammate-detection.md) Layer 4.
+
+### Two payload shapes for elicitation, both → `permission`
+
+- `hook_event_name = "Elicitation"` — handled via `EventToStatus` map (`StatusDerivation.cs:24`)
+- `hook_event_name = "Notification"` with `notification_type = "elicitation_dialog"` — handled via the Notification special-case if-block (`StatusDerivation.cs:55-61`, post-step-04)
+
+Both produce the `permission` status (purple icon). The `Notification + elicitation_dialog` subtype was added in step 04 to cover Claude Code payloads that use the Notification event instead of the dedicated Elicitation event.
 
 ### agent_id presence is the teammate gate
 Events with `agent_id` field are from teammates. Events without are from the lead. The hook command delegates to `TeammateGate.ApplyTeammateEvent()`: teammate events normally only update `last_teammate_at`, but will also clear the lead's "permission" status when the teammate fires a permission-resolution event (PostToolUse, PostToolUseFailure, PermissionDenied). Lead events do full state file writes. See [Teammate Detection](teammate-detection.md) Layer 1.

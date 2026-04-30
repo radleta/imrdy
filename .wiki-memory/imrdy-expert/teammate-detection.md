@@ -1,6 +1,6 @@
 ---
 tags: [imrdy/teammates]
-updated: 2026-04-15
+updated: 2026-04-30
 summary: "4-layer teammate-aware notification system — deterministic gate, state tracking, consensus promotion, idle_prompt suppression"
 ---
 
@@ -56,16 +56,24 @@ On the 100ms drain timer tick, after dwell dispatch:
 | No teammates | Stop→done→dwell→idle | ~5 seconds |
 | No teammates (backstop) | idle_prompt Notification | 60 seconds |
 | Teammates finish | Stop→done→consensus→idle | ~15 seconds |
-| Teammates age out | Teammate presence expires (2 min) → dwell | ~2 minutes |
+| Teammates pulsing (MaxDoneTime bypass) | Stop→done→`ConsensusGate` 90s bypass→idle | ~90 seconds |
+
+Two paths to green for team sessions:
+
+1. **15s teammate-quiet path** (`ConsensusGate.IsEligibleForPromotion`): when teammates have been silent for `TeammateQuietThreshold` (15s), consensus promotes `done → idle`.
+2. **90s status-time bypass** (`ConsensusGate.IsEligibleForPromotion`): when a session has been at status `done` for `MaxDoneTime` (90s), consensus promotes regardless of teammate activity. Bounds worst-case stuck-at-done time when teammates pulse faster than `TeammateQuietThreshold`.
+
+The 2-minute `TeammatePresenceTimeout` constant controls the `hasActiveTeammates` flag — it gates suppression behaviors (dwell-entry suppression and idle_prompt rewriting), but it is **not a promotion trigger**. Suppression is bypassed by the 90s `MaxDoneTime`, not by teammate presence expiry.
 
 For team sessions, idle_prompt is suppressed (see Layer 4 below), so consensus is the primary path. The 60s backstop only applies to solo sessions.
 
 ## Dwell Suppression for Teams
 
-When status is "done" AND `last_teammate_at` is within TeammatePresenceTimeout (2 min):
+When status is "done" AND `last_teammate_at` is within `TeammatePresenceTimeout` (2 min):
 - Do NOT create a dwell entry (normal 5s done→idle path is suppressed)
 - Consensus check handles promotion instead
 - This prevents premature idle toasts while teammates are still working
+- The 90s `MaxDoneTime` bypass in `ConsensusGate.IsEligibleForPromotion` bounds the worst-case stuck-at-done time even when teammates keep pulsing within the 2-min window
 
 ## Layer 4 — idle_prompt Suppression (TrayApp)
 

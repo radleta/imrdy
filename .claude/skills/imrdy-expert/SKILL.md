@@ -14,6 +14,8 @@ resolved relative to the wiki path in the `<!-- wiki: ... -->` comment.
 
 ## Pages
 
+- [State-Matrix Fixes](state-matrix-fixes.md) — 9 bugs fixed: notification dwell, consensus promotion, overlay interaction; architectural updates to constant roles and promotion matrix
+- [MaxDoneTime Configuration Strategy](maxdonetime-configurability.md) — MaxDoneTime consensus delay remains constant pending user reports of false promotions
 - [WSL→Windows PATH Passthrough Baseline](wsl-interop-baseline.md) — WSL distro-specific PATH passthrough varies; explicit verification needed
 - [WSLENV Distro Identity Gap](wslenv-distro-not-forwarded.md) — Windows binaries can't self-identify source distro via WSLENV
 - [WSL_DISTRO_NAME Env Var Gotcha](wsl-distro-env-var-gotcha.md) — WSL_DISTRO_NAME env var requires explicit pickup via IHookEnvironment; code exists but fallback was never wired
