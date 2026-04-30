@@ -536,6 +536,8 @@ internal sealed class HoverDashboardController : IDisposable
                     {
                         if (formSnapshot is null || formSnapshot.IsDisposed)
                             return;
+                        if (_hoveredSessionId != sessionId)
+                            return;
 
                         var newGit = _gitCache.TryGetCached(cwd);
                         if (newGit is null)
