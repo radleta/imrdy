@@ -141,5 +141,6 @@ Target: `net10.0-windows10.0.17763.0` | PublishSingleFile + SelfContained | No I
 ## Git Workflow
 
 - **main**: releases, PR target
-- **develop**: active development
+- **develop**: quick-fix lane — small, near-term changes; kept clean of long-running work
+- **`imrdy-{name}`**: long-running feature arcs live on sibling worktrees with matching branch + dir name (e.g., `imrdy-gray` at `D:/dev/github/imrdy-gray`). One arc per branch. Periodically merge `develop` → `imrdy-{name}` to keep the arc current; reverse-merge `imrdy-{name}` → `develop` when the arc reaches a shippable milestone.
 - Tags: `v*` for binary releases, `pack-*` for sound pack releases
