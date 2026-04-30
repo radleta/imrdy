@@ -23,6 +23,8 @@ and any layout diagnostics. Agents use this for automated UI verification.
 | `render` | `null` | Reserved for `render-live`; always null from `inspect-live` |
 | `inspect` | `InspectResult \| null` | Populated on success |
 
+**Empty `verb` for pre-deserialization errors.** When the request body cannot be parsed (oversized, malformed JSON, or null body), the `verb` field will be the empty string `""` because the request hasn't been deserialized at the point the error response is generated. Clients that need to correlate requests to responses must do so via connection identity, not via the `verb` field. Schema-conforming clients should accept `verb: ""` on responses where `error` is non-null and the error message indicates a pre-deserialization failure (e.g., `"request exceeds maximum size (4096 bytes)"`, `"invalid request: ..."`).
+
 ### InspectResult
 
 | Field | Type | Notes |

@@ -131,6 +131,7 @@ internal sealed class InspectIpcServer : IDisposable
 
             if (bodyLen <= 0 || bodyLen > MaxRequestBodyBytes)
             {
+                // Verb is intrinsically empty for pre-deserialization errors — see docs/dashboard-inspect-schema.md.
                 response = ErrorResponse("", $"request exceeds maximum size ({MaxRequestBodyBytes} bytes)");
                 await WriteResponseAsync(server, response, ct).ConfigureAwait(false);
                 return;
@@ -189,6 +190,13 @@ internal sealed class InspectIpcServer : IDisposable
             catch (TimeoutException)
             {
                 response = ErrorResponse(req.Verb, "timeout: handler exceeded 2 s");
+                _ = tcs.Task.ContinueWith(t =>
+                {
+                    if (t.IsFaulted)
+                    {
+                        _logger.LogWarning(t.Exception, "IPC handler exception after timeout — slot was already recycled");
+                    }
+                }, TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously);
             }
         }
         catch (OperationCanceledException)
