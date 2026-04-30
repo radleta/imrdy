@@ -53,6 +53,15 @@ public static class StatusDerivation
             return "permission";
         }
 
+        // Special case: Notification with elicitation_dialog → permission
+        // Aligns with TrayApp.cs:592 dwell-layer mapping; without this, the icon shows
+        // "attention" (orange) while the toast text says "Permission request" (purple).
+        if (string.Equals(eventName, "Notification", StringComparison.OrdinalIgnoreCase)
+            && string.Equals(notificationType, "elicitation_dialog", StringComparison.OrdinalIgnoreCase))
+        {
+            return "permission";
+        }
+
         // Special case: Notification with idle_prompt → idle (authoritative "genuinely waiting for user" signal)
         if (string.Equals(eventName, "Notification", StringComparison.OrdinalIgnoreCase)
             && string.Equals(notificationType, "idle_prompt", StringComparison.OrdinalIgnoreCase))

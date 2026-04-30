@@ -90,4 +90,54 @@ public class StatusDerivationTests
     {
         StatusDerivation.DeriveStatus("Notification", notificationType: null).Should().Be("attention");
     }
+
+    // Decision table coverage — Step 04 (rows 1-5 plus event-name path)
+
+    [Fact]
+    public void DeriveStatus_NotificationWithPermissionPrompt_ReturnsPermission_Regression()
+    {
+        // Decision table row 1 — regression-prevention for existing path
+        StatusDerivation.DeriveStatus("Notification", notificationType: "permission_prompt")
+            .Should().Be("permission");
+    }
+
+    [Fact]
+    public void DeriveStatus_NotificationWithElicitationDialog_ReturnsPermission()
+    {
+        // Decision table row 3 — new mapping: elicitation_dialog subtype → permission
+        StatusDerivation.DeriveStatus("Notification", notificationType: "elicitation_dialog")
+            .Should().Be("permission");
+    }
+
+    [Fact]
+    public void DeriveStatus_NotificationWithElicitationDialogMixedCase_ReturnsPermission()
+    {
+        // Decision table row 3 — case-insensitivity guard: protects against switch-expression regression
+        StatusDerivation.DeriveStatus("Notification", notificationType: "Elicitation_Dialog")
+            .Should().Be("permission");
+    }
+
+    [Fact]
+    public void DeriveStatus_NotificationWithIdlePrompt_ReturnsIdle_Regression()
+    {
+        // Decision table row 2 — regression-prevention for existing path
+        StatusDerivation.DeriveStatus("Notification", notificationType: "idle_prompt")
+            .Should().Be("idle");
+    }
+
+    [Fact]
+    public void DeriveStatus_NotificationWithUnrecognizedType_ReturnsAttention_Regression()
+    {
+        // Decision table row 4 — default fallback for any other notification type
+        StatusDerivation.DeriveStatus("Notification", notificationType: "some_other_type")
+            .Should().Be("attention");
+    }
+
+    [Fact]
+    public void DeriveStatus_ElicitationEventName_ReturnsPermission_Regression()
+    {
+        // Decision table row 5 — event-name path (orthogonal to Notification subtype path)
+        StatusDerivation.DeriveStatus("Elicitation")
+            .Should().Be("permission");
+    }
 }
