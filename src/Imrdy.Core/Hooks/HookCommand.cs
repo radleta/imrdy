@@ -131,8 +131,35 @@ internal static class HookCommand
             }
             else
             {
-                logger.LogWarning("Teammate hook fired before lead session exists: {SessionId} agent={AgentId}",
-                    hookEvent.SessionId, hookEvent.AgentId);
+                logger.LogInformation("Teammate hook fired before lead session exists: synthesizing minimal state file for {SessionId}", hookEvent.SessionId);
+                var derivedStatus = StatusDerivation.DeriveStatus(hookEvent.HookEventName, hookEvent.Source, hookEvent.NotificationType);
+                // Mirror the lead path at HookCommand.cs:157-158 — Project derived from normalized cwd via Path.GetFileName.
+                var normalizedCwdTm = hookEnvironment.NormalizeCwd(hookEvent.Cwd);
+                var projectTm = Path.GetFileName(normalizedCwdTm);
+                var minimalState = new StateFileModel
+                {
+                    SessionId = hookEvent.SessionId,
+                    Status = derivedStatus,
+                    Project = projectTm,
+                    Cwd = normalizedCwdTm,
+                    HookEvent = hookEvent.HookEventName,
+                    NotificationType = hookEvent.NotificationType ?? "",
+                    LastMessage = "",
+                    Timestamp = DateTimeOffset.UtcNow,
+                    SessionName = hookEvent.SessionName,
+                    ToolName = hookEvent.ToolName,
+                    LastTeammateAt = DateTimeOffset.UtcNow,
+                    WslDistro = hookEvent.WslDistro ?? hookEnvironment.GetWslDistro(),
+                };
+                try
+                {
+                    reader.WriteStateFile(statePath, minimalState);
+                }
+                catch (IOException ex)
+                {
+                    logger.LogError(ex, "Failed to write synthesized state file: {Path}", statePath);
+                    return 1;
+                }
             }
 
             // Auto-spawn tray if not running (same as lead path).

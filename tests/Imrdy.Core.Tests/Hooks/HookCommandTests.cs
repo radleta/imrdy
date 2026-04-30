@@ -211,4 +211,69 @@ public class HookCommandTests : IDisposable
         state!.WslDistro.Should().BeNull(
             "WslDistro must be null when neither JSON field nor env-var is present");
     }
+
+    [Fact]
+    public void Run_TeammateBeforeLead_WritesMinimalStateFileWithLastTeammateAt()
+    {
+        // No lead state file exists — teammate event arrives first
+        const string sid = "test-teammate-before-lead-01";
+        var json = BuildJson("PostToolUse", sid, agentId: "agent-xyz");
+        var env = new RecordingEnv();
+
+        var result = HookCommand.Run(_services, new StringReader(json), env);
+
+        result.Should().Be(0);
+        var stateFile = StateFilePath(sid);
+        File.Exists(stateFile).Should().BeTrue("state file must be synthesized when teammate fires before lead");
+
+        var reader = _services.GetRequiredService<StateFileReader>();
+        var state = reader.ReadStateFile(stateFile);
+        state.Should().NotBeNull();
+        state!.LastTeammateAt.Should().NotBeNull("LastTeammateAt must be set in the synthesized state");
+        state.SessionId.Should().Be(sid);
+
+        var expectedStatus = Imrdy.Core.Status.StatusDerivation.DeriveStatus("PostToolUse");
+        state.Status.Should().Be(expectedStatus, "Status must match DeriveStatus for the hook event");
+    }
+
+    [Fact]
+    public void Run_LeadAfterTeammate_PreservesLastTeammateAtViaFieldPreservation()
+    {
+        // Step 1: fire teammate event with no existing lead — synthesizes state with LastTeammateAt
+        const string sid = "test-teammate-before-lead-02";
+        var teammateJson = BuildJson("PostToolUse", sid, agentId: "agent-xyz");
+        var env = new RecordingEnv();
+        HookCommand.Run(_services, new StringReader(teammateJson), env);
+
+        var reader = _services.GetRequiredService<StateFileReader>();
+        var afterTeammate = reader.ReadStateFile(StateFilePath(sid));
+        afterTeammate!.LastTeammateAt.Should().NotBeNull("precondition: teammate state must have LastTeammateAt");
+        var capturedAt = afterTeammate.LastTeammateAt!.Value;
+
+        // Step 2: fire lead SessionStart — FieldPreservation must carry LastTeammateAt forward
+        var leadJson = BuildJson("SessionStart", sid, cwd: "/home/user/myproject");
+        HookCommand.Run(_services, new StringReader(leadJson), env);
+
+        var afterLead = reader.ReadStateFile(StateFilePath(sid));
+        afterLead.Should().NotBeNull();
+        afterLead!.LastTeammateAt.Should().NotBeNull("LastTeammateAt must survive the lead SessionStart merge");
+        afterLead.LastTeammateAt!.Value.Should().Be(capturedAt,
+            "FieldPreservation must carry the original LastTeammateAt from the synthesized state");
+    }
+
+    [Fact]
+    public void Run_TeammateBeforeLead_ProjectMirrorsLeadPath()
+    {
+        // Verify that Project is derived from cwd via Path.GetFileName — same logic as lead path
+        const string sid = "test-teammate-before-lead-03";
+        var json = BuildJson("PostToolUse", sid, cwd: "/home/u/proj", agentId: "agent-xyz");
+        var env = new RecordingEnv();
+
+        HookCommand.Run(_services, new StringReader(json), env);
+
+        var reader = _services.GetRequiredService<StateFileReader>();
+        var state = reader.ReadStateFile(StateFilePath(sid));
+        state!.Project.Should().Be("proj",
+            "Project must be the last path segment of the normalized cwd, matching the lead path derivation");
+    }
 }
