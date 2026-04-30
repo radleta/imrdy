@@ -38,10 +38,12 @@ internal sealed class InteractiveOverlayWindow : OverlayWindowBase
     public bool IsDashboardHoverActive { get; set; } = false;
 
     /// <summary>
-    /// Raised after a left-click successfully dispatches a session or workspace activation.
-    /// Subscribers (notably <see cref="Dashboard.HoverDashboardController"/>) can use this
-    /// to dismiss any preview UI that should not outlive the activating click.
-    /// Right-click does not raise this event — menu dismissal is handled by WinForms naturally.
+    /// Raised when the user clicks anywhere on the overlay surface (left or right,
+    /// over an icon or in a gap). Subscribers (notably <see cref="Dashboard.HoverDashboardController"/>)
+    /// use this to dismiss any preview UI that should not outlive the click and to engage
+    /// post-interaction cooldown. The event fires regardless of whether the click
+    /// actually hit an icon — the gap-click case is intentional, since gap clicks
+    /// are visible interactions that the user expects to dismiss the overlay's hover UI.
     /// </summary>
     public event Action? SurfaceInteracted;
 
@@ -84,6 +86,14 @@ internal sealed class InteractiveOverlayWindow : OverlayWindowBase
     protected override void OnMouseDown(MouseEventArgs e)
     {
         _logger.LogDebug("Overlay: OnMouseDown button={Button} x={X} y={Y}", e.Button, e.X, e.Y);
+
+        // Fire SurfaceInteracted on any left-click (icon or gap) so the hover dashboard
+        // cooldown engages even for gap clicks. Router dispatch remains gated below.
+        if (e.Button == MouseButtons.Left)
+        {
+            SurfaceInteracted?.Invoke();
+        }
+
         if (e.Button == MouseButtons.Left && HitIconIndex(e.X, out var idx) && idx < _items.Count)
         {
             var item = _items[idx];
@@ -93,10 +103,7 @@ internal sealed class InteractiveOverlayWindow : OverlayWindowBase
                     _router.ActivateSession(item.Id);
                 else
                     _router.ActivateWorkspace(item.Id);
-                _logger.LogDebug("Overlay: router dispatch succeeded for {ItemType} {Id}, firing SurfaceInteracted", item.ItemType, item.Id);
-                var subscriberCount = SurfaceInteracted?.GetInvocationList().Length ?? 0;
-                _logger.LogDebug("Overlay: SurfaceInteracted firing to {Count} subscriber(s)", subscriberCount);
-                SurfaceInteracted?.Invoke();
+                _logger.LogDebug("Overlay: router dispatch succeeded for {ItemType} {Id}", item.ItemType, item.Id);
             }
             catch (Exception ex)
             {
@@ -109,6 +116,14 @@ internal sealed class InteractiveOverlayWindow : OverlayWindowBase
 
     protected override void OnMouseUp(MouseEventArgs e)
     {
+        // Fire SurfaceInteracted on any right-click (icon or gap) so the hover dashboard
+        // cooldown engages even when the click misses an icon. Menu-open dispatch remains
+        // gated below — gap right-clicks still produce no menu, just engage the cooldown.
+        if (e.Button == MouseButtons.Right)
+        {
+            SurfaceInteracted?.Invoke();
+        }
+
         if (e.Button == MouseButtons.Right && HitIconIndex(e.X, out var idx) && idx < _items.Count)
         {
             var item = _items[idx];
