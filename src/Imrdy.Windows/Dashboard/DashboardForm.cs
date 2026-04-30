@@ -66,13 +66,14 @@ internal sealed class DashboardForm : Form
     private readonly Panel _fleetDotsPanel;
     private readonly Label _fleetCount;
 
-    // Header: accent bar + session name, persona chip, project, cwd, desktop chip
+    // Header: accent bar + session name, persona chip, project, cwd, desktop chip, distro chip
     private readonly Panel _accentBar;
     private readonly Label _sessionNameLabel;
     private readonly Label _personaChip;
     private readonly Label _projectLabel;
     private readonly Label _cwdLabel;
     private readonly Label _desktopChip;
+    private readonly Label _distroChip;
 
     // Status row
     private readonly Panel _statusPillDot;
@@ -205,6 +206,7 @@ internal sealed class DashboardForm : Form
         _projectLabel     = MakeLabel("", 11, FgPrimary, bold: true);
         _cwdLabel         = MakeLabel("", 10, FgMuted, bold: false);
         _desktopChip      = MakeLabel("", 9, FgSecondary, bold: false);
+        _distroChip       = MakeLabel("", 9, FgSecondary, bold: false);
 
         _statusPillDot = new Panel { Width = 6, Height = 6, BackColor = StatusColor("idle") };
         _statusPillDot.Paint += (_, pe) =>
@@ -408,6 +410,8 @@ internal sealed class DashboardForm : Form
         _projectLabel.Text     = vm.Project;
         _cwdLabel.Text         = FrontTruncatePath(vm.CwdPath, 38);
         _desktopChip.Text      = $"Desktop {vm.DesktopIndex + 1}";
+        _distroChip.Text    = vm.WslDistro?.Length > 20 ? vm.WslDistro[..19] + "…" : vm.WslDistro ?? string.Empty;
+        _distroChip.Visible = vm.WslDistro is not null;
 
         // --- Status pill ---
         UpdateStatusPill(vm.Status);
@@ -841,10 +845,10 @@ internal sealed class DashboardForm : Form
         _projectLabel.Width        = 160;
         _projectLabel.Height       = 18;
 
-        // cwd label: already truncated by FrontTruncatePath; cap at 200px so Desktop chip always shows.
+        // cwd label: already truncated by FrontTruncatePath; cap at 150px so Desktop + distro chips always show.
         _cwdLabel.AutoSize     = false;
         _cwdLabel.AutoEllipsis = true;
-        _cwdLabel.Width        = 200;
+        _cwdLabel.Width        = 150;
         _cwdLabel.Height       = 18;
 
         var subtitleRow = new FlowLayoutPanel
@@ -870,9 +874,19 @@ internal sealed class DashboardForm : Form
             using var pen = new Pen(Color.FromArgb(80, 255, 255, 255), 1f);
             pe.Graphics.DrawRectangle(pen, r);
         };
+        _distroChip.BackColor = Color.FromArgb(15, 255, 255, 255);
+        _distroChip.Padding   = new Padding(5, 1, 5, 1);
+        _distroChip.Margin    = new Padding(6, 0, 0, 0);
+        _distroChip.Paint += (_, pe) =>
+        {
+            var r = new Rectangle(0, 0, _distroChip.Width - 1, _distroChip.Height - 1);
+            using var pen = new Pen(Color.FromArgb(80, 255, 255, 255), 1f);
+            pe.Graphics.DrawRectangle(pen, r);
+        };
         subtitleRow.Controls.Add(_projectLabel);
         subtitleRow.Controls.Add(_cwdLabel);
         subtitleRow.Controls.Add(_desktopChip);
+        subtitleRow.Controls.Add(_distroChip);
 
         panel.Controls.Add(nameRow);
         panel.Controls.Add(subtitleRow);

@@ -26,7 +26,7 @@ tests/Imrdy.Integration.Tests/  Integration tests (require built binary)
 
 ```
 imrdy hook                          → HookCommand (fast-path, no WinForms, reads stdin JSON, writes state file)
-imrdy <command>                     → CommandRouter (status|packs|config|workspace|stop|inspect-live|render-live, Spectre.Console output)
+imrdy <command>                     → CommandRouter (status|packs|config|workspace|wsl|stop|inspect-live|render-live, Spectre.Console output)
 imrdy preview-dashboard <fixture>   → PreviewDashboardCommand (standalone WinForms dev tool; inline ServiceCollection, bypasses mutex, deserializes DashboardViewModel fixture via ImrdyJsonContext, runs DashboardForm pinned)
 imrdy render <component> [args]     → RenderCommand (in-process UI artifact capture; bypasses mutex; placed between preview-dashboard and tray fallback)
 imrdy inspect-live <id>             → InspectLiveCommand (CLI client; connects to tray via Local\ImrdyInspect pipe; prints/writes walker+analyzer JSON)
@@ -107,7 +107,7 @@ Protocol: for any UI-bearing change (DashboardForm, overlay, tray icons, menus) 
 
 ```bash
 dotnet build                                    # Debug build
-dotnet test --filter "Category!=Integration&Category!=Benchmark"  # Unit tests only (556 tests)
+dotnet test --filter "Category!=Integration&Category!=Benchmark"  # Unit tests only (701 tests)
 ./build-dev.sh                                  # Publish → stop tray → deploy to ~/.local/bin/ → auto-respawn → touches ~/.imrdy/.dev-build (enables default-Debug dev logging)
 ```
 

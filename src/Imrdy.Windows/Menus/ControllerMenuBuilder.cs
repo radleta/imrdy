@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Imrdy.Core;
 using Imrdy.Core.Menus;
 using Microsoft.Extensions.Logging;
@@ -18,6 +19,9 @@ internal static class ControllerMenuBuilder
         Action onExit,
         Action<string>? onLaunchPreview = null,
         Action? onCloseAllPreviews = null,
+        Action? onRescanDistros = null,
+        Action<bool>? onToggleWslWatchAll = null,
+        Action<string, bool>? onToggleWslDistro = null,
         ILogger? logger = null)
     {
         var menu = new ContextMenuStrip();
@@ -29,7 +33,7 @@ internal static class ControllerMenuBuilder
                 var items = ControllerMenuModel.Build(state);
                 MenuRenderer.Apply(menu, items,
                     tag => OnClick(tag, state, onConfigChanged, onSwitchSession, onSwitchWorkspace, onExit,
-                        onLaunchPreview, onCloseAllPreviews, logger),
+                        onLaunchPreview, onCloseAllPreviews, onRescanDistros, onToggleWslWatchAll, onToggleWslDistro, logger),
                     logger);
             }
             catch (Exception ex)
@@ -49,6 +53,9 @@ internal static class ControllerMenuBuilder
         Action onExit,
         Action<string>? onLaunchPreview,
         Action? onCloseAllPreviews,
+        Action? onRescanDistros,
+        Action<bool>? onToggleWslWatchAll,
+        Action<string, bool>? onToggleWslDistro,
         ILogger? logger)
     {
         try
@@ -141,6 +148,28 @@ internal static class ControllerMenuBuilder
             else if (tag == "dev-preview-close-all")
             {
                 onCloseAllPreviews?.Invoke();
+            }
+            else if (tag == "toggle-wsl-watch-all")
+            {
+                onToggleWslWatchAll?.Invoke(!state.Wsl!.WatchAll);
+            }
+            else if (tag.StartsWith("toggle-wsl-distro:", StringComparison.Ordinal))
+            {
+                var name = tag["toggle-wsl-distro:".Length..];
+                var entry = state.Wsl?.Distros.FirstOrDefault(d => d.Name == name);
+                if (entry is not null) onToggleWslDistro?.Invoke(name, !entry.Enabled);
+            }
+            else if (tag == "rescan-distros")
+            {
+                onRescanDistros?.Invoke();
+            }
+            else if (tag == "open-wsl-config")
+            {
+                Process.Start(new ProcessStartInfo(ImrdyPaths.WslDistros) { UseShellExecute = true })?.Dispose();
+            }
+            else if (tag == "view-wsl-log")
+            {
+                Process.Start(new ProcessStartInfo(ImrdyPaths.MonitorLog) { UseShellExecute = true })?.Dispose();
             }
             else if (tag == "exit")
             {

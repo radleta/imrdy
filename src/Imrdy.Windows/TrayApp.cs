@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using Imrdy.Core;
 using Imrdy.Core.Notifications;
 using Imrdy.Core.Desktop;
+using Imrdy.Core.Wsl;
 using Imrdy.Core.Diagnostics;
 using Imrdy.Core.Display;
 using Imrdy.Core.Graphics;
@@ -86,6 +87,14 @@ internal sealed class TrayApp : ApplicationContext, ISessionInteractionRouter
     private FileSystemWatcher? _workspaceWatcher;
     private FileSystemWatcher? _configWatcher;
 
+    // WSL multi-watcher fields (Step 09)
+    private FileSystemWatcher? _wslDistrosWatcher;
+    private readonly Dictionary<(string Distro, string User), FileSystemWatcher> _wslWatchers = new();
+    private System.Windows.Forms.Timer? _wslSweepTimer;
+    private IReadOnlyList<DiscoveredDistro> _lastDiscoveredDistros = Array.Empty<DiscoveredDistro>();
+    private readonly WslDistroStore _wslDistroStore;
+    private volatile bool _wslDistrosChangePending;
+
     private System.Windows.Forms.Timer? _drainTimer;
     private System.Windows.Forms.Timer? _sweepTimer;
     private System.Windows.Forms.Timer? _staleTimer;
@@ -119,6 +128,7 @@ internal sealed class TrayApp : ApplicationContext, ISessionInteractionRouter
         ILoggerFactory loggerFactory,
         StateFileReader stateReader,
         WorkspaceStore workspaceStore,
+        WslDistroStore wslDistroStore,
         CooldownTracker cooldownTracker,
         NotificationDwellState dwellState,
         PackLoader packLoader,
@@ -131,6 +141,7 @@ internal sealed class TrayApp : ApplicationContext, ISessionInteractionRouter
         _loggerFactory = loggerFactory;
         _stateReader = stateReader;
         _workspaceStore = workspaceStore;
+        _wslDistroStore = wslDistroStore;
         _cooldownTracker = cooldownTracker;
         _dwellState = dwellState;
         _packLoader = packLoader;
@@ -171,7 +182,10 @@ internal sealed class TrayApp : ApplicationContext, ISessionInteractionRouter
                 () => ExitThread(),
                 LaunchPreview,
                 CloseAllPreviews,
-                _logger),
+                onRescanDistros: () => TriggerWslRescan(),
+                onToggleWslWatchAll: enabled => ToggleWslWatchAll(enabled),
+                onToggleWslDistro: (name, enabled) => ToggleWslDistro(name, enabled),
+                logger: _logger),
         };
 
         // UI marshaler: force the controller menu's native window handle to exist
@@ -187,6 +201,7 @@ internal sealed class TrayApp : ApplicationContext, ISessionInteractionRouter
         LoadSoundConfig();
         InitializeWatchers();
         InitializeTimers();
+        InitializeWslWatching();
 
         var startupConfig = ConfigReader.Read();
         _trayEnabled = startupConfig.Tray.Enabled;
@@ -297,6 +312,194 @@ internal sealed class TrayApp : ApplicationContext, ISessionInteractionRouter
         _agingTimer.Start();
     }
 
+    // --- WSL Watcher Init ---
+
+    private void InitializeWslWatching()
+    {
+        // Watch wsl-distros.json for live config changes
+        var wslDistrosDir = Path.GetDirectoryName(ImrdyPaths.WslDistros)!;
+        var wslDistrosFile = Path.GetFileName(ImrdyPaths.WslDistros);
+        Directory.CreateDirectory(wslDistrosDir);
+        _wslDistrosWatcher = new FileSystemWatcher(wslDistrosDir, wslDistrosFile)
+        {
+            NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.FileName,
+            EnableRaisingEvents = true,
+        };
+        _wslDistrosWatcher.Changed += OnWslDistrosFileChanged;
+        _wslDistrosWatcher.Created += OnWslDistrosFileChanged;
+
+        // 30-second sweep timer for discovery
+        _wslSweepTimer = new System.Windows.Forms.Timer { Interval = 30_000 };
+        _wslSweepTimer.Tick += OnWslSweepTick;
+        _wslSweepTimer.Start();
+
+        // Fire initial sweep off the UI thread so the constructor returns promptly.
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await DoInitialWslSweep();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Initial WSL sweep failed");
+            }
+        });
+    }
+
+    private async Task DoInitialWslSweep()
+    {
+        var distros = await WslDistroDiscovery.DiscoverAsync(_shutdownCts.Token, _logger).ConfigureAwait(false);
+        var strip = _controllerIcon.ContextMenuStrip;
+        if (strip is null || strip.IsDisposed) return;
+        strip.BeginInvoke(() => ApplyDiscoveryResult(distros));
+    }
+
+    // async void — two-tier catch required (spec lines 260-273, README Risk 2)
+    private async void OnWslSweepTick(object? sender, EventArgs e)
+    {
+        try
+        {
+            var distros = await WslDistroDiscovery.DiscoverAsync(_shutdownCts.Token, _logger).ConfigureAwait(false);
+            var strip = _controllerIcon.ContextMenuStrip;
+            if (strip is null || strip.IsDisposed) return;
+            strip.BeginInvoke(() => ApplyDiscoveryResult(distros));
+        }
+        catch (OperationCanceledException) { /* shutdown */ }
+        catch (Exception ex) { _logger.LogWarning(ex, "WSL discovery sweep failed"); }
+    }
+
+    // UI-thread only — call only via BeginInvoke from background, or directly from UI thread.
+    private void ApplyDiscoveryResult(IReadOnlyList<DiscoveredDistro> distros)
+    {
+        _wslDistroStore.Reconcile(distros);
+        var config = _wslDistroStore.Load();
+
+        WslWatcherReconciler.ComputeDelta(_wslWatchers.Keys, distros, config, out var toArm, out var toDisarm);
+
+        // Disarm watchers no longer in the target set
+        foreach (var key in toDisarm)
+            DisarmWslWatcher(key);
+
+        // Arm new watchers (need the UNC path for each)
+        foreach (var key in toArm)
+        {
+            var distro = distros.FirstOrDefault(d => d.Name == key.Distro);
+            if (distro is not null && distro.LinuxHomes.Contains(key.User))
+                ArmWslWatcher(key, WslWatcherReconciler.BuildUncPath(key.Distro, key.User));
+        }
+
+        _lastDiscoveredDistros = distros;
+        RefreshOverlay();
+    }
+
+    private void ArmWslWatcher((string Distro, string User) key, string uncSessionsPath)
+    {
+        try
+        {
+            var watcher = new FileSystemWatcher(uncSessionsPath, "*.json")
+            {
+                EnableRaisingEvents = true,
+                IncludeSubdirectories = false,
+                NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.FileName,
+            };
+            watcher.Changed += (_, args) =>
+            {
+                _logger.LogDebug("WSL FSW Changed: {Path}", args.FullPath);
+                _pendingChanges.Enqueue(args.FullPath);
+            };
+            watcher.Created += (_, args) =>
+            {
+                _logger.LogDebug("WSL FSW Created: {Path}", args.FullPath);
+                _pendingChanges.Enqueue(args.FullPath);
+            };
+            watcher.Error += (_, args) =>
+            {
+                _logger.LogDebug(args.GetException(), "WSL FSW Error event fired");
+                var strip = _controllerIcon.ContextMenuStrip;
+                if (strip is null || strip.IsDisposed) return;
+                strip.BeginInvoke(() => DisarmWslWatcher(key));
+            };
+            _wslWatchers[key] = watcher;
+            _logger.LogInformation("WSL watcher armed: {Distro}/{User} → {Path}", key.Distro, key.User, uncSessionsPath);
+
+            try
+            {
+                var existingFiles = WslWatcherBootstrap.EnumerateExistingStateFiles(uncSessionsPath);
+                foreach (var path in existingFiles)
+                    _pendingChanges.Enqueue(path);
+                _logger.LogInformation(
+                    "WSL watcher bootstrap: {Distro}/{User} enqueued {Count} existing state files",
+                    key.Distro, key.User, existingFiles.Count);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "WSL watcher bootstrap failed for {Distro}/{User}", key.Distro, key.User);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to arm WSL watcher for {Distro}/{User} at {Path}", key.Distro, key.User, uncSessionsPath);
+        }
+    }
+
+    // UI-thread only
+    private void DisarmWslWatcher((string Distro, string User) key)
+    {
+        if (_wslWatchers.Remove(key, out var watcher))
+        {
+            try { watcher.Dispose(); }
+            catch (Exception ex) { _logger.LogDebug(ex, "WSL watcher dispose failed: {Distro}/{User}", key.Distro, key.User); }
+            _logger.LogDebug("WSL watcher disarmed: {Distro}/{User}", key.Distro, key.User);
+        }
+    }
+
+    private void OnWslDistrosFileChanged(object sender, FileSystemEventArgs e)
+    {
+        if (_wslDistrosChangePending) return;
+        _wslDistrosChangePending = true;
+
+        // Debounce: wait 300ms for atomic write to settle, then marshal to UI thread
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await Task.Delay(300, _shutdownCts.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) { return; }
+            _wslDistrosChangePending = false;
+            OnWslSweepTick(this, EventArgs.Empty);
+        });
+    }
+
+    /// <summary>
+    /// Triggers an immediate WSL rescan (called from controller menu Rescan item).
+    /// </summary>
+    private void TriggerWslRescan()
+    {
+        OnWslSweepTick(this, EventArgs.Empty);
+    }
+
+    /// <summary>
+    /// Updates the global watch-all flag and rescans immediately.
+    /// Called from the controller menu WSL toggle.
+    /// </summary>
+    private void ToggleWslWatchAll(bool enabled)
+    {
+        _wslDistroStore.SetWatchAll(enabled);
+        OnWslSweepTick(this, EventArgs.Empty);
+    }
+
+    /// <summary>
+    /// Updates the enabled flag for a named distro and rescans immediately.
+    /// Called from the controller menu per-distro toggle.
+    /// </summary>
+    private void ToggleWslDistro(string name, bool enabled)
+    {
+        _wslDistroStore.SetEnabled(name, enabled);
+        OnWslSweepTick(this, EventArgs.Empty);
+    }
+
     // --- Sound Config ---
 
     private void LoadSoundConfig()
@@ -350,8 +553,10 @@ internal sealed class TrayApp : ApplicationContext, ISessionInteractionRouter
             var processed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             while (_pendingChanges.TryDequeue(out var item))
             {
+                _logger.LogDebug("PendingChange dequeued: {Item}", item);
                 if (!processed.Add(item))
                 {
+                    _logger.LogDebug("PendingChange deduped (already processed this tick): {Item}", item);
                     continue; // Debounce: skip duplicate events in same drain cycle
                 }
 
@@ -528,14 +733,17 @@ internal sealed class TrayApp : ApplicationContext, ISessionInteractionRouter
 
     private void HandleSessionFileChanged(string filePath)
     {
+        _logger.LogDebug("HandleSessionFileChanged enter: {FilePath}", filePath);
         var state = _stateReader.ReadStateFile(filePath);
         if (state is null)
         {
+            _logger.LogDebug("HandleSessionFileChanged result: null (ReadStateFile returned null) for {FilePath}", filePath);
             return;
         }
 
         if (_sessions.TryGetValue(state.SessionId, out var entry))
         {
+            _logger.LogDebug("HandleSessionFileChanged result: existing {SessionId} → status={Status} cwd={Cwd}", state.SessionId, state.Status, state.Cwd);
             // Skip re-processing when sweep re-reads an unchanged state file
             if (entry.LastProcessedTimestamp == state.Timestamp)
             {
@@ -635,6 +843,7 @@ internal sealed class TrayApp : ApplicationContext, ISessionInteractionRouter
         }
         else
         {
+            _logger.LogDebug("HandleSessionFileChanged result: new {SessionId} → status={Status} cwd={Cwd} wsl_distro={WslDistro}", state.SessionId, state.Status, state.Cwd, state.WslDistro);
             // New session — resolve pack from config/project rules, then persist
             var resolvedPack = state.SoundPack;
             if (string.IsNullOrEmpty(resolvedPack))
@@ -655,6 +864,9 @@ internal sealed class TrayApp : ApplicationContext, ISessionInteractionRouter
                 _logger.LogDebug("Unknown icon style '{Style}' in state file for {SessionId} — ignoring", normalizedStyle, state.SessionId);
                 normalizedStyle = null;
             }
+
+            state = WslDesktopCapture.MaybeStampDesktopIndex(
+                state, filePath, _desktopManager, _stateReader.WriteStateFile);
 
             entry = new SessionEntry
             {
@@ -1495,6 +1707,32 @@ internal sealed class TrayApp : ApplicationContext, ISessionInteractionRouter
             Config = ConfigReader.Read(),
             LogPath = ImrdyPaths.MonitorLog,
             DevBuild = BuildDevState(),
+            Wsl = BuildWslMenuState(),
+        };
+    }
+
+    private WslMenuState BuildWslMenuState()
+    {
+        var config = _wslDistroStore.Load();
+        var running = _lastDiscoveredDistros.ToDictionary(d => d.Name, StringComparer.Ordinal);
+        var entries = new List<WslDistroMenuEntry>();
+        foreach (var distro in config.Distros ?? [])
+        {
+            var isRunning = running.ContainsKey(distro.Name);
+            var sessionCount = _sessions.Values.Count(s =>
+                string.Equals(s.State.WslDistro, distro.Name, StringComparison.Ordinal));
+            entries.Add(new WslDistroMenuEntry
+            {
+                Name = distro.Name,
+                Enabled = distro.Enabled,
+                IsRunning = isRunning,
+                SessionCount = sessionCount,
+            });
+        }
+        return new WslMenuState
+        {
+            WatchAll = config.WatchAll,
+            Distros = entries,
         };
     }
 
@@ -2068,6 +2306,21 @@ internal sealed class TrayApp : ApplicationContext, ISessionInteractionRouter
             _configWatcher.EnableRaisingEvents = false;
             _configWatcher.Dispose();
         }
+
+        // Dispose WSL watchers before hover controller / overlay
+        if (_wslDistrosWatcher is not null)
+        {
+            _wslDistrosWatcher.EnableRaisingEvents = false;
+            _wslDistrosWatcher.Dispose();
+        }
+        _wslSweepTimer?.Stop();
+        _wslSweepTimer?.Dispose();
+        foreach (var w in _wslWatchers.Values)
+        {
+            try { w.Dispose(); }
+            catch (Exception ex) { _logger.LogDebug(ex, "WSL watcher dispose failed during shutdown"); }
+        }
+        _wslWatchers.Clear();
 
         // Dispose hover dashboard controller before overlay and session entries
         if (_interactiveOverlayWindow is not null && _hoverController is not null)

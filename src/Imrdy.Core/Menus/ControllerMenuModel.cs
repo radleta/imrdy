@@ -205,11 +205,16 @@ internal static class ControllerMenuModel
 
     private static MenuItemModel BuildManageSubmenu(ControllerMenuState state)
     {
-        var children = new List<MenuItemModel>
+        var children = new List<MenuItemModel>();
+
+        if (state.Wsl is { } wsl)
         {
-            new MenuItemModel { Label = "Open Config Folder", Tag = "open-config" },
-            new MenuItemModel { Label = "View Log", Tag = "open-log" },
-        };
+            children.Add(BuildWslSubmenu(wsl));
+            children.Add(new MenuItemModel { Type = MenuItemType.Separator });
+        }
+
+        children.Add(new MenuItemModel { Label = "Open Config Folder", Tag = "open-config" });
+        children.Add(new MenuItemModel { Label = "View Log", Tag = "open-log" });
 
         if (state.DevBuild is { } dev)
         {
@@ -220,6 +225,51 @@ internal static class ControllerMenuModel
         return new MenuItemModel
         {
             Label = "Manage",
+            Type = MenuItemType.Submenu,
+            Children = children,
+        };
+    }
+
+    private static MenuItemModel BuildWslSubmenu(WslMenuState state)
+    {
+        var children = new List<MenuItemModel>
+        {
+            new MenuItemModel
+            {
+                Label = "Watch All",
+                Tag = "toggle-wsl-watch-all",
+                Checked = state.WatchAll,
+            },
+        };
+
+        if (state.Distros.Count > 0)
+        {
+            children.Add(new MenuItemModel { Type = MenuItemType.Separator });
+
+            foreach (var entry in state.Distros)
+            {
+                var label = entry.IsRunning
+                    ? $"{entry.Name}   (running · {entry.SessionCount} {(entry.SessionCount == 1 ? "session" : "sessions")})"
+                    : $"{entry.Name}   (stopped)";
+
+                children.Add(new MenuItemModel
+                {
+                    Label = label,
+                    Tag = $"toggle-wsl-distro:{entry.Name}",
+                    Checked = entry.Enabled,
+                    Enabled = state.WatchAll,
+                });
+            }
+        }
+
+        children.Add(new MenuItemModel { Type = MenuItemType.Separator });
+        children.Add(new MenuItemModel { Label = "Rescan Distros", Tag = "rescan-distros" });
+        children.Add(new MenuItemModel { Label = "Open WSL Config", Tag = "open-wsl-config" });
+        children.Add(new MenuItemModel { Label = "View WSL Log", Tag = "view-wsl-log" });
+
+        return new MenuItemModel
+        {
+            Label = "WSL",
             Type = MenuItemType.Submenu,
             Children = children,
         };

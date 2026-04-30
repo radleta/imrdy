@@ -7,6 +7,7 @@ using Imrdy.Core.Sound;
 using Imrdy.Core.State;
 using Imrdy.Core.Validation;
 using Imrdy.Core.Workspace;
+using Imrdy.Core.Wsl;
 
 namespace Imrdy.Core;
 
@@ -18,7 +19,10 @@ public static class ServiceRegistration
     /// <summary>
     /// Registers all Core singletons needed by any execution path.
     /// </summary>
-    public static IServiceCollection AddCoreServices(this IServiceCollection services, string? workspacesPath = null)
+    public static IServiceCollection AddCoreServices(
+        this IServiceCollection services,
+        string? workspacesPath = null,
+        string? wslDistrosPath = null)
     {
         services.AddSingleton<StateFileReader>();
         services.AddSingleton<PackLoader>();
@@ -32,6 +36,10 @@ public static class ServiceRegistration
         // WorkspaceStore needs a file path — default to ~/.imrdy/workspaces.json
         var wsPath = workspacesPath ?? ImrdyPaths.Workspaces;
         services.AddSingleton(new WorkspaceStore(wsPath));
+
+        // WslDistroStore needs a file path — default to ~/.imrdy/wsl-distros.json
+        var wslPath = wslDistrosPath ?? ImrdyPaths.WslDistros;
+        services.AddSingleton(new WslDistroStore(wslPath));
 
         return services;
     }

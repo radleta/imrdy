@@ -17,7 +17,7 @@ namespace Imrdy.Integration.Tests.Rendering;
 [Collection("RenderCommandConsole")]
 public class RenderCommandAllTests
 {
-    private const int ExpectedDashboardFixtureCount = 8;
+    private const int ExpectedDashboardFixtureCount = 13;
 
     /// <summary>
     /// Returns the repo root by walking up from the test binary output directory.

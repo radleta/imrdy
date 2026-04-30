@@ -40,6 +40,7 @@ public class DashboardRenderSmokeTests
     [InlineData("long-busy.json")]
     [InlineData("aged-done.json")]
     [InlineData("many-subagents.json")]
+    [InlineData("wsl-ubuntu-22.json")]
     public void DashboardRender_ProducesNonCollapsedLayout(string fixture)
     {
         var outputPath = Path.Combine(Path.GetTempPath(), Guid.NewGuid() + ".png");

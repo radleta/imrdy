@@ -48,6 +48,7 @@ internal static class CommandRouter
             "packs" => PacksCommand.Run(services, cleanArgs, json),
             "config" => ConfigCommand.Run(services, cleanArgs, json),
             "workspace" => WorkspaceCommand.Run(services, cleanArgs, json),
+            "wsl" => WslCommand.Run(services, cleanArgs, json),
             "stop" => StopCommand.Run(services),
             "inspect-live" => InspectLiveCommand.Run(cleanArgs),
             "render-live" => RenderLiveCommand.Run(cleanArgs),
@@ -65,6 +66,7 @@ internal static class CommandRouter
         console.MarkupLine("  [green]packs[/]           Manage sound packs");
         console.MarkupLine("  [green]config[/]          Manage configuration");
         console.MarkupLine("  [green]workspace[/]       Manage pinned workspaces");
+        console.MarkupLine("  [green]wsl[/]             Manage WSL distro watch configuration");
         console.MarkupLine("  [green]stop[/]            Stop the running tray app");
         console.MarkupLine("  [green]inspect-live[/]    Walk live DashboardForm tree, emit JSON layout + diagnostics (agent diagnostic; tray must be running)");
         console.MarkupLine("  [green]render-live[/]     Render live DashboardForm to PNG (agent diagnostic; tray must be running)");
@@ -123,6 +125,12 @@ internal static class CommandRouter
                 console.MarkupLine("  [green]list[/]              List pinned workspaces");
                 console.MarkupLine("  [green]pin[/] <path> [[--name N]] [[--desktop D]]  Pin a workspace");
                 console.MarkupLine("  [green]unpin[/] <path>      Unpin a workspace");
+                break;
+            case "wsl":
+                console.MarkupLine("[bold]imrdy wsl[/] <subcommand>");
+                console.MarkupLine("  [green]list[/]                               List configured WSL distros");
+                console.MarkupLine("  [green]add[/] <distro> [[--linux-home <path>]]  Add a WSL distro");
+                console.MarkupLine("  [green]remove[/] <distro>                    Remove a WSL distro");
                 break;
             case "stop":
                 console.MarkupLine("[bold]imrdy stop[/]");
