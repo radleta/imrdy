@@ -56,3 +56,6 @@ scratch/
 
 # Claude working files
 .claude/scheduled_tasks.lock
+
+# devkit C# cache
+*.lscache
