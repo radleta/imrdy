@@ -1,6 +1,5 @@
 ---
-tags: [imrdy/logging, dev-build, diagnostic]
-updated: 2026-04-24
+tags: [imrdy-expert/logging]
 summary: "Touch ~/.imrdy/.dev-build marker after dev deploys to enable Debug logging on all imrdy processes; enables diagnostic traces without env var friction"
 ---
 
@@ -154,7 +153,3 @@ rm ~/.imrdy/.dev-build
 ```
 
 If you want a script to auto-clean on fresh publishes, use a `clean-build.sh` variant that removes the marker before publishing.
-
-## Related
-
-- [Platform Boundary Three-Seal Gate](../../../verify-fix-loop-expert/.wiki-memory/verify-fix-loop-expert/platform-boundary-three-seal-gate.md) (user-scoped wiki) — Diagnostic logs are the third seal for platform boundary verification

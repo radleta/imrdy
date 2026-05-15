@@ -1,6 +1,5 @@
 ---
 tags: [imrdy-expert/display]
-updated: 2026-04-24
 summary: "SparklineControl requires a reference time anchor for correct rendering in live and fixture-preview paths"
 ---
 

@@ -1,6 +1,5 @@
 ---
-tags: [imrdy/dashboard-layout, imrdy/winforms-patterns]
-updated: 2026-04-25
+tags: [imrdy-expert/winforms]
 summary: "WinForms Anchor-based layouts: invisible-but-present sibling controls reduce available width for Anchor=Left|Right peers"
 ---
 

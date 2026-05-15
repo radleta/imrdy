@@ -6,15 +6,15 @@ All knowledge pages require YAML frontmatter:
 
 ```yaml
 ---
-tags: [domain/subtopic]
-updated: 2026-04-DD
+tags: [imrdy-expert/subtopic]
 summary: "One-line description"
 ---
 ```
 
-**tags:** Domain/subtopic (e.g., `imrdy/wsl`, `imrdy/dashboard`)
-**updated:** Last modification date — staleness signal
+**tags:** Domain/subtopic (e.g., `imrdy-expert/wsl`, `imrdy-expert/dashboard`)
 **summary:** One-line description for the `## Pages` index
+
+Page staleness is tracked via git log / filesystem mtime — no `updated:` field required.
 
 ## Page Types
 

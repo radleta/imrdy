@@ -1,6 +1,5 @@
 ---
-tags: [imrdy/render-verb, architecture, dev-tools]
-updated: 2026-04-25
+tags: [imrdy-expert/rendering]
 summary: "imrdy render verb: in-process PNG capture of WinForms surfaces without a screen — layer split, Program.cs placement, DrawToBitmap caveats, sequential STA execution"
 ---
 

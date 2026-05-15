@@ -1,9 +1,6 @@
 ---
-source: implementation/step-09
-type: pattern
-scope: project
-target-domain: imrdy-expert
-status: captured
+tags: [imrdy-expert/ipc]
+summary: "Tray IPC: render-live and inspect-live verbs — pipe protocol, dev-default gate, walker+analyzer, threading model, ACL"
 ---
 
 # Tray IPC: render-live and inspect-live verbs

@@ -1,12 +1,13 @@
 ---
-tags: [imrdy/hooks]
-updated: 2026-04-15
+tags: [imrdy-expert/hooks]
 summary: "All 20 Claude Code hook events — what they send, status mapping, and real-world behavior"
 ---
 
 # Hook Events
 
 imrdy registers all 20 Claude Code hook events in `plugin/hooks/hooks.json`. Each fires `imrdy hook` which reads JSON from stdin, derives status via `StatusDerivation`, and writes a state file.
+
+See [Status Mapping](status-mapping.md) for the two-layer mapping from hook event → base status → color.
 
 ## Event-to-Status Mapping
 

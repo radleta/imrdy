@@ -1,6 +1,5 @@
 ---
-tags: [imrdy/hover-dashboard, form-lifecycle, virtual-desktops]
-updated: 2026-04-24
+tags: [imrdy-expert/dashboard]
 summary: "Non-layered DashboardForm: adaptive screen-aware anchoring + recreate-per-show for virtual desktop binding + IVirtualDesktopPinnedApps for persistence"
 ---
 
@@ -137,7 +136,7 @@ private interface IVirtualDesktopPinnedApps
 
 **Critical: IApplicationView is IInspectable**
 
-The `IApplicationView` interface type is `[InterfaceIsIInspectable]`. Do NOT try built-in marshaling on .NET 10 — use raw vtable dispatch instead (see [.NET 10: IInspectable Out-Parameter Marshaling Limitation](net10-iinspectable-marshaling.md) in com-interop-expert wiki). This caused iter 10 runtime failures.
+The `IApplicationView` interface type is `[InterfaceIsIInspectable]`. Do NOT try built-in marshaling on .NET 10 — use raw vtable dispatch instead (see `.NET 10: IInspectable Out-Parameter Marshaling Limitation` in com-interop-expert wiki). This caused iter 10 runtime failures.
 
 **Stable GUIDs (Win10 1809 → Win11 24H2, no build-keying):**
 

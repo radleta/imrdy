@@ -1,6 +1,5 @@
 ---
-tags: [imrdy/notifications]
-updated: 2026-04-14
+tags: [imrdy-expert/notifications]
 summary: "Dwell timer system that gates toast/sound behind status settling — prevents notification storms"
 ---
 

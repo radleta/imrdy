@@ -1,12 +1,13 @@
 ---
-tags: [imrdy/status]
-updated: 2026-04-14
+tags: [imrdy-expert/status]
 summary: "Two-layer status mapping: hook event → base status → RGB color, with 9 base statuses"
 ---
 
 # Status Mapping
 
 imrdy uses a two-layer status mapping: hook events derive a status string, which maps to a base status, which maps to an RGB color.
+
+See [Hook Events](hook-events.md) for the full list of events that produce these statuses.
 
 ## Layer 1: Event → Status (StatusDerivation)
 

@@ -1,6 +1,5 @@
 ---
-tags: [imrdy/architecture]
-updated: 2026-04-27
+tags: [imrdy-expert/architecture]
 summary: "Seven entry points, timer interactions, field preservation, and state file lifecycle"
 ---
 

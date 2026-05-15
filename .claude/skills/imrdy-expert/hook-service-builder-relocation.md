@@ -1,6 +1,5 @@
 ---
-tags: [imrdy/architecture]
-updated: 2026-04-28
+tags: [imrdy-expert/architecture]
 summary: "HookServiceBuilder relocated from Imrdy.Windows.DI to Imrdy.Core.Hooks to enable cross-platform consumer access"
 ---
 

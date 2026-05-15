@@ -1,6 +1,5 @@
 ---
-tags: [imrdy/wsl-interop]
-updated: 2026-04-28
+tags: [imrdy-expert/wsl]
 summary: "WSL→Windows PATH passthrough varies per distro; explicit verification needed"
 ---
 

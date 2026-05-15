@@ -1,6 +1,5 @@
 ---
-tags: [imrdy/wsl, imrdy/hooks]
-updated: 2026-04-29
+tags: [imrdy-expert/wsl]
 summary: "WSL_DISTRO_NAME env var requires explicit pickup via IHookEnvironment; code exists but fallback was never wired"
 ---
 

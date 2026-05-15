@@ -1,6 +1,5 @@
 ---
-tags: [imrdy-expert/hooks, imrdy-expert/state-pipeline]
-updated: 2026-04-26
+tags: [imrdy-expert/hooks]
 summary: "Construct HookEventModel from StateFileModel when calling Apply from FSW path."
 ---
 

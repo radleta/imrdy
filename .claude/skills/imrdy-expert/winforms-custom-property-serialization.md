@@ -1,6 +1,5 @@
 ---
 tags: [imrdy-expert/winforms]
-updated: 2026-04-24
 summary: "UserControl public properties of non-serializable types require DesignerSerializationVisibility attribute to avoid WFO1000 build error"
 ---
 

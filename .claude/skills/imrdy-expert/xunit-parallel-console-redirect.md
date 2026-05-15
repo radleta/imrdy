@@ -1,6 +1,5 @@
 ---
 tags: [imrdy-expert/testing]
-updated: 2026-04-24
 summary: "xunit v2 parallel test classes compete over Console.Out/Error redirects — use [Collection] attribute to serialize"
 ---
 
@@ -72,4 +71,3 @@ Any future test class in `Imrdy.Integration.Tests` that calls `Console.SetOut`, 
 ### Related
 - xunit documentation on [Collections and Shared Fixtures](https://xunit.net/docs/shared-context)
 - xunit parallelization strategy: distinct test classes run in parallel unless they share a `[Collection]` name
-

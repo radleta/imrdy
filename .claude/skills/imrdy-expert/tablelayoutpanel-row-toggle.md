@@ -1,6 +1,5 @@
 ---
-tags: [imrdy/winforms-layout]
-updated: 2026-04-25
+tags: [imrdy-expert/winforms]
 summary: "TableLayoutPanel row toggling via Absolute height 0; MinimumSize (not Width) pins fixed width with AutoSize=GrowAndShrink"
 ---
 

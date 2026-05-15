@@ -1,6 +1,5 @@
 ---
 tags: [imrdy-expert/display-model]
-updated: 2026-04-26
 summary: "DisplayItem uses Id + ItemType; SessionEntry has SessionId. Choose based on context."
 ---
 

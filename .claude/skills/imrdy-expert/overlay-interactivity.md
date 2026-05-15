@@ -1,6 +1,5 @@
 ---
-tags: [imrdy/overlay-interaction]
-updated: 2026-04-21
+tags: [imrdy-expert/overlay]
 summary: "Overlay split into Passive/Interactive classes; context menus dispatched via ISessionInteractionRouter + MenuAnchor.AtControl(owner, location) — vanilla WinForms, no P/Invoke band-aids"
 ---
 

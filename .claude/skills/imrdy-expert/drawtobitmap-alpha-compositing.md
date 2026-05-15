@@ -1,6 +1,5 @@
 ---
-tags: [imrdy-expert/render-verb]
-updated: 2026-04-25
+tags: [imrdy-expert/rendering]
 summary: "DrawToBitmap requires higher alpha for decorative lines than runtime DWM compositing"
 ---
 

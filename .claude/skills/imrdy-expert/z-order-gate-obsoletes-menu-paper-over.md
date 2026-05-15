@@ -1,6 +1,5 @@
 ---
-tags: [imrdy/overlay, imrdy/hover-dashboard]
-updated: 2026-04-26
+tags: [imrdy-expert/overlay]
 summary: "WindowFromPoint z-order gating makes overlay-hide-on-menu paper-overs redundant; pure geometric containment is insufficient"
 ---
 

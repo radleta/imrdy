@@ -1,6 +1,5 @@
 ---
-tags: [imrdy/hover-dashboard, state-machine, interaction]
-updated: 2026-04-24
+tags: [imrdy-expert/dashboard]
 summary: "Hover preview controller must distinguish cursor traversal (grace corridor) from user commitment (click action) — add SurfaceInteracted event for immediate dismiss; post-interaction cooldown prevents ghost re-show when cursor stays in hover bounds after click"
 ---
 

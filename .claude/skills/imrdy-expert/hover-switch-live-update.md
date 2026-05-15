@@ -1,6 +1,5 @@
 ---
-tags: [imrdy/hover-dashboard]
-updated: 2026-04-26
+tags: [imrdy-expert/dashboard]
 summary: "Detect session change via TryGetSessionIdAtScreenPoint while form is visible; apply live-update pattern"
 ---
 

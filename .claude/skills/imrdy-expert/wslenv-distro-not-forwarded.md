@@ -1,6 +1,5 @@
 ---
-tags: [imrdy/wsl-interop]
-updated: 2026-04-28
+tags: [imrdy-expert/wsl]
 summary: "WSLENV doesn't auto-forward WSL_DISTRO_NAME; Windows binaries can't self-identify source distro"
 ---
 

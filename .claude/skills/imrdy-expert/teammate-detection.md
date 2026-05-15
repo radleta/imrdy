@@ -1,6 +1,5 @@
 ---
-tags: [imrdy/teammates]
-updated: 2026-04-15
+tags: [imrdy-expert/teammates]
 summary: "4-layer teammate-aware notification system — deterministic gate, state tracking, consensus promotion, idle_prompt suppression"
 ---
 
