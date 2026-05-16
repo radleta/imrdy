@@ -35,8 +35,12 @@ The hook runs hundreds of times per session. It must be fast (~50ms). No COM, no
 - `DesktopIndex` — assigned by tray
 - `IconStyle` — assigned by tray or workspace
 - `LastTeammateAt` — updated by teammate hooks, preserved by lead hooks
+- `StartedAt` — set once on first SessionStart, preserved across reconnects
+- `WslDistro` — stable per session, falls back to existing when env var unavailable
 
 Pattern: `newState.Field ?? existing.Field` — new value wins if set, otherwise keep existing.
+
+This list is also the **symmetry contract** between hook writes and tray writes — any tray-owned field NOT on this list is silently dropped by the next hook event. See [Field Preservation Catalog](field-preservation-catalog.md) for the audit procedure, [Tray vs Hook Write Race](tray-hook-write-race.md) for the race window, [State File Write Path](state-file-write-path.md) for why the file is non-atomic, and [Tray Persistence Verbs](tray-persistence-verbs.md) for the full tray-side write surface.
 
 ## Timer Interactions
 
@@ -45,7 +49,7 @@ TrayApp has multiple timers that interact:
 | Timer | Interval | Purpose |
 |-------|----------|---------|
 | Drain timer | 100ms | Process pending file changes, dwell dispatch, consensus check |
-| Sweep timer | 10s | Re-read all state files, detect stale/missing sessions |
+| Sweep timer | 10s | Existence-check only via `CleanupGoneSessions`; removes in-memory entries whose state files are gone |
 | Stale timer | 60s | Remove sessions past grace period |
 
 The drain timer is the central coordination point:
@@ -53,7 +57,7 @@ The drain timer is the central coordination point:
 2. Dispatch fired dwell notifications
 3. Run consensus promotion check (see [Teammate Detection](teammate-detection.md))
 
-The sweep timer re-reads all state files but skips re-processing unchanged ones: `SessionEntry.LastProcessedTimestamp` is compared against the state file's `Timestamp` field. If they match, `HandleSessionFileChanged` returns early. This prevents redundant icon/dwell/notification processing on every sweep cycle.
+The sweep timer is **existence-check only** since commit 4702e86 (`sweep-removal-busy-promotion`): it runs `CleanupGoneSessions`, which iterates the in-memory session entries and removes any whose state file no longer exists on disk. It does NOT re-read state file contents. FSW (FileSystemWatcher) is the sole real-time path for content changes — the drain timer drains queued FSW events on the 100ms tick. State file bootstrapping at startup is handled separately by `BootstrapSessions`, a one-time scan that runs before the timers start. `SessionEntry.LastProcessedTimestamp` still exists and is used in the FSW path (`HandleSessionFileChanged` returns early when the file's `Timestamp` matches `LastProcessedTimestamp`) — that early-return logic was preserved when the sweep re-read was removed.
 
 ## Session Icon Style Resolution
 

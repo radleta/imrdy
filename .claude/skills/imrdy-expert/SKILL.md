@@ -8,6 +8,11 @@ You are an expert in the imrdy project — a Windows system tray monitor for Cla
 ## Pages
 
 - [Architecture](architecture.md) — Seven entry points, timer interactions, field preservation, and state file lifecycle
+- [State File Write Path](state-file-write-path.md) — Session state files use direct File.WriteAllBytes (not AtomicFileWriter) because delete-then-move suppresses FSW Changed events
+- [Tray vs Hook Write Race](tray-hook-write-race.md) — Hook and tray both RMW session state files with no coordination — tray-side field changes are silently dropped if the field isn't on the FieldPreservation list
+- [Tray Persistence Verbs](tray-persistence-verbs.md) — Catalog of every place the tray process writes JSON state to disk — debugging checklist for persistence loss
+- [Field Preservation Catalog](field-preservation-catalog.md) — The 6 sticky fields, the merge pattern, and the symmetry contract every new tray-owned field must satisfy
+- [WT Desktop Routing](wt-desktop-routing.md) — SwitchToSessionDesktop 3-step routing with WT-aware target resolution, compare-desktops focus guard against ping-pong, and SessionStart-only auto-lock
 - [Hook Events](hook-events.md) — All 20 Claude Code hook events — what they send, status mapping, and real-world behavior
 - [Teammate Detection](teammate-detection.md) — 4-layer teammate-aware notification system — deterministic gate, state tracking, consensus promotion, idle_prompt suppression
 - [Notification Dwell](notification-dwell.md) — Dwell timer system that gates toast/sound behind status settling — prevents notification storms

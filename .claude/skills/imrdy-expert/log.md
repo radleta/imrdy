@@ -1,5 +1,23 @@
 # Operations Log
 
+## 2026-05-16 ingest | WT desktop routing page + sweep-timer drift fix
+
+- New page: wt-desktop-routing.md (3-step SwitchToSessionDesktop, pinned-vs-dynamic target, WT exclusion from dynamic lookup, compare-desktops focus guard, SessionStart-only auto-lock, residual race-loss reference)
+- Fixed drift in architecture.md `## Timer Interactions`: sweep paragraph and timer table cell — was describing pre-4702e86 re-read behavior, now describes existence-check-only via `CleanupGoneSessions`
+- SKILL.md ## Pages updated with wt-desktop-routing entry near persistence cluster
+- Cleaned up now-stale "Drift alert" callout + closing cross-ref annotation in field-preservation-catalog.md (architecture.md is now consistent — callout reframed as generic "code wins over docs" precedence rule)
+- Source: desktop-persist-fix + wt-desktop-routing + ping-pong guard implementation sessions (2026-05-15 / 2026-05-16); user-driven skill-builder assess run
+
+## 2026-05-15 ingest | persistence architecture artifacts
+
+- New page: state-file-write-path.md (atomicity asymmetry across the 3 JSON surfaces; why session state bypasses AtomicFileWriter)
+- New page: tray-hook-write-race.md (RMW race window between hook and tray writes on session state; architectural framing as shared-data-source anti-pattern)
+- New page: tray-persistence-verbs.md (catalog of every tray-owned write surface — debugging checklist)
+- New page: field-preservation-catalog.md (authoritative 6-field list; symmetry contract; audit procedure)
+- Refreshed architecture.md Field Preservation section (was stale at 4 fields; code has 6 — added StartedAt and WslDistro; added cross-links to new pages)
+- SKILL.md ## Pages updated with all 4 new entries
+- Source: user-reported diagnosis task — "changes by tray don't seem to be fully persisted to the json file"; root architectural cause identified as shared-data-source pattern between hook and tray on session state files
+
 ## 2026-05-15 cleanup | SKILL.md modernization
 
 - Stripped legacy `!wiki-resolve imrdy-expert` directive and two HTML scaffolding comments
