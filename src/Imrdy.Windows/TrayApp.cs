@@ -652,6 +652,28 @@ internal sealed class TrayApp : ApplicationContext, ISessionInteractionRouter
             PersistSessionSoundPack(entry);
             PersistSessionIconStyle(entry);
 
+            // WT auto-lock: capture the user's currently active desktop as this session's pinned
+            // desktop, but only on the moment of true session launch (SessionStart hook event) and
+            // only for Windows Terminal. WT shares one PID/HWND across all tabs/windows in v1.23+,
+            // so we cannot dynamically determine which desktop a specific WT session lives on at
+            // click time. The user's active desktop at launch is the most reliable proxy.
+            // See scratch/wt-desktop-routing/decisions.md (D2, D3) for rationale.
+            // Residual race: a concurrent hook write that read DesktopIndex==null before this write
+            // lands can clobber the auto-locked value; see ~/.wiki-memory/imrdy-expert/tray-hook-write-race.md (D4).
+            if (string.Equals(state.HookEvent, "SessionStart", StringComparison.OrdinalIgnoreCase)
+                && entry.DesktopIndex is null
+                && IsWindowsTerminal(entry))
+            {
+                var currentDesktop = _desktopManager.GetCurrentDesktopIndex();
+                if (currentDesktop.HasValue)
+                {
+                    entry.DesktopIndex = currentDesktop.Value;
+                    PersistSessionDesktopIndex(entry);
+                    _logger.LogDebug("Auto-locked WT session {SessionId} to desktop {Desktop} on SessionStart",
+                        entry.SessionId, currentDesktop.Value);
+                }
+            }
+
             // Session first observed as SessionEnd (tray started mid-session, or hook fired
             // before FSW picked up earlier writes) — start grace period so cleanup removes it.
             // Without this, FSW won't fire again and CleanupGoneSessions never sets RemoveAfter,
@@ -832,6 +854,14 @@ internal sealed class TrayApp : ApplicationContext, ISessionInteractionRouter
     private void PersistSessionIconStyle(SessionEntry entry)
     {
         PersistSessionField(entry, current => current with { IconStyle = entry.IconStyle });
+    }
+
+    /// <summary>
+    /// Writes the session's desktop_index to its state file so the hook preserves it.
+    /// </summary>
+    private void PersistSessionDesktopIndex(SessionEntry entry)
+    {
+        PersistSessionField(entry, current => current with { DesktopIndex = entry.DesktopIndex });
     }
 
     private void PersistSessionField(SessionEntry entry, Func<StateFileModel, StateFileModel> update)
@@ -1079,12 +1109,14 @@ internal sealed class TrayApp : ApplicationContext, ISessionInteractionRouter
                     if (currentDesktop.HasValue)
                     {
                         entry.DesktopIndex = currentDesktop.Value;
+                        PersistSessionDesktopIndex(entry);
                         _logger.LogDebug("Assigned session {SessionId} to desktop {Desktop}", entry.SessionId, currentDesktop.Value);
                     }
                 },
                 OnSetDesktop: index =>
                 {
                     entry.DesktopIndex = index;
+                    PersistSessionDesktopIndex(entry);
                     if (index.HasValue)
                     {
                         _desktopManager.SwitchToDesktop(index.Value);
@@ -1195,7 +1227,46 @@ internal sealed class TrayApp : ApplicationContext, ISessionInteractionRouter
     {
         try
         {
-            // Walk process tree from Claude PID to find the terminal window (cached per session)
+            // 1. Resolve target desktop index.
+            // Pinned index wins; fall through to dynamic lookup only when unset.
+            int? target = entry.DesktopIndex;
+            string targetSource = "pinned";
+
+            if (target is null && entry.State.ClaudePid is int claudePidForDesktop)
+            {
+                var terminalPidForDesktop = Commands.ProcessResolver.ResolveTerminalPid(claudePidForDesktop, entry.SessionId);
+                if (terminalPidForDesktop.HasValue)
+                {
+                    try
+                    {
+                        var procForDesktop = System.Diagnostics.Process.GetProcessById(terminalPidForDesktop.Value);
+                        using (procForDesktop)
+                        {
+                            var hwndForDesktop = procForDesktop.MainWindowHandle;
+                            if (hwndForDesktop != IntPtr.Zero && !IsWindowsTerminal(entry))
+                            {
+                                target = _desktopManager.GetDesktopForWindow(hwndForDesktop);
+                                targetSource = "dynamic";
+                            }
+                        }
+                    }
+                    catch (ArgumentException)
+                    {
+                        Commands.ProcessResolver.ClearSession(entry.SessionId);
+                        _logger.LogWarning("Focus: terminal process {Pid} died, cache cleared", terminalPidForDesktop.Value);
+                    }
+                }
+            }
+
+            // 2. Switch desktop first — before any focus attempt.
+            if (target.HasValue && _desktopManager.IsAvailable)
+            {
+                _logger.LogInformation("Focus: session={Sid} target=desktop {Target} (source={Source})",
+                    entry.SessionId[..8], target.Value, targetSource);
+                _desktopManager.SwitchToDesktop(target.Value);
+            }
+
+            // 3. Attempt terminal focus (best-effort; no early return on success).
             if (entry.State.ClaudePid is int claudePid)
             {
                 var terminalPid = Commands.ProcessResolver.ResolveTerminalPid(claudePid, entry.SessionId);
@@ -1215,15 +1286,41 @@ internal sealed class TrayApp : ApplicationContext, ISessionInteractionRouter
 
                             if (hwnd != IntPtr.Zero)
                             {
-                                var result = PInvokeWindow.ForceForeground(hwnd);
-                                _logger.LogInformation("Focus: ForceForeground result={Result}", result);
-                                if (result)
+                                // Guard against WT ping-pong: if we already switched to a target
+                                // desktop, only call ForceForeground when the window lives on that
+                                // same desktop. WT v1.23+ runs a single HWND across all tabs; its
+                                // HWND lives on one desktop, and calling ForceForeground on a
+                                // cross-desktop HWND pulls Windows back to that desktop.
+                                bool shouldFocus = true;
+                                if (target.HasValue)
                                 {
-                                    return;
+                                    var hwndDesktop = _desktopManager.GetDesktopForWindow(hwnd);
+                                    if (hwndDesktop.HasValue && hwndDesktop.Value != target.Value)
+                                    {
+                                        _logger.LogInformation(
+                                            "Focus: suppressed ForceForeground to avoid ping-pong — hwnd={Hwnd} hwndDesktop={HwndDesktop} target={Target}",
+                                            hwnd, hwndDesktop.Value, target.Value);
+                                        shouldFocus = false;
+                                    }
+                                    else if (!hwndDesktop.HasValue)
+                                    {
+                                        // COM unavailable or window gone — skip focus; desktop switch
+                                        // already landed the user on the target desktop.
+                                        _logger.LogDebug(
+                                            "Focus: GetDesktopForWindow returned null — skipping ForceForeground for session={Sid} hwnd={Hwnd}",
+                                            entry.SessionId[..8], hwnd);
+                                        shouldFocus = false;
+                                    }
                                 }
-                                // ForceForeground fails from balloon-tip notification context
-                                // (Windows blocks SetForegroundWindow). Fall through to desktop
-                                // switch so the user at least lands on the right desktop.
+
+                                if (shouldFocus)
+                                {
+                                    var result = PInvokeWindow.ForceForeground(hwnd);
+                                    _logger.LogInformation("Focus: ForceForeground result={Result}", result);
+                                    // ForceForeground fails from balloon-tip notification context
+                                    // (Windows blocks SetForegroundWindow). Desktop switch already
+                                    // fired above, so the user lands on the right desktop regardless.
+                                }
                             }
                         }
                     }
@@ -1238,12 +1335,6 @@ internal sealed class TrayApp : ApplicationContext, ISessionInteractionRouter
             else
             {
                 _logger.LogInformation("Focus: session={Sid} has no ClaudePid", entry.SessionId[..8]);
-            }
-
-            // Fallback: switch to desktop by stored index
-            if (_desktopManager.IsAvailable && entry.DesktopIndex.HasValue)
-            {
-                _desktopManager.SwitchToDesktop(entry.DesktopIndex.Value);
             }
         }
         catch (Exception ex)
@@ -1266,6 +1357,30 @@ internal sealed class TrayApp : ApplicationContext, ISessionInteractionRouter
         {
             _logger.LogWarning(ex, "Failed to switch to desktop for workspace {Name}",
                 entry.Workspace.Name);
+        }
+    }
+
+    private bool IsWindowsTerminal(SessionEntry entry)
+    {
+        try
+        {
+            if (entry.State.ClaudePid is not int claudePid)
+                return false;
+
+            var terminalPid = Commands.ProcessResolver.ResolveTerminalPid(claudePid, entry.SessionId);
+            if (terminalPid is null)
+                return false;
+
+            var proc = System.Diagnostics.Process.GetProcessById(terminalPid.Value);
+            using (proc)
+            {
+                return proc.ProcessName == "WindowsTerminal";
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "IsWindowsTerminal probe failed for session {SessionId}", entry.SessionId);
+            return false;
         }
     }
 
