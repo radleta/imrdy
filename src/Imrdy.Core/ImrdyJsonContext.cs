@@ -24,6 +24,7 @@ namespace Imrdy.Core;
 [JsonSerializable(typeof(WslDistroEntry))]
 [JsonSerializable(typeof(List<WslDistroEntry>))]
 [JsonSerializable(typeof(List<string>))]
+[JsonSerializable(typeof(WorkspaceDashboardViewModel))]
 [JsonSerializable(typeof(DashboardViewModel))]
 [JsonSerializable(typeof(HookAccumulation))]
 [JsonSerializable(typeof(RecentToolEntry))]

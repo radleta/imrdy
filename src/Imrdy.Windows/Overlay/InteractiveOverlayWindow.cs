@@ -81,6 +81,34 @@ internal sealed class InteractiveOverlayWindow : OverlayWindowBase
         return true;
     }
 
+    /// <summary>
+    /// Maps an already-converted client-X coordinate to the <see cref="DisplayItem"/> at that
+    /// position. Used by <see cref="Dashboard.HoverDashboardControllerBase"/>-derived controllers
+    /// whose <c>TryHitTestForOurDomain</c> override has already performed the
+    /// screen→client conversion via <see cref="Desktop.PInvokeOverlay.ScreenToClientPoint"/>.
+    /// </summary>
+    /// <param name="clientX">Client X coordinate (already converted from screen).</param>
+    /// <param name="item">
+    /// The resolved <see cref="DisplayItem"/> when a hit is found; <c>null</c> otherwise.
+    /// </param>
+    /// <param name="hitIndex">Slot index when a hit is found; <c>-1</c> otherwise.</param>
+    /// <returns><c>true</c> when a <see cref="DisplayItem"/> occupies <paramref name="clientX"/>.</returns>
+    public bool TryHitTestAtClient(int clientX, out DisplayItem? item, out int hitIndex)
+    {
+        item = null;
+        hitIndex = -1;
+
+        if (!HitIconIndex(clientX, out var index))
+            return false;
+
+        if (index < 0 || index >= _items.Count)
+            return false;
+
+        item = _items[index];
+        hitIndex = index;
+        return true;
+    }
+
     protected override void OnMouseDown(MouseEventArgs e)
     {
         _logger.LogDebug("Overlay: OnMouseDown button={Button} x={X} y={Y}", e.Button, e.X, e.Y);

@@ -9,7 +9,7 @@ using Serilog;
 namespace Imrdy.Windows.Commands;
 
 /// <summary>
-/// Standalone preview harness for <see cref="DashboardForm"/>.
+/// Standalone preview harness for <see cref="SessionDashboardForm"/>.
 /// Deserializes a <see cref="DashboardViewModel"/> fixture JSON and runs the form
 /// in a normal WinForms message loop.
 ///
@@ -76,7 +76,7 @@ internal static class PreviewDashboardCommand
         // isPreviewMode: true — Escape calls Application.Exit() instead of Unpin()+Hide().
         // StartPosition = CenterScreen — set after construction so WinForms centers on
         //   the primary monitor before Application.Run opens the message loop.
-        var form = new DashboardForm(viewModel, loggerFactory, isPinned: true, isPreviewMode: true);
+        var form = new SessionDashboardForm(viewModel, desktopManager: null, loggerFactory, isPinned: true, isPreviewMode: true);
         form.StartPosition = FormStartPosition.CenterScreen;
         Application.Run(form);
         return 0;

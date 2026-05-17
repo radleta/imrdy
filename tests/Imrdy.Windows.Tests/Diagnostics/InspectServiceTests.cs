@@ -225,7 +225,7 @@ public class InspectServiceTests
         IReadOnlyList<LayoutNode>? tree = null;
         RunOnSta(() =>
         {
-            var form = new DashboardForm(vm!, NullLoggerFactory.Instance, isPinned: true, isPreviewMode: false);
+            var form = new SessionDashboardForm(vm!, desktopManager: null, NullLoggerFactory.Instance, isPinned: true, isPreviewMode: false);
             (_, tree) = WalkOffscreen(form); // WalkOffscreen disposes the form in its finally block
         });
 

@@ -1,0 +1,9 @@
+{
+  "workspacePath": "D:\\dev\\my-project",
+  "name": "My Project",
+  "desktop": 2,
+  "isCurrentDesktop": true,
+  "iconStyle": "circles",
+  "activityText": "active 5h 40m ago",
+  "git": { "branch": "main", "dirtyCount": 3, "ahead": 2, "behind": 1 }
+}

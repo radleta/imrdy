@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.Text.RegularExpressions;
 using Imrdy.Core.Display;
 using Microsoft.Extensions.Logging;
 
@@ -108,7 +109,7 @@ internal sealed class GitInfoCache
     /// Parses <c>git status --porcelain --branch</c> output into a <see cref="GitInfo"/>.
     /// Returns <c>null</c> when the output is empty or the branch header is missing.
     /// </summary>
-    private static GitInfo? ParseGitOutput(string output)
+    internal static GitInfo? ParseGitOutput(string output)
     {
         if (string.IsNullOrWhiteSpace(output))
             return null;
@@ -117,7 +118,7 @@ internal sealed class GitInfoCache
         if (lines.Length == 0)
             return null;
 
-        // First line: ## branch...remote [ahead N] [behind N]
+        // First line: ## branch...remote [ahead N, behind N]
         var header = lines[0];
         if (!header.StartsWith("## ", StringComparison.Ordinal))
             return null;
@@ -133,6 +134,14 @@ internal sealed class GitInfoCache
         var branch = ellipsis >= 0 ? headerBody[..ellipsis] : headerBody;
         branch = branch.Trim();
 
+        // Ahead/behind: use word-boundary patterns that handle both the standalone form
+        // "[ahead 2]" and the comma-separated form "[ahead 2, behind 1]".
+        // "ahead" is always preceded by "["; "behind" may be preceded by "[" or ", ".
+        var aheadMatch = Regex.Match(header, @"\[ahead (\d+)");
+        var behindMatch = Regex.Match(header, @"(?:\[|, )behind (\d+)");
+        var ahead = aheadMatch.Success ? int.Parse(aheadMatch.Groups[1].Value) : 0;
+        var behind = behindMatch.Success ? int.Parse(behindMatch.Groups[1].Value) : 0;
+
         // Dirty count: lines 2+ that are not untracked and not empty
         // Porcelain v1: each changed file has a 2-char status code followed by a space
         var dirtyCount = 0;
@@ -145,7 +154,7 @@ internal sealed class GitInfoCache
             dirtyCount++;
         }
 
-        return new GitInfo(branch, dirtyCount);
+        return new GitInfo(branch, dirtyCount, ahead, behind);
     }
 
     private readonly record struct CacheEntry(GitInfo? Info, DateTimeOffset StoredAt);

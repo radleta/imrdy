@@ -125,21 +125,15 @@ internal abstract class OverlayWindowBase : Form
     }
 
     /// <summary>
-    /// Maps a client X coordinate to an icon index. Used only by InteractiveOverlayWindow's
-    /// WndProc — lives here so both classes share the same slot math without duplication.
+    /// Maps a client X coordinate to an icon index. Delegates slot math to
+    /// <see cref="DisplayItemCollection.TryGetItemAtClientPoint"/> in Core so the
+    /// geometry has exactly one implementation that is unit-testable without WinForms.
     /// </summary>
     protected bool HitIconIndex(int clientX, out int index)
     {
-        index = -1;
-        if (clientX < 0) return false;
-        var slot = _config.Size + _config.Spacing;
-        if (slot <= 0) return false;
-        var i = clientX / slot;
-        var inSlot = clientX % slot;
-        if (inSlot >= _config.Size) return false;
-        if (i >= _items.Count) return false;
-        index = i;
-        return true;
+        return DisplayItemCollection.TryGetItemAtClientPoint(
+            _items, clientX, _config.Size, _config.Spacing,
+            out _, out index);
     }
 
     public void InvalidateStyleCache()

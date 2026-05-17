@@ -16,6 +16,6 @@ public sealed record HookAccumulation(
 
 public sealed record RecentToolEntry(string ToolName, DateTimeOffset At);
 
-public sealed record GitInfo(string Branch, int DirtyCount);
+public sealed record GitInfo(string Branch, int DirtyCount, int Ahead = 0, int Behind = 0);
 
 public sealed record RateLimits(string FiveHour, string SevenDay);

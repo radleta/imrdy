@@ -91,7 +91,8 @@ internal sealed class TrayApp : ApplicationContext, ISessionInteractionRouter
 
     private readonly HookAccumulationStore _hookAccumulationStore;
     private readonly GitInfoCache _gitCache;
-    private HoverDashboardController? _hoverController;
+    private SessionHoverDashboardController? _hoverController;
+    private WorkspaceHoverDashboardController? _workspaceHoverController;
     // F6: one-shot null-controller warning guard — prevents log spam when controller is absent.
     // Reset to false whenever _hoverController becomes non-null so each absence is reported once.
     private bool _loggedNullHoverControllerWarning;
@@ -202,16 +203,27 @@ internal sealed class TrayApp : ApplicationContext, ISessionInteractionRouter
 
         if (_interactiveOverlayWindow is not null)
         {
-            _hoverController = new HoverDashboardController(
+            _hoverController = new SessionHoverDashboardController(
                 _interactiveOverlayWindow,
-                _hookAccumulationStore,
-                () => _sessions.Values.ToList(),
                 _desktopManager,
                 _loggerFactory,
+                _hookAccumulationStore,
+                () => _sessions.Values.ToList(),
                 _gitCache);
             _loggedNullHoverControllerWarning = false; // F6: reset so next absence is reported
+            _workspaceHoverController = new WorkspaceHoverDashboardController(
+                _interactiveOverlayWindow,
+                _desktopManager,
+                _loggerFactory,
+                _workspaceStore,
+                GetWorkspaceLastSeen,
+                () => _desktopManager?.GetCurrentDesktopIndex(),
+                _gitCache);
             _interactiveOverlayWindow.SurfaceInteracted += _hoverController.HandleSurfaceInteraction;
-            _logger.LogDebug("TrayApp: subscribed _hoverController.HandleSurfaceInteraction to _interactiveOverlayWindow.SurfaceInteracted");
+            _interactiveOverlayWindow.SurfaceInteracted += _workspaceHoverController.HandleSurfaceInteraction;
+            _hoverController.FormShown += _workspaceHoverController.HideIfVisible;
+            _workspaceHoverController.FormShown += _hoverController.HideIfVisible;
+            _logger.LogDebug("TrayApp: subscribed _hoverController and _workspaceHoverController to _interactiveOverlayWindow.SurfaceInteracted + cross-controller FormShown");
         }
 
         // Initial load to pick up existing sessions
@@ -442,6 +454,11 @@ internal sealed class TrayApp : ApplicationContext, ISessionInteractionRouter
         {
             // F6: log once when the tick fires but controller is absent (overlay disabled or
             // between config-change races). Guard prevents repeat spam.
+            // Paired-lifecycle invariant: _workspaceHoverController is always created and
+            // destroyed alongside _hoverController. When _hoverController is null,
+            // _workspaceHoverController is also null, so the early return here correctly
+            // skips both controllers. No separate null guard for the workspace controller
+            // is needed inside this branch (YAGNI per step spec).
             if (!_loggedNullHoverControllerWarning)
             {
                 _loggedNullHoverControllerWarning = true;
@@ -449,7 +466,8 @@ internal sealed class TrayApp : ApplicationContext, ISessionInteractionRouter
             }
             return;
         }
-        _hoverController.OnDrainTick(DateTimeOffset.UtcNow);
+        _hoverController.OnDrainTick();
+        _workspaceHoverController?.OnDrainTick();
     }
 
     private void OnCleanupTimerTick(object? sender, EventArgs e)
@@ -1086,6 +1104,12 @@ internal sealed class TrayApp : ApplicationContext, ISessionInteractionRouter
 
         _logger.LogDebug("IconStyle for {SessionId}: global default → {Style}", entry.SessionId, _currentIconStyle);
         return _currentIconStyle;
+    }
+
+    private DateTimeOffset? GetWorkspaceLastSeen(string path)
+    {
+        var key = path.ToUpperInvariant();
+        return _workspaces.TryGetValue(key, out var entry) ? entry.LastSeenAt : (DateTimeOffset?)null;
     }
 
     private void CreateSessionIcon(SessionEntry entry)
@@ -1744,11 +1768,23 @@ internal sealed class TrayApp : ApplicationContext, ISessionInteractionRouter
             // window. Interactive is class-level now (PassiveOverlayWindow vs
             // InteractiveOverlayWindow), so switching it means switching class.
             // Unsubscribe from the old overlay BEFORE disposing controller and window.
-            if (_interactiveOverlayWindow is not null && _hoverController is not null)
+            // Invariant order: workspace → session → overlay (prevents late overlay events
+            // from invoking HandleSurfaceInteraction on a half-disposed controller).
+            if (_interactiveOverlayWindow is not null)
             {
-                _interactiveOverlayWindow.SurfaceInteracted -= _hoverController.HandleSurfaceInteraction;
-                _logger.LogDebug("TrayApp: unsubscribed _hoverController.HandleSurfaceInteraction from _interactiveOverlayWindow.SurfaceInteracted");
+                if (_workspaceHoverController is not null)
+                    _interactiveOverlayWindow.SurfaceInteracted -= _workspaceHoverController.HandleSurfaceInteraction;
+                if (_hoverController is not null)
+                    _interactiveOverlayWindow.SurfaceInteracted -= _hoverController.HandleSurfaceInteraction;
+                _logger.LogDebug("TrayApp: unsubscribed hover controllers from _interactiveOverlayWindow.SurfaceInteracted");
             }
+            if (_hoverController is not null && _workspaceHoverController is not null)
+            {
+                _hoverController.FormShown -= _workspaceHoverController.HideIfVisible;
+                _workspaceHoverController.FormShown -= _hoverController.HideIfVisible;
+            }
+            _workspaceHoverController?.Dispose();
+            _workspaceHoverController = null;
             _hoverController?.Dispose();
             _hoverController = null;
             _overlayWindow?.Dispose();
@@ -1777,16 +1813,27 @@ internal sealed class TrayApp : ApplicationContext, ISessionInteractionRouter
 
                 if (_interactiveOverlayWindow is not null)
                 {
-                    _hoverController = new HoverDashboardController(
+                    _hoverController = new SessionHoverDashboardController(
                         _interactiveOverlayWindow,
-                        _hookAccumulationStore,
-                        () => _sessions.Values.ToList(),
                         _desktopManager,
                         _loggerFactory,
+                        _hookAccumulationStore,
+                        () => _sessions.Values.ToList(),
                         _gitCache);
                     _loggedNullHoverControllerWarning = false; // F6: reset so next absence is reported
+                    _workspaceHoverController = new WorkspaceHoverDashboardController(
+                        _interactiveOverlayWindow,
+                        _desktopManager,
+                        _loggerFactory,
+                        _workspaceStore,
+                        GetWorkspaceLastSeen,
+                        () => _desktopManager?.GetCurrentDesktopIndex(),
+                        _gitCache);
                     _interactiveOverlayWindow.SurfaceInteracted += _hoverController.HandleSurfaceInteraction;
-                    _logger.LogDebug("TrayApp: subscribed _hoverController.HandleSurfaceInteraction to _interactiveOverlayWindow.SurfaceInteracted");
+                    _interactiveOverlayWindow.SurfaceInteracted += _workspaceHoverController.HandleSurfaceInteraction;
+                    _hoverController.FormShown += _workspaceHoverController.HideIfVisible;
+                    _workspaceHoverController.FormShown += _hoverController.HideIfVisible;
+                    _logger.LogDebug("TrayApp: subscribed _hoverController and _workspaceHoverController to _interactiveOverlayWindow.SurfaceInteracted + cross-controller FormShown");
                 }
             }
             else
@@ -2155,12 +2202,23 @@ internal sealed class TrayApp : ApplicationContext, ISessionInteractionRouter
             _configWatcher.Dispose();
         }
 
-        // Dispose hover dashboard controller before overlay and session entries
-        if (_interactiveOverlayWindow is not null && _hoverController is not null)
+        // Dispose hover dashboard controllers before overlay and session entries.
+        // Unsubscribe BEFORE dispose; invariant order: workspace → session → overlay.
+        if (_interactiveOverlayWindow is not null)
         {
-            _interactiveOverlayWindow.SurfaceInteracted -= _hoverController.HandleSurfaceInteraction;
-            _logger.LogDebug("TrayApp: unsubscribed _hoverController.HandleSurfaceInteraction from _interactiveOverlayWindow.SurfaceInteracted");
+            if (_workspaceHoverController is not null)
+                _interactiveOverlayWindow.SurfaceInteracted -= _workspaceHoverController.HandleSurfaceInteraction;
+            if (_hoverController is not null)
+                _interactiveOverlayWindow.SurfaceInteracted -= _hoverController.HandleSurfaceInteraction;
+            _logger.LogDebug("TrayApp: unsubscribed hover controllers from _interactiveOverlayWindow.SurfaceInteracted");
         }
+        if (_hoverController is not null && _workspaceHoverController is not null)
+        {
+            _hoverController.FormShown -= _workspaceHoverController.HideIfVisible;
+            _workspaceHoverController.FormShown -= _hoverController.HideIfVisible;
+        }
+        _workspaceHoverController?.Dispose();
+        _workspaceHoverController = null;
         _hoverController?.Dispose();
         _hoverController = null;
 

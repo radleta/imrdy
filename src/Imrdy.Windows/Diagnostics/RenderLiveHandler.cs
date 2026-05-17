@@ -10,7 +10,7 @@ using Microsoft.Extensions.Logging;
 namespace Imrdy.Windows.Diagnostics;
 
 /// <summary>
-/// Handles the <c>render-live</c> IPC verb. Builds a <see cref="DashboardForm"/> for the
+/// Handles the <c>render-live</c> IPC verb. Builds a <see cref="SessionDashboardForm"/> for the
 /// requested session offscreen, captures it via <c>DrawToBitmap</c>, and writes the PNG
 /// atomically via a temp-file + <see cref="File.Move"/> swap.
 /// Must be called on the UI thread (enforced by <see cref="InspectIpcServer"/> via
@@ -52,7 +52,7 @@ internal static class RenderLiveHandler
         var cachedGit = gitCache.TryGetCached(entry.State.Cwd);
         var vm = LiveDashboardVmBuilder.BuildForSession(entry, store, cachedGit, allSessions, DateTimeOffset.UtcNow);
 
-        using var form = new DashboardForm(vm, loggerFactory, isPinned: true, isPreviewMode: false);
+        using var form = new SessionDashboardForm(vm, desktopManager: null, loggerFactory, isPinned: true, isPreviewMode: false);
         form.StartPosition = FormStartPosition.Manual;
         form.Location = new Point(-32000, -32000);
         form.Show();

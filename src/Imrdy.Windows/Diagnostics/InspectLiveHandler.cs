@@ -8,7 +8,7 @@ using Microsoft.Extensions.Logging;
 namespace Imrdy.Windows.Diagnostics;
 
 /// <summary>
-/// Handles the <c>inspect-live</c> IPC verb. Builds a <see cref="DashboardForm"/> for the
+/// Handles the <c>inspect-live</c> IPC verb. Builds a <see cref="SessionDashboardForm"/> for the
 /// requested session offscreen, walks its control tree, runs the layout analyzer, and returns
 /// a structured <see cref="InspectResponse"/>. Must be called on the UI thread (enforced by
 /// <see cref="InspectIpcServer"/> via <c>BeginInvoke</c> dispatch).
@@ -42,10 +42,10 @@ internal static class InspectLiveHandler
         var cachedGit = gitCache.TryGetCached(entry.State.Cwd);
         var vm = LiveDashboardVmBuilder.BuildForSession(entry, store, cachedGit, allSessions, DateTimeOffset.UtcNow);
 
-        DashboardForm? form = null;
+        SessionDashboardForm? form = null;
         try
         {
-            form = new DashboardForm(vm, loggerFactory, isPinned: true, isPreviewMode: false);
+            form = new SessionDashboardForm(vm, desktopManager: null, loggerFactory, isPinned: true, isPreviewMode: false);
 
             // Render offscreen — same pattern as DashboardRenderer.
             form.StartPosition = FormStartPosition.Manual;
