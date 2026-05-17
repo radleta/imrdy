@@ -1,11 +1,48 @@
 ---
 tags: [imrdy-expert/dashboard]
-summary: "Hover preview controller must distinguish cursor traversal (grace corridor) from user commitment (click action) — add SurfaceInteracted event for immediate dismiss; post-interaction cooldown prevents ghost re-show when cursor stays in hover bounds after click"
+summary: "HoverDashboardControllerBase owns the dwell/grace state machine; derived controllers plug in domain-specific dispatch (TryHitTestForOurDomain → BuildViewModel → CreateForm → ShowForm → ApplyViewModelUpdate); cross-controller hide protocol via FormShown event wired in TrayApp"
 ---
 
 # Hover Dashboard State Machine
 
-## The Problem
+## Base Controller Dispatch Chain
+
+`HoverDashboardControllerBase` owns the dwell/grace/dismissal state machine. Derived controllers plug in domain-specific behavior via five abstract methods:
+
+| Method | Role |
+|---|---|
+| `TryHitTestForOurDomain(clientX, out item, out hitIndex)` | Hit-test the overlay; return true only for items of this controller's domain type (`DisplayItemType.Session` or `DisplayItemType.Workspace`). Derived calls `_overlayWindow.TryHitTestAtClient` and filters by `item.ItemType`. |
+| `BuildViewModel(item)` | Build the domain VM from the resolved `DisplayItem`. Returns `null` to suppress show (P7 suppression path). |
+| `CreateForm(viewModel)` | Instantiate the domain form from the VM. |
+| `ShowForm(form, viewModel)` | Call the typed `form.Show(TViewModel)` overload. |
+| `ApplyViewModelUpdate(form, viewModel)` | Call the typed `form.Update(TViewModel)` overload. Used by the switch-detection path (cursor moved from item A to item B of the same domain while form was already visible). |
+
+Extension points called by the base state machine:
+- `OnSameItemRefreshTick(currentItem)` — called every `RefreshIntervalTicks=10` (~1s) while form is visible on the same item. `SessionHoverDashboardController` overrides to call `RebuildAndApplyUpdate`; `WorkspaceHoverDashboardController` overrides to rebuild VM with fresh `DateTimeOffset.UtcNow` so `ActivityText` advances.
+- `OnFormShown(item, viewModel, cursor)` — called after the form is shown and pinned. `SessionHoverDashboardController` uses it to kick off async git fetch.
+- `OnFormHidden()` — called when form hides. `SessionHoverDashboardController` uses it to null `_hoveredSessionId`.
+
+### Workspace→Workspace Switch-Detection Requirement
+
+When the user traverses from workspace icon A to workspace icon B while the dashboard is already visible, the base fires `ApplyViewModelUpdate(form, newVm)`. This requires `WorkspaceDashboardForm.Update(vm)` to refresh **all** dynamic fields — not just `_activityLabel`. If any field is missed, the dashboard shows stale data for workspace A. The field-promote pattern (`winforms-update-field-promote.md`) is the guard: every dynamic control must be a class field so `Update(vm)` can reach it.
+
+## Cross-Controller Hide Protocol
+
+Two controllers run simultaneously (session + workspace). Only one dashboard should be visible at a time. The protocol:
+
+1. `HoverDashboardControllerBase.FormShown` event — raised at the end of `TryShowForm`, after `OnFormShown` returns.
+2. `HideIfVisible()` — idempotent method on each controller; triggers the existing fade-out animation if a form is currently shown. No-op when already hidden or already dismissing (`_opacityDirection == -1`).
+3. TrayApp wires the cross-subscribe (P6 — wiring NOT in base ctor):
+   ```csharp
+   _sessionController.FormShown  += () => _workspaceController.HideIfVisible();
+   _workspaceController.FormShown += () => _sessionController.HideIfVisible();
+   ```
+
+**Why wiring belongs in TrayApp:** the base ctor must not subscribe to peers because it doesn't know who its peer is. Subscribing from a derived ctor creates a coupling between peers that is invisible at the call site. TrayApp is the single place that knows both controllers exist — it is the canonical subscription site.
+
+**Anti-pattern**: controllers discovering peers via a shared registry and self-wiring on construction. This makes the hide protocol implicit and breaks when controllers are replaced (e.g., `OnConfigChanged`).
+
+## The Problem (Original — SurfaceInteracted Event)
 
 A hover-preview controller that uses a grace corridor for cursor continuity between overlay icon and form creates an interaction bug. After a click activation:
 

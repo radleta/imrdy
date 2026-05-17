@@ -7,7 +7,7 @@ summary: "imrdy render verb: in-process PNG capture of WinForms surfaces without
 
 ## Overview
 
-`imrdy render <component> [--output <path> | --output-dir <dir>]` produces deterministic PNG artifacts of WinForms UI surfaces without a live screen or running tray process. Phase 1 ships only the `dashboard` component — `DashboardForm` rendered from a `DashboardViewModel` fixture JSON via `Form.DrawToBitmap`.
+`imrdy render <component> [--output <path> | --output-dir <dir>]` produces deterministic PNG artifacts of WinForms UI surfaces without a live screen or running tray process. Phase 1 ships only the `dashboard` component — `SessionDashboardForm` rendered from a `DashboardViewModel` fixture JSON via `Form.DrawToBitmap`.
 
 Key commands:
 - `imrdy render dashboard <fixture.json>` — render a single fixture
@@ -70,7 +70,7 @@ When `--output-dir` is not specified:
 
 ## Visual Seal Protocol
 
-For any UI-bearing change (DashboardForm, overlay, tray icons, menus):
+For any UI-bearing change (SessionDashboardForm, WorkspaceDashboardForm, overlay, tray icons, menus):
 
 1. Build succeeds
 2. Unit and integration tests pass
@@ -90,4 +90,4 @@ These defer per D8 (add on first external consumer, not speculatively).
 ## Related
 
 - [Dev Build Marker & Logging](dev-build-marker-logging.md) — `.dev-build` controls both default output dir and debug logging
-- [Hover Dashboard Form Lifecycle](hover-dashboard-form-lifecycle.md) — `DashboardForm` is the Phase 1 render target; form lifecycle constraints apply equally to preview and render paths
+- [Hover Dashboard Form Lifecycle](hover-dashboard-form-lifecycle.md) — `SessionDashboardForm` is the Phase 1 render target; form lifecycle constraints apply equally to preview and render paths

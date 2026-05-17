@@ -5,7 +5,7 @@ summary: "WinForms Anchor-based layouts: invisible-but-present sibling controls 
 
 ## WinForms Anchor-Based Layouts: Invisible Siblings Steal Width
 
-In `DashboardForm`'s header layout, when a dormant control (e.g., `_personaChip`) is added to `Controls` with `Visible=true` and a non-zero `Width`, it reserves horizontal space even when its text is empty or placeholder text. This forces neighboring `Anchor=Left|Right` controls (like the session-name label) to shrink and triggers `AutoEllipsis` truncation.
+In `SessionDashboardForm`'s header layout, when a dormant control (e.g., `_personaChip`) is added to `Controls` with `Visible=true` and a non-zero `Width`, it reserves horizontal space even when its text is empty or placeholder text. This forces neighboring `Anchor=Left|Right` controls (like the session-name label) to shrink and triggers `AutoEllipsis` truncation.
 
 **The gotcha:** Setting `Visible=false; Width=0` does not always release space cleanly under WinForms Anchor rules. The control still participates in layout calculations.
 

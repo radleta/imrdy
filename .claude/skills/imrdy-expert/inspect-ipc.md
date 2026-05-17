@@ -51,7 +51,7 @@ Full JSON shape documented in `docs/dashboard-inspect-schema.md`.
 
 ## Walker output shape (inspect-live)
 
-`InspectService` (Windows-side, UI-thread-only) walks the live `DashboardForm`:
+`InspectService` (Windows-side, UI-thread-only) walks the live `SessionDashboardForm`:
 
 - **`form`** (`FormGeometry`): `formX`, `formY`, `formWidth`, `formHeight`, `clientWidth`, `clientHeight`, `regionRadius`. Field names are camelCase of the C# record param names — note `formX`/`formWidth` (not `x`/`width`).
 - **`tree`** (`LayoutNode[]`): flat BFS pre-order list. Index 0 is always the form root. Each node carries `type`, `name`, `text` (truncated at 200 chars), bounds (`boundsX/Y/Width/Height`), colors, font, `anchor`, `dock`, `visible`, padding/margin per-edge, `childIndexes` (indexes into the flat list), and `details` (string→string — carries `"row[N]"` computed heights for `TableLayoutPanel` nodes).
@@ -69,7 +69,7 @@ Full JSON shape documented in `docs/dashboard-inspect-schema.md`.
 | `edgeProximity` | `info` | Control is within 4 px of the form client edge | `edges` (comma-separated: `left`, `top`, `right`, `bottom`) |
 | `collapsedRow` | `info` | A `TableLayoutPanel` row height is `"0"` in the node's `details` map | `rowIndex` |
 
-`controlPath` is a slash-separated path from form root to the affected control, e.g. `DashboardForm/TableLayoutPanel[mainLayout]/Panel[sparklinePanel]`. Each segment is `Type` or `Type[Name]` (name omitted when empty).
+`controlPath` is a slash-separated path from form root to the affected control, e.g. `SessionDashboardForm/TableLayoutPanel[mainLayout]/Panel[sparklinePanel]`. Each segment is `Type` or `Type[Name]` (name omitted when empty).
 
 ## Threading model
 

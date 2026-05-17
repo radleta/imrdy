@@ -27,10 +27,10 @@ tests/Imrdy.Integration.Tests/  Integration tests (require built binary)
 ```
 imrdy hook                          → HookCommand (fast-path, no WinForms, reads stdin JSON, writes state file)
 imrdy <command>                     → CommandRouter (status|packs|config|workspace|stop|inspect-live|render-live, Spectre.Console output)
-imrdy preview-dashboard <fixture>   → PreviewDashboardCommand (standalone WinForms dev tool; inline ServiceCollection, bypasses mutex, deserializes DashboardViewModel fixture via ImrdyJsonContext, runs DashboardForm pinned)
+imrdy preview-dashboard <fixture>   → PreviewDashboardCommand (standalone WinForms dev tool; inline ServiceCollection, bypasses mutex, deserializes DashboardViewModel fixture via ImrdyJsonContext, runs SessionDashboardForm pinned)
 imrdy render <component> [args]     → RenderCommand (in-process UI artifact capture; bypasses mutex; placed between preview-dashboard and tray fallback)
 imrdy inspect-live <id>             → InspectLiveCommand (CLI client; connects to tray via Local\ImrdyInspect pipe; prints/writes walker+analyzer JSON)
-imrdy render-live <id> --output F   → RenderLiveCommand (CLI client; connects to tray via Local\ImrdyInspect pipe; captures live DashboardForm PNG)
+imrdy render-live <id> --output F   → RenderLiveCommand (CLI client; connects to tray via Local\ImrdyInspect pipe; captures live SessionDashboardForm PNG)
 imrdy                               → TrayApp (WinForms ApplicationContext, Application.Run, message pump)
 ```
 
@@ -63,15 +63,35 @@ Renders session characters as a horizontal row at the bottom screen edge via `Up
 
 **Tray god toggle**: `TrayConfig.Enabled` (default `true`). `TrayApp` caches `_trayEnabled` at ctor and updates it in `OnConfigChanged`; `ApplyTrayEnabledToAll` shows/hides tray icons without affecting `OverlayWindow`. Re-enable predicate: `shouldShow = !Dismissed && (RemoveAfter is null || RemoveAfter > now)` — prevents dismissed sessions from reappearing.
 
-### Hover Dashboard (Phase 1)
+### Hover Dashboard (Phase 1 — Session + Workspace)
 
-`src/Imrdy.Windows/Dashboard/` contains `DashboardForm` (non-layered WinForms form; full child-control tree implemented — Label+Panel layout per spec mockup at 520 px width; `Form.Opacity` fade animation driven by `HoverDashboardController.OnDrainTick`; DWM mica/acrylic backdrop applied in `OnHandleCreated`; layout complete with visual seal PASSED on all 4 baseline fixtures via mockup-parity sub-plan; edge-case layout fixes applied: chip strip caps at `MaxVisibleChips=8` with a `+N more` overflow chip; footer uses a two-column `TableLayoutPanel` so keyboard hints (`↑↓`/`↵`/`Esc`) stay flush-right regardless of git-branch length; session-name label is 300 px wide with `AutoEllipsis=true` so long names truncate without reflowing the header; sparkline dark background matches form theme — no opaque-white rectangle on empty data) and `SparklineControl` (UserControl; `ReferenceTime` anchor property so fixture-preview paths render correctly — defaults to `DateTimeOffset.UtcNow` when unset; `DesignerSerializationVisibility.Hidden` on `Timestamps` to suppress WFO1000 build error; empty-state renders only the axis baseline — no placeholder that would draw a white fill). `HoverDashboardController` (sealed `IDisposable`; 200ms dwell timer + 300ms grace corridor + 12px bridge gap; create-and-dispose-per-show lifecycle; subscribes to `InteractiveOverlayWindow.SurfaceInteracted` to reset state on user interaction; Debug-level state-machine diagnostics). `TrayApp` instantiates `HoverDashboardController` on construction and wires/unwires it in `OnConfigChanged` and `ExitThreadCore`. `DashboardForm` is pinned to all virtual desktops via `IDesktopManager.PinWindowToAllDesktops` on show so it follows the user across desktops. Dev logging: `ImrdyPaths.DevBuildMarker` (`~/.imrdy/.dev-build`) — when this file exists, `ServiceRegistration.AddSerilog` sets minimum log level to Debug for all processes; `build-dev.sh` touches it after each deploy.
+`src/Imrdy.Windows/Dashboard/` contains two dashboard peers built on a shared base/derived split:
 
-**Focus guard**: `DashboardForm.WndProc` intercepts `WM_MOUSEACTIVATE` and returns `MA_NOACTIVATE` when unpinned / `MA_ACTIVATE` when pinned (early return — no `base.WndProc` for that message, per Raymond Chen). Two-click pin-then-activate is a locked invariant: first body click fires `OnMouseDown → Pin()` WITHOUT `this.Activate()` so terminal focus is preserved; second click activates normally. `OnKeyDown` unpins + hides on Escape. `Pin()` / `Unpin()` / `IsPinned` are the only API around `_isPinned`.
+**Base classes** (shared shell, no domain knowledge):
+- `HoverDashboardFormBase` — abstract WinForms `Form`; owns: `FormBorderStyle.None`, `TopMost`, DWM mica/acrylic backdrop (`OnHandleCreated`), rounded `Region` clip, `WM_MOUSEACTIVATE` focus guard (`MA_NOACTIVATE` when unpinned / `MA_ACTIVATE` when pinned), `Pin()`/`Unpin()`/`IsPinned` API, Escape key handler (`OnKeyDown` unpins + hides), adaptive screen-aware anchor-edge placement (`PlaceWithAnchor`, screen-aware above/below flip, multi-monitor X clamp). Form shell width = 520 px (`FormMinWidth`). `FormatDuration` is a thin delegating wrapper to `RelativeTimeFormatter` in `Imrdy.Core.Time`. All shared palette colors (`BgForm`, `FgPrimary`, `FgSecondary`, `FgMuted`, `BgFooter`) and `BridgeGap` (12 px) declared as `protected static`.
+- `HoverDashboardControllerBase` — abstract `IDisposable`; owns: dwell/grace/dismissal state machine (200ms dwell, 300ms grace corridor, 12px bridge gap), `Form.Opacity` fade animation (+0.5/-0.5 per tick), create-and-dispose-per-show form lifecycle, diagnostic heartbeat (Debug log every 10th tick), `FormShown` event (raised after `TryShowForm` completes — peer controller subscribes via TrayApp to call `HideIfVisible`), `HideIfVisible()` (idempotent, triggers existing fade-out). Abstract dispatch chain: `TryHitTestForOurDomain` → `BuildViewModel` → `CreateForm` → `ShowForm` → `ApplyViewModelUpdate`. Extension points: `OnSameItemRefreshTick`, `OnFormShown`, `OnFormHidden`.
 
-**Post-interaction cooldown**: `HoverDashboardController._awaitingOverlayExit` is set true in `HandleSurfaceInteraction` (after user clicks overlay to activate a session) and cleared on the first drain tick where `cursorInOverlay == false`. While true, `OnDrainTick` short-circuits the dwell branch — prevents ghost re-show of the dashboard when the cursor remains on the overlay row after a click. Distinct from the 300ms grace corridor, which protects cursor traversal while the form is visible.
+**P6 — TrayApp owns all subscription wiring**: the base ctor does NOT subscribe to `InteractiveOverlayWindow.SurfaceInteracted`; TrayApp calls both controllers' `HandleSurfaceInteraction()` directly. The cross-controller hide protocol (`FormShown += peer.HideIfVisible`) is also wired by TrayApp, NOT by the base ctor or derived ctors.
 
-**Diagnostic heartbeat**: `HoverDashboardController` emits a state-dump Debug log every 10th drain tick (~1/sec when tray runs) with cursor position, overlay bounds, `cursorInOverlay`, `_awaitingOverlayExit`, `_dwellTicks`, `_wasInOverlayLastTick`, form-visible. Plus symmetric enter/exit-overlay transition logs, bounds-change log, and null-controller guard log in `TrayApp.OnHoverDrainTick`. Gated by the `.dev-build` marker; prod-silent.
+**Session peer** (`SessionDashboardForm` + `SessionHoverDashboardController`):
+- `SessionDashboardForm` (non-layered; Label+Panel layout at 520 px; chip strip `MaxVisibleChips=8` + `+N more` overflow; two-column footer `TableLayoutPanel` with keyboard hints flush-right; 300 px session-name label with `AutoEllipsis=true`; sparkline dark background). `SparklineControl` (UserControl; `ReferenceTime` anchor property defaults to `DateTimeOffset.UtcNow` when unset; `DesignerSerializationVisibility.Hidden` to suppress WFO1000; empty-state renders only axis baseline).
+- `SessionHoverDashboardController`: `TryHitTestForOurDomain` filters by `DisplayItemType.Session`; `BuildViewModel` calls `LiveDashboardVmBuilder.BuildForSession`; `OnSameItemRefreshTick` override calls `RebuildAndApplyUpdate` every `RefreshIntervalTicks=10` (~1s) for live session-state refresh; `OnFormShown` kicks off async git fetch; `OnFormHidden` clears `_hoveredSessionId`.
+
+**Workspace peer** (`WorkspaceDashboardForm` + `WorkspaceHoverDashboardController`):
+- `WorkspaceDashboardForm`: header (Name + Desktop chip + Path + IconStyle chip), activity row, conditional git row (`SetRowVisible` toggles height 0 ↔ 36 when `Git` is null), footer. All dynamic controls are class fields (field-promote pattern); `Update(vm)` is the sole content source and refreshes every dynamic field. `SetRowVisible(rowIndex, visible, height)` toggles `TableLayoutPanel` `RowStyle.Height` — same pattern as `SessionDashboardForm`.
+- `WorkspaceHoverDashboardController`: `TryHitTestForOurDomain` filters by `DisplayItemType.Workspace`; `BuildViewModel` calls `WorkspaceStore.Load()` per build (no cache — YAGNI) then `WorkspaceDashboardViewModelBuilder.Build(entry, git, currentDesktopIndex, lastSeenAt, now)`; `OnSameItemRefreshTick` override rebuilds VM with fresh `DateTimeOffset.UtcNow` every ~1s so the `ActivityText` "ago" string advances while visible.
+
+**VM-as-complete-render-contract**: `WorkspaceDashboardViewModel` carries `ActivityText` (precomputed "active Xh Ym ago" or "never seen" string). `WorkspaceDashboardViewModelBuilder.Build` takes an explicit `DateTimeOffset now` parameter — pure function, deterministic for visual seal tests. `WorkspaceDashboardForm` has zero clock reads.
+
+**`RelativeTimeFormatter`** in `Imrdy.Core.Time` — pure Core utility; `HoverDashboardFormBase.FormatDuration` is a thin delegating wrapper.
+
+**Cross-controller hide protocol**: `HoverDashboardControllerBase.FormShown` is raised at end of `TryShowForm` after `OnFormShown` returns. `HideIfVisible()` is idempotent and reuses the fade-out path. TrayApp wires: `_sessionController.FormShown += () => _workspaceController.HideIfVisible()` and vice-versa. Result: session→workspace or workspace→workspace traversal always shows exactly one dashboard.
+
+**Focus guard**: `HoverDashboardFormBase.WndProc` intercepts `WM_MOUSEACTIVATE` and returns `MA_NOACTIVATE` when unpinned / `MA_ACTIVATE` when pinned (early return — no `base.WndProc` for that message, per Raymond Chen). Two-click pin-then-activate is a locked invariant: first body click fires `OnMouseDown → Pin()` WITHOUT `this.Activate()` so terminal focus is preserved; second click activates normally. `OnKeyDown` unpins + hides on Escape. `Pin()` / `Unpin()` / `IsPinned` are the only API around `_isPinned`.
+
+**Post-interaction cooldown**: `HoverDashboardControllerBase._awaitingOverlayExit` is set true in `HandleSurfaceInteraction` (after user clicks overlay to activate a session/workspace) and cleared on the first drain tick where `cursorInOverlay == false`. While true, `OnDrainTick` short-circuits the dwell branch — prevents ghost re-show of the dashboard when the cursor remains on the overlay row after a click. Distinct from the 300ms grace corridor, which protects cursor traversal while the form is visible.
+
+**Diagnostic heartbeat**: `HoverDashboardControllerBase` emits a state-dump Debug log every 10th drain tick (~1/sec when tray runs) with cursor position, overlay bounds, `cursorInOverlay`, `_awaitingOverlayExit`, `_dwellTicks`, `_wasInOverlayLastTick`, form-visible. Plus symmetric enter/exit-overlay transition logs, bounds-change log, and null-controller guard log in `TrayApp.OnHoverDrainTick`. Gated by the `.dev-build` marker; prod-silent. Dashboard forms pinned to all virtual desktops via raw `IVirtualDesktopPinnedApps` vtable dispatch on show.
 
 ### Live-Inspect IPC
 
@@ -81,7 +101,7 @@ Renders session characters as a horizontal row at the bottom screen edge via `Up
 - **Protocol**: 4-byte little-endian length prefix + UTF-8 JSON body, both directions. Request: `InspectRequest(Verb, SessionId, OutputPath?)`. Response: `InspectResponse(SchemaVersion, Verb, Error?, Render?, Inspect?)`.
 - **Concurrency**: 4 parallel `NamedPipeServerStream` accept loops (one `Task.Run` per slot); each loop creates a fresh server stream per connection and disposes it after. Max request body: 4 KiB.
 - **Threading**: Each accepted request is dispatched to the UI thread via `Control.BeginInvoke` + `TaskCompletionSource` bridge. Handler has a 2-second budget; `TimeoutException` produces an error response rather than hanging the pipe.
-- **Walker**: `InspectService` in `src/Imrdy.Windows/Diagnostics/` — WinForms-dependent, walks the live `DashboardForm` control tree on the UI thread, emits flat BFS-order `LayoutNode[]`. Stateless per-call.
+- **Walker**: `InspectService` in `src/Imrdy.Windows/Diagnostics/` — WinForms-dependent, walks the live `SessionDashboardForm` control tree on the UI thread, emits flat BFS-order `LayoutNode[]`. Stateless per-call.
 - **Analyzer**: `LayoutAnalyzer` in `src/Imrdy.Core/Diagnostics/` — pure/stateless, no WinForms dependency. Four detectors: `regionClipRisk`, `siblingOverlap`, `edgeProximity`, `collapsedRow`. Produces `DiagnosticFinding` list with `ControlPath` (slash-separated), `Severity` (`info`/`warning`/`error`), `Details` dict.
 - **DRY VM builder**: `LiveDashboardVmBuilder` (extracted from `HoverDashboardController`) builds `DashboardViewModel` from session state — shared by `HoverDashboardController`, `InspectLiveHandler`, and `RenderLiveHandler`.
 - **Dev-default gate**: `DiagnosticsConfig.IpcEnabled` (`bool?` in `ImrdyConfig.Diagnostics`). Runtime resolution: `IpcEnabled ?? File.Exists(ImrdyPaths.DevBuildMarker)`. Null = on-in-dev, off-in-prod. Callers use the `?? File.Exists(...)` idiom directly; `EnsureDefaults` does NOT flatten it to a concrete bool (three-state semantics are intentional).
@@ -91,11 +111,11 @@ Renders session characters as a horizontal row at the bottom screen edge via `Up
 
 ### Render Verb
 
-`imrdy render <component> [inputs] [--output <path> | --output-dir <dir>]` produces in-process artifacts of imrdy UI surfaces. Phase 1 ships only the `dashboard` component — `DashboardForm` rendered from a `DashboardViewModel` fixture JSON, via `Form.DrawToBitmap` (no screen, deterministic, integration-test friendly). `imrdy render --list` enumerates registered components; `imrdy render --all --output-dir <dir>` renders every fixture of every component. Sequential execution on the main STA thread; SIGINT cancels between fixtures with exit 130.
+`imrdy render <component> [inputs] [--output <path> | --output-dir <dir>]` produces in-process artifacts of imrdy UI surfaces. Phase 1 ships only the `dashboard` component — `SessionDashboardForm` rendered from a `DashboardViewModel` fixture JSON, via `Form.DrawToBitmap` (no screen, deterministic, integration-test friendly). `imrdy render --list` enumerates registered components; `imrdy render --all --output-dir <dir>` renders every fixture of every component. Sequential execution on the main STA thread; SIGINT cancels between fixtures with exit 130.
 
 Pure contracts (`IRenderableSurface`, `RenderContext`, `RenderResult`) live in `Imrdy.Core/Rendering/`; concrete renderers and the `RenderRegistry` live in `Imrdy.Windows/Rendering/` (WinForms-dependent). The `"render"` branch in `Program.cs` sits between `preview-dashboard` and the tray fallback, bypasses `Global\ImrdyMonitor` (same as preview-dashboard), and initialises WinForms before dispatching.
 
-Protocol: for any UI-bearing change (DashboardForm, overlay, tray icons, menus) run `imrdy render --all` after a successful build and inspect every PNG before declaring work complete. A passing verifier wave is not a substitute for visual verification (see `~/.wiki-memory/verify-fix-loop-expert/platform-boundary-three-seal-gate.md`).
+Protocol: for any UI-bearing change (SessionDashboardForm, WorkspaceDashboardForm, overlay, tray icons, menus) run `imrdy render --all` after a successful build and inspect every PNG before declaring work complete. A passing verifier wave is not a substitute for visual verification (see `~/.wiki-memory/verify-fix-loop-expert/platform-boundary-three-seal-gate.md`).
 
 ### Notification Dwell
 
@@ -107,7 +127,7 @@ Protocol: for any UI-bearing change (DashboardForm, overlay, tray icons, menus) 
 
 ```bash
 dotnet build                                    # Debug build
-dotnet test --filter "Category!=Integration&Category!=Benchmark"  # Unit tests only (556 tests)
+dotnet test --filter "Category!=Integration&Category!=Benchmark"  # Unit tests only (628 tests)
 ./build-dev.sh                                  # Publish → stop tray → deploy to ~/.local/bin/ → auto-respawn → touches ~/.imrdy/.dev-build (enables default-Debug dev logging)
 ```
 

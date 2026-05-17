@@ -75,8 +75,8 @@ imrdy workspace unpin <p> Unpin a workspace
 
 imrdy stop                Stop the tray app (auto-restarts on next hook)
 
-imrdy inspect-live <id>   Walk the live DashboardForm for <id> and emit control-tree JSON + diagnostics
-imrdy render-live <id>    Capture a live DashboardForm PNG for <id> via the tray IPC server
+imrdy inspect-live <id>   Walk the live SessionDashboardForm for <id> and emit control-tree JSON + diagnostics
+imrdy render-live <id>    Capture a live SessionDashboardForm PNG for <id> via the tray IPC server
 
 imrdy --help              Show help
 imrdy --version           Show version

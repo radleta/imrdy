@@ -1,13 +1,38 @@
 ---
 tags: [imrdy-expert/dashboard]
-summary: "Non-layered DashboardForm: adaptive screen-aware anchoring + recreate-per-show for virtual desktop binding + IVirtualDesktopPinnedApps for persistence"
+summary: "HoverDashboardFormBase owns the shared shell (DWM, focus guard, pin/unpin, anchor placement); derived forms (SessionDashboardForm, WorkspaceDashboardForm) own their content panels — field-promote all dynamic controls for Update(vm) access"
 ---
 
 # Hover Dashboard Form Lifecycle
 
+## Base / Derived Split
+
+`HoverDashboardFormBase` (abstract `Form`) owns the shared shell that both dashboard peers need:
+
+- `FormBorderStyle.None`, `TopMost=true`, `ShowInTaskbar=false`
+- DWM mica/acrylic backdrop applied in `OnHandleCreated`
+- Rounded `Region` clip (radius 14)
+- `WM_MOUSEACTIVATE` focus guard (`MA_NOACTIVATE` when unpinned / `MA_ACTIVATE` when pinned)
+- `Pin()` / `Unpin()` / `IsPinned` API — two-click pin-then-activate invariant
+- Escape key handler — `OnKeyDown` unpins + hides
+- Adaptive screen-aware anchor-edge placement (`PlaceWithAnchor` — above/below flip + multi-monitor X clamp)
+- `FormatDuration` — thin delegating wrapper to `RelativeTimeFormatter` in `Imrdy.Core.Time`
+- Shared palette (`BgForm`, `FgPrimary`, `FgSecondary`, `FgMuted`, `BgFooter`) and `BridgeGap=12` as `protected static`
+- `FormMinWidth = 520` declared on base so derived forms seed inner widths consistently
+
+Derived classes own their **content panel only**:
+- `SessionDashboardForm` — chip strip, sparkline, git footer, fleet strip
+- `WorkspaceDashboardForm` — header (Name + Desktop), activity row, conditional git row, footer
+
+**Field-promote pattern**: every control whose text/visibility/colors change per-VM must be declared as a class field. `Update(vm)` is the sole content source — locals inside helper methods are unreachable from `Update`. See [WinForms Update Field-Promote](winforms-update-field-promote.md).
+
+**Conditional rows**: use `SetRowVisible(rowIndex, visible, height)` to toggle `TableLayoutPanel.RowStyle.Height` between 0 (hidden) and the normal height (visible). Both `SessionDashboardForm` and `WorkspaceDashboardForm` use this pattern for the git row.
+
+**BuildLayout / Update split**: ctor calls `BuildLayout()` (VM-agnostic skeleton: create controls, add to layout, wire fonts/colors) then `Update(vm)` (sole content source: assign text, set visibility, rebuild chip lists). On each VM refresh, only `Update(vm)` is called — no re-layout.
+
 ## The Challenge
 
-A non-layered top-level WinForms `DashboardForm` must appear instantly on hover (200ms dwell) **on whichever virtual desktop the user is currently viewing**. Three problems collide:
+A non-layered top-level WinForms form must appear instantly on hover (200ms dwell) **on whichever virtual desktop the user is currently viewing**. Three problems collide:
 
 1. **Virtual desktop binding:** Non-layered forms are automatically bound to the desktop they were created on. Once bound, the form is invisible on all other desktops.
 2. **Geometry constraints:** The overlay defaults to the bottom of the screen, so a downward-tether form would be created off-screen. Screen awareness is required.
@@ -84,7 +109,7 @@ _desktopManager.MoveWindowToCurrentDesktop(_form.Handle);  // ← S_OK but no-op
 private void TryShowForm()
 {
     DisposeForm();  // Clean up old form if any
-    _form = new DashboardForm(...);
+    _form = new SessionDashboardForm(...);
     
     var screen = Screen.FromControl(_overlayWindow);
     var workingArea = screen.WorkingArea;
@@ -114,7 +139,7 @@ private void DisposeForm()
 ```
 
 **Why this is cheap enough:**
-- DashboardForm is a lightweight non-layered WinForms Form.
+- SessionDashboardForm is a lightweight non-layered WinForms Form.
 - Even with full child-control layout (step 05), recreation is <50ms (acceptable within the 200ms dwell delay).
 - No `MoveWindowToDesktop` call needed — Windows binds each new form to the current desktop at creation time automatically.
 

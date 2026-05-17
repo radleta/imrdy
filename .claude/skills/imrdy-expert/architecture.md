@@ -11,10 +11,10 @@ summary: "Seven entry points, timer interactions, field preservation, and state 
 |---------|-------|---------|
 | `imrdy hook` | HookCommand | Fast-path: read stdin JSON, derive status, write state file. No WinForms. Lightweight DI via HookServiceBuilder. |
 | `imrdy <cmd>` | CommandRouter | CLI commands (status, packs, config, workspace, stop, inspect-live, render-live). Spectre.Console output. |
-| `imrdy preview-dashboard <fixture>` | PreviewDashboardCommand | Standalone WinForms dev tool; inline ServiceCollection, bypasses mutex, runs DashboardForm pinned from fixture JSON. |
+| `imrdy preview-dashboard <fixture>` | PreviewDashboardCommand | Standalone WinForms dev tool; inline ServiceCollection, bypasses mutex, runs SessionDashboardForm pinned from fixture JSON. |
 | `imrdy render <component> [args]` | RenderCommand | In-process PNG capture of WinForms surfaces; bypasses mutex; sequential STA execution. See [Render Verb Architecture](render-verb-architecture.md). |
 | `imrdy inspect-live <id>` | InspectLiveCommand | Thin CLI client: connects to tray via `Local\ImrdyInspect` pipe, emits walker+analyzer JSON. |
-| `imrdy render-live <id> --output F` | RenderLiveCommand | Thin CLI client: connects to tray via `Local\ImrdyInspect` pipe, captures live DashboardForm PNG. |
+| `imrdy render-live <id> --output F` | RenderLiveCommand | Thin CLI client: connects to tray via `Local\ImrdyInspect` pipe, captures live SessionDashboardForm PNG. |
 | `imrdy` | TrayApp | WinForms ApplicationContext. Application.Run with message pump. Full DI via MonitorServiceBuilder. |
 
 The hook runs hundreds of times per session. It must be fast (~50ms). No COM, no WinForms initialization. The `inspect-live` and `render-live` commands are thin clients — all heavy work (walking, rendering) runs inside the already-running tray on the UI thread via `BeginInvoke` + `TaskCompletionSource` bridge. See [Tray IPC](inspect-ipc.md) for protocol details.

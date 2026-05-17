@@ -1,6 +1,6 @@
 # Dashboard Inspect Schema (v1)
 
-`imrdy inspect-live` returns a JSON document describing the live DashboardForm control tree
+`imrdy inspect-live` returns a JSON document describing the live SessionDashboardForm control tree
 and any layout diagnostics. Agents use this for automated UI verification.
 
 ## Top-level shape
@@ -39,7 +39,7 @@ and any layout diagnostics. Agents use this for automated UI verification.
 | `formX`, `formY` | `int` | Screen position of the form |
 | `formWidth`, `formHeight` | `int` | Form outer dimensions |
 | `clientWidth`, `clientHeight` | `int` | Client area (inside borders/title bar) |
-| `regionRadius` | `int` | Rounded-rect clip radius applied to `Form.Region` (14 for DashboardForm) |
+| `regionRadius` | `int` | Rounded-rect clip radius applied to `Form.Region` (14 for SessionDashboardForm) |
 
 ## LayoutNode fields
 
@@ -87,7 +87,7 @@ Index 0 is always the form root.
 |---|---|---|
 | `kind` | `string` | Discriminator — see kinds below |
 | `severity` | `string` | `"info"`, `"warning"`, or `"error"` |
-| `controlPath` | `string` | Slash-separated path from form root to the offending control (e.g. `DashboardForm/Panel[header]/Label[title]`) |
+| `controlPath` | `string` | Slash-separated path from form root to the offending control (e.g. `SessionDashboardForm/Panel[header]/Label[title]`) |
 | `message` | `string` | Human-readable description |
 | `details` | `{string: string}` | Supplementary key-value data (pixel measurements, thresholds, etc.); always present, never null — empty `{}` when unused |
 
@@ -140,7 +140,7 @@ Exit codes: `0` success / `1` user-input error (session not found, bad args) / `
     },
     "tree": [
       {
-        "type": "DashboardForm",
+        "type": "SessionDashboardForm",
         "name": "",
         "text": "",
         "boundsX": 0, "boundsY": 0,
@@ -159,7 +159,7 @@ Exit codes: `0` success / `1` user-input error (session not found, bad args) / `
       {
         "kind": "collapsedRow",
         "severity": "info",
-        "controlPath": "DashboardForm/TableLayoutPanel[mainLayout]",
+        "controlPath": "SessionDashboardForm/TableLayoutPanel[mainLayout]",
         "message": "row 4 collapsed",
         "details": { "rowIndex": "4" }
       }
@@ -183,7 +183,7 @@ Error response (session not found):
 
 ## render-live verb
 
-`imrdy render-live <session-id> --output <path>` captures the live DashboardForm for a session
+`imrdy render-live <session-id> --output <path>` captures the live SessionDashboardForm for a session
 as a PNG. The `--output` path is **required** and must be absolute (the tray validates this
 server-side).
 

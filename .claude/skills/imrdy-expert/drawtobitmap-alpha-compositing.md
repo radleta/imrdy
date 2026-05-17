@@ -13,7 +13,7 @@ The design system `Border` constant (`Color.FromArgb(20, 255, 255, 255)`, ~8% wh
 
 ## Application
 
-In `DashboardForm.OnPaint` overrides and child Panel `Paint` event handlers:
+In `SessionDashboardForm.OnPaint` overrides and child Panel `Paint` event handlers:
 - Border-left decorative lines: use `Color.FromArgb(80, 255, 255, 255)` or higher
 - Separator lines: use `Color.FromArgb(100, 255, 255, 255)` or higher
 - Nested child control Paint events: same rule applies if the control tree is rendered via `DrawToBitmap`
