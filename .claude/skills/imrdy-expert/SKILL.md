@@ -40,6 +40,7 @@ You are an expert in the imrdy project — a Windows system tray monitor for Cla
 - [WSLENV Distro Identity Gap](wslenv-distro-not-forwarded.md) — WSLENV doesn't auto-forward WSL_DISTRO_NAME; Windows binaries can't self-identify source distro
 - [WSL_DISTRO_NAME Env Var Gotcha](wsl-distro-env-var-gotcha.md) — WSL_DISTRO_NAME env var requires explicit pickup via IHookEnvironment; code exists but fallback was never wired
 - [HookServiceBuilder Relocation](hook-service-builder-relocation.md) — HookServiceBuilder relocated from Imrdy.Windows.DI to Imrdy.Core.Hooks to enable cross-platform consumer access
+- [overlay-rendering-internals](overlay-rendering-internals.md) — Overlay bitmap cache keyed by (style,status,tier); aging ColorMatrix formula; ActualScreenBounds/GetActualWindowRect necessity on WS_EX_LAYERED+WS_EX_TOOLWINDOW forms; SetBitmap DC ownership rules
 
 ## Meta
 

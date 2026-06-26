@@ -51,3 +51,5 @@
 
 - Migrated from old-format wiki to wiki-backed skill via skill-edit (imrdy-WSL Step 04 post-approval)
 - Pages: wsl-interop-baseline.md, wslenv-distro-not-forwarded.md moved from old wiki
+2026-06-25T21:11:50Z created overlay-rendering-internals
+2026-06-25T21:12:38Z updated display-item-vs-session-identity
