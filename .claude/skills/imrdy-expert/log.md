@@ -53,3 +53,6 @@
 - Pages: wsl-interop-baseline.md, wslenv-distro-not-forwarded.md moved from old wiki
 2026-06-25T21:11:50Z created overlay-rendering-internals
 2026-06-25T21:12:38Z updated display-item-vs-session-identity
+2026-06-26T21:22:45Z created displayitem-source-gen-gotcha
+2026-06-26T21:22:53Z created stj-source-gen-interface-caveat
+2026-06-26T21:22:59Z created render-fixture-offscreen-pattern
