@@ -265,8 +265,8 @@ internal sealed class TrayApp : ApplicationContext, ISessionInteractionRouter
             NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.CreationTime,
             EnableRaisingEvents = true,
         };
-        _configWatcher.Changed += OnSoundConfigFileChanged;
-        _configWatcher.Created += OnSoundConfigFileChanged;
+        _configWatcher.Changed += OnConfigFileChanged;
+        _configWatcher.Created += OnConfigFileChanged;
         // NO _configWatcher.Deleted subscription — atomic write briefly deletes the file
     }
 
@@ -333,9 +333,9 @@ internal sealed class TrayApp : ApplicationContext, ISessionInteractionRouter
         _pendingChanges.Enqueue("WORKSPACE_RELOAD");
     }
 
-    private void OnSoundConfigFileChanged(object sender, FileSystemEventArgs e)
+    private void OnConfigFileChanged(object sender, FileSystemEventArgs e)
     {
-        _pendingChanges.Enqueue("SOUND_CONFIG_RELOAD");
+        _pendingChanges.Enqueue("CONFIG_RELOAD");
     }
 
     // --- Timer Callbacks (UI thread) ---
@@ -352,9 +352,16 @@ internal sealed class TrayApp : ApplicationContext, ISessionInteractionRouter
                     continue; // Debounce: skip duplicate events in same drain cycle
                 }
 
-                if (item == "SOUND_CONFIG_RELOAD")
+                if (item == "CONFIG_RELOAD")
                 {
-                    LoadSoundConfig();
+                    try
+                    {
+                        OnConfigChanged(ConfigReader.Read());
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Failed to live-reload config from file change");
+                    }
                 }
                 else if (item == "WORKSPACE_RELOAD")
                 {
@@ -1745,7 +1752,7 @@ internal sealed class TrayApp : ApplicationContext, ISessionInteractionRouter
         _loadedPacks = _packLoader.LoadPacks(ImrdyPaths.PacksDir);
         _soundBags.Clear();
         _balloonTipManager.SuppressSystemSound = _loadedPacks.Count > 0 && _soundEnabled;
-        _logger.LogDebug("Config updated from controller menu: enabled={Enabled}, default={Default}",
+        _logger.LogDebug("Config reloaded: enabled={Enabled}, default={Default}",
             config.Sound.Enabled, config.Sound.DefaultPack);
 
         var newIconStyle = StyleNames.NormalizeStyleName(config.Tray.IconStyle) ?? "circles";

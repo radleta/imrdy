@@ -1,5 +1,11 @@
 # Operations Log
 
+## 2026-06-27 ingest | config live-reload FSW behavior
+
+- New page: config-live-reload.md (config.json FSW → CONFIG_RELOAD token → OnConfigChanged; full reload scope: sound + icon style + tray god toggle + overlay; startup uses LoadSoundConfig separately; FSW subscribes Changed+Created for AtomicFileWriter delete-then-move)
+- SKILL.md ## Pages updated with config-live-reload entry after state-file-write-path
+- Source: TrayApp.cs fix that routed config FSW drain through OnConfigChanged instead of sound-only LoadSoundConfig; verified live in tray (overlay.enabled toggle applies without restart)
+
 ## 2026-05-16 ingest | WT desktop routing page + sweep-timer drift fix
 
 - New page: wt-desktop-routing.md (3-step SwitchToSessionDesktop, pinned-vs-dynamic target, WT exclusion from dynamic lookup, compare-desktops focus guard, SessionStart-only auto-lock, residual race-loss reference)
