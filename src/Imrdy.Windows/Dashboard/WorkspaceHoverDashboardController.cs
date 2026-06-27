@@ -29,7 +29,7 @@ internal sealed class WorkspaceHoverDashboardController : HoverDashboardControll
     private readonly GitInfoCache _gitCache;
 
     public WorkspaceHoverDashboardController(
-        InteractiveOverlayWindow overlayWindow,
+        OverlayPanel overlayWindow,
         IDesktopManager? desktopManager,
         ILoggerFactory loggerFactory,
         WorkspaceStore workspaceStore,

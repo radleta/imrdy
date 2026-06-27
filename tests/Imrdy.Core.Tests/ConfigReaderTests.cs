@@ -188,7 +188,7 @@ public class ConfigReaderTests : IDisposable
         config.Overlay.Enabled.Should().BeFalse();
         config.Overlay.Position.Should().Be("bottom-right");
         config.Overlay.Size.Should().Be(64);
-        config.Overlay.Spacing.Should().Be(4);
+        config.Overlay.Spacing.Should().Be(8);
     }
 
     [Fact]
@@ -215,7 +215,7 @@ public class ConfigReaderTests : IDisposable
         config.Overlay.Enabled.Should().BeFalse();
         config.Overlay.Position.Should().Be("bottom-right");
         config.Overlay.Size.Should().Be(64);
-        config.Overlay.Spacing.Should().Be(4);
+        config.Overlay.Spacing.Should().Be(8);
     }
 
     [Fact]
@@ -229,35 +229,38 @@ public class ConfigReaderTests : IDisposable
     }
 
     [Fact]
-    public void Read_ConfigMissingInteractiveField_DefaultsToTrue()
+    public void Read_MissingOverlay_MonitorDefaultsToZero()
+    {
+        File.WriteAllText(_configPath, "{}");
+
+        var config = ConfigReader.Read();
+
+        config.Overlay.Monitor.Should().Be(0);
+    }
+
+    [Fact]
+    public void Read_MissingMonitorField_DefaultsToZero()
     {
         File.WriteAllText(_configPath, """{"overlay":{"enabled":true,"position":"bottom-left","size":48,"spacing":2}}""");
 
         var config = ConfigReader.Read();
 
-        config.Overlay.Interactive.Should().BeTrue();
+        config.Overlay.Monitor.Should().Be(0);
         config.Overlay.Position.Should().Be("bottom-left");
         config.Overlay.Size.Should().Be(48);
         config.Overlay.Spacing.Should().Be(2);
     }
 
     [Fact]
-    public void Read_ConfigInteractiveFalse_Preserved()
+    public void Read_StaleInteractiveKey_DeserializesWithoutCrash()
     {
-        File.WriteAllText(_configPath, """{"overlay":{"interactive":false}}""");
+        // A config.json written by an older version may still contain "overlay.interactive".
+        // STJ ignores unknown members by default; this must not throw.
+        File.WriteAllText(_configPath, """{"overlay":{"enabled":true,"interactive":false,"position":"bottom-right","size":64,"spacing":8}}""");
 
         var config = ConfigReader.Read();
 
-        config.Overlay.Interactive.Should().BeFalse();
-    }
-
-    [Fact]
-    public void Read_MissingOverlay_InteractiveDefaultsToTrue()
-    {
-        File.WriteAllText(_configPath, "{}");
-
-        var config = ConfigReader.Read();
-
-        config.Overlay.Interactive.Should().BeTrue();
+        config.Overlay.Enabled.Should().BeTrue();
+        config.Overlay.Position.Should().Be("bottom-right");
     }
 }

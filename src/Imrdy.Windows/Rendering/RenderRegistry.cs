@@ -7,6 +7,6 @@ namespace Imrdy.Windows.Rendering;
 /// </summary>
 internal static class RenderRegistry
 {
-    // Phase 2+: add new OverlayRenderer(), new TrayIconRenderer(), new MenuRenderer() here.
-    public static IReadOnlyList<IRenderableSurface> Components { get; } = [new DashboardRenderer(), new WorkspaceDashboardRenderer()];
+    // Phase 2+: add new TrayIconRenderer(), new MenuRenderer() here.
+    public static IReadOnlyList<IRenderableSurface> Components { get; } = [new DashboardRenderer(), new WorkspaceDashboardRenderer(), new OverlayRenderer()];
 }

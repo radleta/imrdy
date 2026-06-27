@@ -1,10 +1,9 @@
 using System.Diagnostics;
 using System.Drawing;
-using System.Drawing.Drawing2D;
-using System.Runtime.InteropServices;
 using System.Windows.Forms;
 using Imrdy.Core.Desktop;
 using Imrdy.Core.Time;
+using Imrdy.Windows.Theme;
 using Microsoft.Extensions.Logging;
 
 namespace Imrdy.Windows.Dashboard;
@@ -26,25 +25,9 @@ internal abstract class HoverDashboardFormBase : Form
     private const int MA_ACTIVATE      = 1;
     private const int MA_NOACTIVATE    = 3;
 
-    // DWM backdrop constants
-    private const int DWMWA_SYSTEMBACKDROP_TYPE = 38;
-    private const int DWMSBT_MAINWINDOW         = 2; // Mica
-
-    [DllImport("dwmapi.dll")]
-    private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int attrValue, int attrSize);
-
     // 12px bridge gap between overlay bottom and form top — used by subclasses and by
     // ComputeAnchorPlacement. Stored on the base so WorkspaceDashboardForm uses the same gap.
     protected const int BridgeGap = 12;
-
-    // Colors matching dashboard-ultra.html design. Shared by SessionDashboardForm and
-    // WorkspaceDashboardForm. Session-only colors (BgFleet, Border) remain private in
-    // SessionDashboardForm.
-    protected static readonly Color BgForm      = Color.FromArgb(28, 30, 38);
-    protected static readonly Color FgPrimary   = Color.FromArgb(232, 234, 240);
-    protected static readonly Color FgSecondary = Color.FromArgb(155, 161, 173);
-    protected static readonly Color FgMuted     = Color.FromArgb(107, 111, 122);
-    protected static readonly Color BgFooter    = Color.FromArgb(18, 18, 24);
 
     private bool _isPinned;
     protected readonly IDesktopManager? _desktopManager;
@@ -266,18 +249,7 @@ internal abstract class HoverDashboardFormBase : Form
     protected override void OnHandleCreated(EventArgs e)
     {
         base.OnHandleCreated(e);
-        try
-        {
-            var backdropType = DWMSBT_MAINWINDOW;
-            var hr = DwmSetWindowAttribute(Handle, DWMWA_SYSTEMBACKDROP_TYPE, ref backdropType, sizeof(int));
-            if (hr != 0)
-                _baseLogger.LogDebug("HoverDashboardFormBase: DwmSetWindowAttribute HRESULT=0x{Hr:X8} (expected on Win10)", hr);
-        }
-        catch (Exception ex)
-        {
-            _baseLogger.LogDebug(ex, "HoverDashboardFormBase: DwmSetWindowAttribute threw (expected on Win10)");
-        }
-
+        ImrdyPalette.ApplyMica(this);
         ApplyRoundedRegion();
         _baseLogger.LogDebug(
             "HoverDashboardFormBase: handle-created formBounds={Bounds} clientSize={CW}x{CH} regionRadius=14",
@@ -396,7 +368,7 @@ internal abstract class HoverDashboardFormBase : Form
         {
             Text      = text,
             Font      = font,
-            ForeColor = FgSecondary,
+            ForeColor = ImrdyPalette.FgSecondary,
             BackColor = Color.FromArgb(20, 255, 255, 255),
             AutoSize  = true,
             Padding   = new Padding(5, 1, 5, 1),
@@ -419,7 +391,7 @@ internal abstract class HoverDashboardFormBase : Form
         {
             Text      = text,
             Font      = new Font("Segoe UI", 9f, FontStyle.Regular, GraphicsUnit.Point),
-            ForeColor = FgMuted,
+            ForeColor = ImrdyPalette.FgMuted,
             BackColor = Color.Transparent,
             AutoSize  = true,
             Padding   = Padding.Empty,
@@ -434,19 +406,5 @@ internal abstract class HoverDashboardFormBase : Form
     /// The previous Region is disposed before replacing.
     /// </summary>
     private void ApplyRoundedRegion()
-    {
-        if (Width <= 0 || Height <= 0) return;
-        const int radius   = 14;
-        var path           = new GraphicsPath();
-        var diameter       = radius * 2;
-        path.AddArc(0,                   0,                    diameter, diameter, 180, 90);
-        path.AddArc(Width - diameter,    0,                    diameter, diameter, 270, 90);
-        path.AddArc(Width - diameter,    Height - diameter,    diameter, diameter,   0, 90);
-        path.AddArc(0,                   Height - diameter,    diameter, diameter,  90, 90);
-        path.CloseFigure();
-        var oldRegion = Region;
-        Region        = new Region(path);
-        oldRegion?.Dispose();
-        path.Dispose();
-    }
+        => ImrdyPalette.ApplyRoundedRegion(this, 14);
 }

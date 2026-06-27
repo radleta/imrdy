@@ -67,10 +67,10 @@ public static class ConfigReader
             },
             Overlay = (config.Overlay ?? new OverlayConfig()) with
             {
-                Interactive = config.Overlay?.Interactive ?? true,
                 Position = string.IsNullOrWhiteSpace(config.Overlay?.Position) ? "bottom-right" : config.Overlay.Position,
                 Size = Math.Clamp(config.Overlay?.Size ?? 64, 32, 256),
-                Spacing = Math.Clamp(config.Overlay?.Spacing ?? 4, 0, 32),
+                Spacing = Math.Clamp(config.Overlay?.Spacing ?? 8, 0, 32),
+                Monitor = config.Overlay?.Monitor ?? 0,
             },
             // IpcEnabled is intentionally left nullable — null means "use dev-build marker at runtime".
             // Do not collapse it to a concrete bool here.

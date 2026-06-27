@@ -31,7 +31,7 @@ internal sealed class SessionHoverDashboardController : HoverDashboardController
     private string? _hoveredSessionId;
 
     public SessionHoverDashboardController(
-        InteractiveOverlayWindow overlayWindow,
+        OverlayPanel overlayWindow,
         IDesktopManager? desktopManager,
         ILoggerFactory loggerFactory,
         HookAccumulationStore store,

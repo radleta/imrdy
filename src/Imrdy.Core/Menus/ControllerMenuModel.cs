@@ -88,12 +88,6 @@ internal static class ControllerMenuModel
                 Tag = "toggle-overlay",
                 Checked = overlay.Enabled,
             },
-            new MenuItemModel
-            {
-                Label = "Interactive",
-                Tag = "toggle-overlay-interactive",
-                Checked = overlay.Interactive ?? true,
-            },
             new MenuItemModel { Type = MenuItemType.Separator },
             new MenuItemModel
             {

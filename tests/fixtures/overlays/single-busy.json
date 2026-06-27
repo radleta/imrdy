@@ -1,0 +1,12 @@
+[
+  {
+    "id": "session-1",
+    "itemType": 0,
+    "status": "busy",
+    "desktopIndex": 0,
+    "iconStyle": "circles",
+    "agingTier": 0,
+    "isVisible": true,
+    "label": "claude-code"
+  }
+]

@@ -95,11 +95,6 @@ internal static class ControllerMenuBuilder
                 await Task.Run(() => ConfigReader.Update(c => c with { Tray = c.Tray with { Enabled = !state.Config.Tray.Enabled } }));
                 onConfigChanged(ConfigReader.Read());
             }
-            else if (tag == "toggle-overlay-interactive")
-            {
-                await Task.Run(() => ConfigReader.Update(c => c with { Overlay = c.Overlay with { Interactive = !(state.Config.Overlay.Interactive ?? true) } }));
-                onConfigChanged(ConfigReader.Read());
-            }
             else if (tag.StartsWith("switch-session:", StringComparison.Ordinal))
             {
                 var sessionId = tag["switch-session:".Length..];

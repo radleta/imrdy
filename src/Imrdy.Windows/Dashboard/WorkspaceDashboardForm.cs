@@ -2,6 +2,7 @@ using System.Drawing;
 using System.Windows.Forms;
 using Imrdy.Core.Desktop;
 using Imrdy.Core.Display;
+using Imrdy.Windows.Theme;
 using Microsoft.Extensions.Logging;
 
 namespace Imrdy.Windows.Dashboard;
@@ -54,13 +55,13 @@ internal sealed class WorkspaceDashboardForm : HoverDashboardFormBase
         _vm     = vm;
         _logger = loggerFactory.CreateLogger<WorkspaceDashboardForm>();
 
-        BackColor = BgForm;
+        BackColor = ImrdyPalette.BgForm;
 
         // Build field controls (VM-agnostic construction)
         _nameLabel = new Label
         {
             Font         = new Font("Segoe UI", 15f, FontStyle.Bold, GraphicsUnit.Point),
-            ForeColor    = FgPrimary,
+            ForeColor    = ImrdyPalette.FgPrimary,
             BackColor    = Color.Transparent,
             AutoSize     = false,
             AutoEllipsis = true,
@@ -73,7 +74,7 @@ internal sealed class WorkspaceDashboardForm : HoverDashboardFormBase
         _desktopChip = new Label
         {
             Font      = new Font("Segoe UI", 9f, FontStyle.Regular, GraphicsUnit.Point),
-            ForeColor = FgSecondary,
+            ForeColor = ImrdyPalette.FgSecondary,
             BackColor = Color.FromArgb(15, 255, 255, 255),
             AutoSize  = true,
             Padding   = new Padding(5, 1, 5, 1),
@@ -89,7 +90,7 @@ internal sealed class WorkspaceDashboardForm : HoverDashboardFormBase
         _pathLabel = new Label
         {
             Font         = new Font("Segoe UI", 10f, FontStyle.Regular, GraphicsUnit.Point),
-            ForeColor    = FgMuted,
+            ForeColor    = ImrdyPalette.FgMuted,
             BackColor    = Color.Transparent,
             AutoSize     = false,
             AutoEllipsis = true,
@@ -101,7 +102,7 @@ internal sealed class WorkspaceDashboardForm : HoverDashboardFormBase
         _iconStyleChip = new Label
         {
             Font      = new Font("Segoe UI", 9f, FontStyle.Regular, GraphicsUnit.Point),
-            ForeColor = FgSecondary,
+            ForeColor = ImrdyPalette.FgSecondary,
             BackColor = Color.FromArgb(15, 255, 255, 255),
             AutoSize  = true,
             Padding   = new Padding(5, 1, 5, 1),
@@ -117,7 +118,7 @@ internal sealed class WorkspaceDashboardForm : HoverDashboardFormBase
         _activityLabel = new Label
         {
             Font      = new Font("Segoe UI", 11f, FontStyle.Regular, GraphicsUnit.Point),
-            ForeColor = FgSecondary,
+            ForeColor = ImrdyPalette.FgSecondary,
             BackColor = Color.Transparent,
             AutoSize  = true,
             Padding   = Padding.Empty,
@@ -129,7 +130,7 @@ internal sealed class WorkspaceDashboardForm : HoverDashboardFormBase
             Dock          = DockStyle.Fill,
             FlowDirection = FlowDirection.LeftToRight,
             WrapContents  = false,
-            BackColor     = BgForm,
+            BackColor     = ImrdyPalette.BgForm,
             Padding       = new Padding(14, 4, 14, 0),
             Margin        = new Padding(8, 4, 8, 4),
         };
@@ -154,7 +155,7 @@ internal sealed class WorkspaceDashboardForm : HoverDashboardFormBase
         var headerPanel = new Panel
         {
             Dock      = DockStyle.Fill,
-            BackColor = BgForm,
+            BackColor = ImrdyPalette.BgForm,
             Margin    = new Padding(8, 4, 8, 4),
         };
 
@@ -206,7 +207,7 @@ internal sealed class WorkspaceDashboardForm : HoverDashboardFormBase
             Dock          = DockStyle.Fill,
             FlowDirection = FlowDirection.LeftToRight,
             WrapContents  = false,
-            BackColor     = BgForm,
+            BackColor     = ImrdyPalette.BgForm,
             Padding       = new Padding(14, 4, 14, 0),
             Margin        = new Padding(8, 4, 8, 4),
         };
@@ -216,7 +217,7 @@ internal sealed class WorkspaceDashboardForm : HoverDashboardFormBase
         var footer = new Panel
         {
             Dock      = DockStyle.Fill,
-            BackColor = BgFooter,
+            BackColor = ImrdyPalette.BgFooter,
             Margin    = new Padding(0),
         };
         var footerTlp = new TableLayoutPanel
@@ -224,7 +225,7 @@ internal sealed class WorkspaceDashboardForm : HoverDashboardFormBase
             Dock        = DockStyle.Fill,
             ColumnCount = 2,
             RowCount    = 1,
-            BackColor   = BgFooter,
+            BackColor   = ImrdyPalette.BgFooter,
             Padding     = new Padding(22, 9, 22, 9),
             Margin      = Padding.Empty,
         };
@@ -250,7 +251,7 @@ internal sealed class WorkspaceDashboardForm : HoverDashboardFormBase
             AutoSizeMode = AutoSizeMode.GrowAndShrink,
             ColumnCount  = 1,
             RowCount     = 4,
-            BackColor    = BgForm,
+            BackColor    = ImrdyPalette.BgForm,
             Padding      = Padding.Empty,
             Margin       = Padding.Empty,
             Left         = 0,
@@ -346,18 +347,18 @@ internal sealed class WorkspaceDashboardForm : HoverDashboardFormBase
             return;
 
         // Branch chip (always when Git is non-null)
-        _gitRow.Controls.Add(MakeChip($"⎇ {git.Branch}", FgSecondary));
+        _gitRow.Controls.Add(MakeChip($"⎇ {git.Branch}", ImrdyPalette.FgSecondary));
 
         // DirtyCount chip (always when Git is non-null)
-        _gitRow.Controls.Add(MakeChip($"+{git.DirtyCount}", FgSecondary));
+        _gitRow.Controls.Add(MakeChip($"+{git.DirtyCount}", ImrdyPalette.FgSecondary));
 
         // Ahead chip (only when > 0)
         if (git.Ahead > 0)
-            _gitRow.Controls.Add(MakeChip($"↑{git.Ahead}", FgSecondary));
+            _gitRow.Controls.Add(MakeChip($"↑{git.Ahead}", ImrdyPalette.FgSecondary));
 
         // Behind chip (only when > 0)
         if (git.Behind > 0)
-            _gitRow.Controls.Add(MakeChip($"↓{git.Behind}", FgSecondary));
+            _gitRow.Controls.Add(MakeChip($"↓{git.Behind}", ImrdyPalette.FgSecondary));
     }
 
     // ---- Static helpers ----

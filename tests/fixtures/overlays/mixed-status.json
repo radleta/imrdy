@@ -1,0 +1,52 @@
+[
+  {
+    "id": "s1",
+    "itemType": 0,
+    "status": "busy",
+    "desktopIndex": 0,
+    "iconStyle": "circles",
+    "agingTier": 0,
+    "isVisible": true,
+    "label": "active-session"
+  },
+  {
+    "id": "s2",
+    "itemType": 0,
+    "status": "idle",
+    "desktopIndex": 1,
+    "iconStyle": "circles",
+    "agingTier": 1,
+    "isVisible": true,
+    "label": "idle-session"
+  },
+  {
+    "id": "s3",
+    "itemType": 0,
+    "status": "done",
+    "desktopIndex": 2,
+    "iconStyle": "circles",
+    "agingTier": 2,
+    "isVisible": true,
+    "label": "done-session"
+  },
+  {
+    "id": "s4",
+    "itemType": 0,
+    "status": "permission",
+    "desktopIndex": 0,
+    "iconStyle": "circles",
+    "agingTier": 0,
+    "isVisible": true,
+    "label": "permission-session"
+  },
+  {
+    "id": "s5",
+    "itemType": 0,
+    "status": "error",
+    "desktopIndex": 1,
+    "iconStyle": "circles",
+    "agingTier": 3,
+    "isVisible": true,
+    "label": "error-session"
+  }
+]

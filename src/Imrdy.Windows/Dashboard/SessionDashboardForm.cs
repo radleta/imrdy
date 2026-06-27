@@ -4,6 +4,7 @@ using System.Windows.Forms;
 using Imrdy.Core.Desktop;
 using Imrdy.Core.Display;
 using Imrdy.Core.Status;
+using Imrdy.Windows.Theme;
 using Microsoft.Extensions.Logging;
 
 namespace Imrdy.Windows.Dashboard;
@@ -114,7 +115,7 @@ internal sealed class SessionDashboardForm : HoverDashboardFormBase
         _logger        = loggerFactory.CreateLogger<SessionDashboardForm>();
         _isPreviewMode = isPreviewMode;
 
-        BackColor = BgForm;
+        BackColor = ImrdyPalette.BgForm;
         KeyPreview = true; // Required: without this, child controls intercept KeyDown before the form sees it
 
         // Preview harness path (isPinned:true) starts fully opaque — no animation.
@@ -122,9 +123,9 @@ internal sealed class SessionDashboardForm : HoverDashboardFormBase
         Opacity = isPinned ? 1.0 : 0.0;
 
         // Build child controls
-        _fleetLabel        = MakeLabel("Fleet", 9, FgMuted, bold: false);
+        _fleetLabel        = MakeLabel("Fleet", 9, ImrdyPalette.FgMuted, bold: false);
         _fleetDotsPanel    = new Panel { Height = 10, BackColor = Color.Transparent };
-        _fleetCount        = MakeLabel("", 10, FgMuted, bold: false);
+        _fleetCount        = MakeLabel("", 10, ImrdyPalette.FgMuted, bold: false);
 
         _fleetStrip = new Panel
         {
@@ -132,20 +133,20 @@ internal sealed class SessionDashboardForm : HoverDashboardFormBase
             BackColor = BgFleet,
             // Margin=0 lets BgFleet extend to the form edges so the rounded Region
             // (radius 14) clips through panel pixels uniformly. A non-zero margin
-            // creates a visible BgForm seam at the top corners.
+            // creates a visible ImrdyPalette.BgForm seam at the top corners.
             Margin    = new Padding(0),
         };
         _fleetStrip.Resize += (_, _) => RepositionFleetStripChildren();
 
         _accentBar = new Panel { Width = 3, Dock = DockStyle.Left, BackColor = StatusColor("idle") };
 
-        _sessionNameLabel = MakeLabel("", 15, FgPrimary, bold: true);
+        _sessionNameLabel = MakeLabel("", 15, ImrdyPalette.FgPrimary, bold: true);
         // _personaChip: hidden and zero-width; awaits persona feature (deferred per decisions.md D5)
         _personaChip = MakeLabel("", 9, Color.FromArgb(196, 167, 224), bold: false);
         _personaChip.Visible = false;
-        _projectLabel     = MakeLabel("", 11, FgPrimary, bold: true);
-        _cwdLabel         = MakeLabel("", 10, FgMuted, bold: false);
-        _desktopChip      = MakeLabel("", 9, FgSecondary, bold: false);
+        _projectLabel     = MakeLabel("", 11, ImrdyPalette.FgPrimary, bold: true);
+        _cwdLabel         = MakeLabel("", 10, ImrdyPalette.FgMuted, bold: false);
+        _desktopChip      = MakeLabel("", 9, ImrdyPalette.FgSecondary, bold: false);
 
         _statusPillDot = new Panel { Width = 6, Height = 6, BackColor = StatusColor("idle") };
         _statusPillDot.Paint += (_, pe) =>
@@ -155,10 +156,10 @@ internal sealed class SessionDashboardForm : HoverDashboardFormBase
             pe.Graphics.FillEllipse(b, 0, 0, _statusPillDot.Width - 1, _statusPillDot.Height - 1);
         };
 
-        _statusPill      = MakeLabel("", 10, FgPrimary, bold: true);
-        _elapsedLabel    = MakeLabel("", 11, FgSecondary, bold: false);
-        _sessionAgeLabel = MakeLabel("", 10, FgMuted, bold: false);
-        _turnCountLabel  = MakeLabel("", 10, FgMuted, bold: false);
+        _statusPill      = MakeLabel("", 10, ImrdyPalette.FgPrimary, bold: true);
+        _elapsedLabel    = MakeLabel("", 11, ImrdyPalette.FgSecondary, bold: false);
+        _sessionAgeLabel = MakeLabel("", 10, ImrdyPalette.FgMuted, bold: false);
+        _turnCountLabel  = MakeLabel("", 10, ImrdyPalette.FgMuted, bold: false);
 
         _permissionBar   = new Panel { Height = 40, BackColor = Color.FromArgb(30, 167, 127, 200), Margin = new Padding(14, 0, 14, 8) };
         _permissionLabel = MakeLabel("", 11, Color.FromArgb(196, 167, 224), bold: false);
@@ -172,7 +173,7 @@ internal sealed class SessionDashboardForm : HoverDashboardFormBase
         {
             Text         = "",
             Font         = new Font("Cascadia Code", 10f, FontStyle.Regular, GraphicsUnit.Point),
-            ForeColor    = FgPrimary,
+            ForeColor    = ImrdyPalette.FgPrimary,
             BackColor    = Color.FromArgb(25, 227, 139, 75),
             AutoSize     = false,
             AutoEllipsis = true,
@@ -189,7 +190,7 @@ internal sealed class SessionDashboardForm : HoverDashboardFormBase
         {
             Text         = "",
             Font         = new Font("Segoe UI", 11f, FontStyle.Italic, GraphicsUnit.Point),
-            ForeColor    = FgSecondary,
+            ForeColor    = ImrdyPalette.FgSecondary,
             BackColor    = Color.Transparent,
             AutoSize     = false,
             AutoEllipsis = true,
@@ -221,7 +222,7 @@ internal sealed class SessionDashboardForm : HoverDashboardFormBase
         };
         _chipsSection = new Panel { Height = 38 };
 
-        _gitLabel           = MakeLabel("", 10, FgSecondary, bold: false);
+        _gitLabel           = MakeLabel("", 10, ImrdyPalette.FgSecondary, bold: false);
         _gitLabel.Visible   = false;
         _subagentsLabel     = MakeLabel("", 10, Color.FromArgb(196, 167, 224), bold: false);
         _subagentsLabel.Visible = false;
@@ -240,7 +241,7 @@ internal sealed class SessionDashboardForm : HoverDashboardFormBase
         _footer = new Panel
         {
             Dock      = DockStyle.Fill,
-            BackColor = BgFooter,
+            BackColor = ImrdyPalette.BgFooter,
             // See _fleetStrip Margin comment — same reason.
             Margin    = new Padding(0),
         };
@@ -472,7 +473,7 @@ internal sealed class SessionDashboardForm : HoverDashboardFormBase
         // LastPrompt section — includes a 2 px vertical border-left line (mockup border-left style)
         // drawn via the panel's Paint event at x=0 from top to bottom.
         _lastPromptSection.Dock      = DockStyle.Fill;
-        _lastPromptSection.BackColor = BgForm;
+        _lastPromptSection.BackColor = ImrdyPalette.BgForm;
         // Left padding 10 makes room for the 2px border-left line + gap.
         _lastPromptSection.Padding   = new Padding(10, 4, 8, 4);
         _lastPromptSection.Margin    = new Padding(8, 4, 8, 4);
@@ -496,7 +497,7 @@ internal sealed class SessionDashboardForm : HoverDashboardFormBase
 
         // Sparkline section
         _sparklineSection.Dock      = DockStyle.Fill;
-        _sparklineSection.BackColor = BgForm;
+        _sparklineSection.BackColor = ImrdyPalette.BgForm;
         _sparklineSection.Padding   = new Padding(8, 4, 8, 4);
         _sparklineSection.Margin    = new Padding(8, 4, 8, 4);
         _sparklineSectionLabel.Location = new Point(0, 0);
@@ -512,7 +513,7 @@ internal sealed class SessionDashboardForm : HoverDashboardFormBase
 
         // Chips section
         _chipsSection.Dock      = DockStyle.Fill;
-        _chipsSection.BackColor = BgForm;
+        _chipsSection.BackColor = ImrdyPalette.BgForm;
         _chipsSection.Padding   = new Padding(8, 4, 8, 4);
         _chipsSection.Margin    = new Padding(8, 4, 8, 4);
         _chipsSectionLabel.Location = new Point(0, 0);
@@ -535,7 +536,7 @@ internal sealed class SessionDashboardForm : HoverDashboardFormBase
             AutoSizeMode = AutoSizeMode.GrowAndShrink,
             ColumnCount  = 1,
             RowCount     = 9,
-            BackColor    = BgForm,
+            BackColor    = ImrdyPalette.BgForm,
             Padding      = Padding.Empty,
             Margin       = Padding.Empty,
             Left         = 0,
@@ -588,7 +589,7 @@ internal sealed class SessionDashboardForm : HoverDashboardFormBase
         var panel = new Panel
         {
             Dock      = DockStyle.Fill,
-            BackColor = BgForm,
+            BackColor = ImrdyPalette.BgForm,
             Margin    = new Padding(8, 4, 8, 4),
         };
 
@@ -672,7 +673,7 @@ internal sealed class SessionDashboardForm : HoverDashboardFormBase
             Dock          = DockStyle.Fill,
             FlowDirection = FlowDirection.LeftToRight,
             WrapContents  = false,
-            BackColor     = BgForm,
+            BackColor     = ImrdyPalette.BgForm,
             Padding       = new Padding(14, 4, 14, 0),
             Margin        = new Padding(8, 4, 8, 4),
         };
@@ -767,7 +768,7 @@ internal sealed class SessionDashboardForm : HoverDashboardFormBase
             Dock        = DockStyle.Fill,
             ColumnCount = 2,
             RowCount    = 1,
-            BackColor   = BgFooter,
+            BackColor   = ImrdyPalette.BgFooter,
             Padding     = new Padding(22, 9, 22, 9),
             Margin      = Padding.Empty,
         };
@@ -968,7 +969,7 @@ internal sealed class SessionDashboardForm : HoverDashboardFormBase
             {
                 Text        = $"+{overflow} more",
                 Font        = new Font("Consolas", 9f),
-                ForeColor   = FgMuted,
+                ForeColor   = ImrdyPalette.FgMuted,
                 BackColor   = Color.FromArgb(12, 255, 255, 255),
                 AutoSize    = true,
                 Padding     = new Padding(5, 2, 5, 2),
@@ -1018,7 +1019,7 @@ internal sealed class SessionDashboardForm : HoverDashboardFormBase
         {
             Text      = text,
             Font      = new Font("Segoe UI", 9f, FontStyle.Regular, GraphicsUnit.Point),
-            ForeColor = FgMuted,
+            ForeColor = ImrdyPalette.FgMuted,
             BackColor = Color.Transparent,
             AutoSize  = true,
             Anchor    = AnchorStyles.Top | AnchorStyles.Left,

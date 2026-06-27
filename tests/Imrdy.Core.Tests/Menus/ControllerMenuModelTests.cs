@@ -465,7 +465,7 @@ public class ControllerMenuModelTests
     }
 
     [Fact]
-    public void Build_OverlaySubmenu_HasInteractiveAfterEnabled()
+    public void Build_OverlaySubmenu_EnabledFollowedBySeparator()
     {
         var state = MenuTestHelper.EmptyControllerState();
 
@@ -473,7 +473,7 @@ public class ControllerMenuModelTests
 
         var overlayMenu = items.First(i => i.Label == "Overlay");
         overlayMenu.Children[0].Tag.Should().Be("toggle-overlay");
-        overlayMenu.Children[1].Tag.Should().Be("toggle-overlay-interactive");
+        overlayMenu.Children[1].Type.Should().Be(MenuItemType.Separator);
     }
 
     [Fact]
@@ -699,17 +699,6 @@ public class ControllerMenuModelTests
 
         var trayMenu = items.First(i => i.Label == "Tray");
         trayMenu.Children.First(c => c.Tag == "toggle-tray").Checked.Should().BeFalse();
-    }
-
-    [Fact]
-    public void Build_OverlayInteractiveDefault_True_Checked()
-    {
-        var state = MenuTestHelper.EmptyControllerState();
-
-        var items = ControllerMenuModel.Build(state);
-
-        var overlayMenu = items.First(i => i.Label == "Overlay");
-        overlayMenu.Children.First(c => c.Tag == "toggle-overlay-interactive").Checked.Should().BeTrue();
     }
 
     private static MenuItemModel GetTrayIconStyleMenu(IReadOnlyList<MenuItemModel> items)

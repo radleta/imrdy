@@ -18,7 +18,7 @@ namespace Imrdy.Windows.Dashboard;
 /// view-model construction, and form interaction.
 ///
 /// Per P6 (imrdy-expert wiki), this base does NOT subscribe to
-/// <see cref="InteractiveOverlayWindow.SurfaceInteracted"/>. TrayApp owns all
+/// <see cref="OverlayPanel.SurfaceInteracted"/>. TrayApp owns all
 /// <c>+=</c>/<c>-=</c> wiring and calls <see cref="HandleSurfaceInteraction"/> directly.
 /// </summary>
 internal abstract class HoverDashboardControllerBase : IDisposable
@@ -34,7 +34,7 @@ internal abstract class HoverDashboardControllerBase : IDisposable
     // Live-refresh cadence: rebuild VM every 10 ticks (~1s) while visible on same item.
     private const int RefreshIntervalTicks = 10;
 
-    protected readonly InteractiveOverlayWindow _overlayWindow;
+    protected readonly OverlayPanel _overlayWindow;
     protected readonly IDesktopManager? _desktopManager;
     protected readonly ILoggerFactory _loggerFactory;
     protected readonly ILogger _logger;
@@ -71,9 +71,9 @@ internal abstract class HoverDashboardControllerBase : IDisposable
 
     /// <summary>
     /// Initializes base fields. Does NOT subscribe to
-    /// <see cref="InteractiveOverlayWindow.SurfaceInteracted"/> — TrayApp owns that wiring.
+    /// <see cref="OverlayPanel.SurfaceInteracted"/> — TrayApp owns that wiring.
     /// </summary>
-    /// <param name="overlayWindow">Required. The interactive overlay to hit-test against.</param>
+    /// <param name="overlayWindow">Required. The overlay panel to hit-test against.</param>
     /// <param name="desktopManager">
     /// May be null (headless callers pass null per D9). Stored and forwarded to
     /// derived <see cref="CreateForm"/> overrides so the form ctor receives it.
@@ -83,7 +83,7 @@ internal abstract class HoverDashboardControllerBase : IDisposable
     /// Thrown when <paramref name="overlayWindow"/> or <paramref name="loggerFactory"/> is null.
     /// </exception>
     protected HoverDashboardControllerBase(
-        InteractiveOverlayWindow overlayWindow,
+        OverlayPanel overlayWindow,
         IDesktopManager? desktopManager,
         ILoggerFactory loggerFactory)
     {
@@ -115,7 +115,7 @@ internal abstract class HoverDashboardControllerBase : IDisposable
     /// <summary>
     /// Hit-tests at the given client X coordinate and returns true when a
     /// <see cref="DisplayItem"/> belonging to this controller's domain is at that position.
-    /// Derived calls <see cref="InteractiveOverlayWindow.TryHitTestAtClient"/> and filters
+    /// Derived calls <see cref="OverlayPanel.TryHitTestAtClient"/> and filters
     /// by <see cref="DisplayItem.ItemType"/>.
     /// </summary>
     /// <param name="clientX">Client X coordinate (screen→client conversion done by base).</param>
@@ -214,13 +214,11 @@ internal abstract class HoverDashboardControllerBase : IDisposable
         {
             _firstTick = false;
             var ftCursor = Cursor.Position;
-            var ftCachedBounds = _overlayWindow.Bounds;
-            var ftActualBounds = _overlayWindow.ActualScreenBounds;
+            var ftBounds = _overlayWindow.Bounds;
             _logger.LogDebug(
-                "HoverCtrlBase: first-tick fired cursor={CX},{CY} cachedBounds={CBX},{CBY},{CBW},{CBH} actualBounds={ABX},{ABY},{ABW},{ABH}",
+                "HoverCtrlBase: first-tick fired cursor={CX},{CY} overlayBounds={BX},{BY},{BW},{BH}",
                 ftCursor.X, ftCursor.Y,
-                ftCachedBounds.X, ftCachedBounds.Y, ftCachedBounds.Width, ftCachedBounds.Height,
-                ftActualBounds.X, ftActualBounds.Y, ftActualBounds.Width, ftActualBounds.Height);
+                ftBounds.X, ftBounds.Y, ftBounds.Width, ftBounds.Height);
         }
 
         _tickCount++;
@@ -231,7 +229,6 @@ internal abstract class HoverDashboardControllerBase : IDisposable
             _logger.LogDebug("HoverCtrlBase: stale-form-disposed guard fired");
             _form = null;
             _hoveredItem = null;
-            _overlayWindow.IsDashboardHoverActive = false;
         }
 
         if (_disposed) return;
@@ -250,8 +247,7 @@ internal abstract class HoverDashboardControllerBase : IDisposable
         }
 
         var cursor = Cursor.Position;
-        // Read once per tick — P/Invoke call.
-        var overlayBounds = _overlayWindow.ActualScreenBounds;
+        var overlayBounds = _overlayWindow.Bounds;
 
         // Z-order hit-test: geometric containment alone is insufficient.
         var overlayHwnd = _overlayWindow.IsHandleCreated ? _overlayWindow.Handle : IntPtr.Zero;
@@ -463,7 +459,7 @@ internal abstract class HoverDashboardControllerBase : IDisposable
         _form = (HoverDashboardFormBase)CreateForm(viewModel);
 
         var workingArea = Screen.FromControl(_overlayWindow).WorkingArea;
-        var overlayBounds = _overlayWindow.ActualScreenBounds;
+        var overlayBounds = _overlayWindow.Bounds;
 
         var (anchorMode, anchorX, anchorY) = _form.ComputeAnchorPlacement(overlayBounds, cursor, workingArea);
 
@@ -488,7 +484,6 @@ internal abstract class HoverDashboardControllerBase : IDisposable
         _form.PinAcrossVirtualDesktops();
         _logger.LogDebug("HoverCtrlBase: form pinned to all desktops");
         _outsideTicks = 0;
-        _overlayWindow.IsDashboardHoverActive = true;
 
         OnFormShown(item, viewModel, cursor);
         FormShown?.Invoke();
@@ -502,7 +497,6 @@ internal abstract class HoverDashboardControllerBase : IDisposable
             _hoveredItem = null;
             _outsideTicks = 0;
             _dwellTicks = 0;
-            _overlayWindow.IsDashboardHoverActive = false;
             OnFormHidden();
             return;
         }
@@ -514,7 +508,6 @@ internal abstract class HoverDashboardControllerBase : IDisposable
         _hoveredItem = null;
         _outsideTicks = 0;
         _dwellTicks = 0;
-        _overlayWindow.IsDashboardHoverActive = false;
         OnFormHidden();
 
         if (_form.IsPinned) _form.Unpin();
@@ -527,7 +520,6 @@ internal abstract class HoverDashboardControllerBase : IDisposable
         _hoveredItem = null;
         _outsideTicks = 0;
         _dwellTicks = 0;
-        _overlayWindow.IsDashboardHoverActive = false;
         OnFormHidden();
     }
 

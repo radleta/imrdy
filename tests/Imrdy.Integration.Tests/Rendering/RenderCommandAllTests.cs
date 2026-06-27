@@ -17,7 +17,8 @@ namespace Imrdy.Integration.Tests.Rendering;
 [Collection("RenderCommandConsole")]
 public class RenderCommandAllTests
 {
-    private const int ExpectedDashboardFixtureCount = 8;
+    private const int ExpectedDashboardFixtureCount = 13;
+    private const int ExpectedGlobalFixtureCount    = 19; // 13 dashboard + 2 workspace-dashboard + 4 overlay
 
     /// <summary>
     /// Returns the repo root by walking up from the test binary output directory.
@@ -134,15 +135,20 @@ public class RenderCommandAllTests
             stderr.ToString().Should().BeEmpty(because: "no errors expected on success");
 
             var pngs = Directory.GetFiles(tmpDir, "*.png");
-            pngs.Should().HaveCount(ExpectedDashboardFixtureCount,
-                because: "Phase 1 has only dashboard, so 8 PNGs expected (4 baseline + 4 edge)");
+            pngs.Should().HaveCount(ExpectedGlobalFixtureCount,
+                because: "one PNG per fixture across all registered components must be written");
 
+            // Filter to render summary lines only — FluentAssertions may print a license
+            // warning to Console.Out when first used, which bleeds into this test's
+            // redirected stdout during a full-suite run.
             var lines = stdout.ToString()
                 .Split('\n', StringSplitOptions.RemoveEmptyEntries)
-                .Where(l => l.TrimStart().StartsWith("dashboard/", StringComparison.Ordinal))
+                .Where(l => l.StartsWith("dashboard/", StringComparison.Ordinal)
+                         || l.StartsWith("workspace-dashboard/", StringComparison.Ordinal)
+                         || l.StartsWith("overlay/", StringComparison.Ordinal))
                 .ToList();
-            lines.Should().HaveCount(ExpectedDashboardFixtureCount,
-                because: "one summary line per fixture must be printed to stdout");
+            lines.Should().HaveCount(ExpectedGlobalFixtureCount,
+                because: "one summary line per fixture across all components must be printed to stdout");
         }
         finally
         {
