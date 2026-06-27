@@ -78,7 +78,7 @@ The `?? existing` pattern requires the preserved fields to be nullable on `State
 - A non-nullable field (e.g., `string Status`) cannot distinguish "hook set it" from "hook didn't set it" — the value is always present.
 - Nullable fields encode the "not set by this writer" state explicitly, which is exactly what the merge needs.
 
-Three-state nullable fields elsewhere in the codebase (`OverlayConfig.Interactive: bool?`, `DiagnosticsConfig.IpcEnabled: bool?`) use the same encoding for a different reason — to distinguish "default" from "explicit false." That pattern is unrelated to this race; do not conflate them.
+Three-state nullable fields elsewhere in the codebase (`DiagnosticsConfig.IpcEnabled: bool?`) use the same encoding for a different reason — to distinguish "default" from "explicit false." That pattern is unrelated to this race; do not conflate them.
 
 ## Cross-references
 

@@ -7,10 +7,11 @@ summary: "imrdy render verb: in-process PNG capture of WinForms surfaces without
 
 ## Overview
 
-`imrdy render <component> [--output <path> | --output-dir <dir>]` produces deterministic PNG artifacts of WinForms UI surfaces without a live screen or running tray process. Phase 1 ships only the `dashboard` component — `SessionDashboardForm` rendered from a `DashboardViewModel` fixture JSON via `Form.DrawToBitmap`.
+`imrdy render <component> [--output <path> | --output-dir <dir>]` produces deterministic PNG artifacts of WinForms UI surfaces without a live screen or running tray process. Two registered components: `dashboard` (`SessionDashboardForm` rendered from a `DashboardViewModel` fixture JSON) and `overlay` (`OverlayPanel` rendered from one of four overlay fixture files), both via `Form.DrawToBitmap`.
 
 Key commands:
-- `imrdy render dashboard <fixture.json>` — render a single fixture
+- `imrdy render dashboard <fixture.json>` — render a single dashboard fixture
+- `imrdy render overlay <fixture.json>` — render a single overlay fixture
 - `imrdy render --list` — enumerate registered components
 - `imrdy render --all [--output-dir <dir>]` — render every fixture of every component
 
@@ -79,9 +80,9 @@ For any UI-bearing change (SessionDashboardForm, WorkspaceDashboardForm, overlay
 
 A passing verifier wave is NOT a substitute for visual inspection. Layout-collapse bugs (controls rendered at zero size) pass all three verifier gates cleanly. See the user-scoped `verify-fix-loop-expert` wiki for the full four-gate protocol.
 
-## Phase 1 Scope (Deferred)
+## Deferred
 
-Phase 1 deliberately omits:
+Currently omitted:
 - `--json` output (machine-readable metadata)
 - `--quiet` / `--verbose` / `--version` flags
 

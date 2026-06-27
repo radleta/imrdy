@@ -17,7 +17,7 @@ summary: "HoverDashboardFormBase owns the shared shell (DWM, focus guard, pin/un
 - Escape key handler — `OnKeyDown` unpins + hides
 - Adaptive screen-aware anchor-edge placement (`PlaceWithAnchor` — above/below flip + multi-monitor X clamp)
 - `FormatDuration` — thin delegating wrapper to `RelativeTimeFormatter` in `Imrdy.Core.Time`
-- Shared palette (`BgForm`, `FgPrimary`, `FgSecondary`, `FgMuted`, `BgFooter`) and `BridgeGap=12` as `protected static`
+- Palette colors (`BgForm`, `FgPrimary`, `FgSecondary`, `FgMuted`, `BgFooter`) sourced from `ImrdyPalette` (extracted to `src/Imrdy.Windows/Theme/`); `BridgeGap=12` as `protected static`
 - `FormMinWidth = 520` declared on base so derived forms seed inner widths consistently
 
 Derived classes own their **content panel only**:
@@ -192,7 +192,7 @@ Marshal.Release(viewPtr);
 
 The form is dismissed when:
 1. Cursor leaves the grace corridor (expanded union of overlay bounds + form bounds) for `DwellResetDelay`
-2. User clicks on the overlay icon (activates a session) — `InteractiveOverlayWindow.SurfaceInteracted` event fires (see [Hover Dashboard State Machine](hover-dashboard-state-machine.md))
+2. User clicks on the overlay icon (activates a session) — `OverlayPanel.SurfaceInteracted` event fires (see [Hover Dashboard State Machine](hover-dashboard-state-machine.md))
 
 The grace corridor geometry works identically for above/below anchoring — it's a simple `Rectangle.Union` with expansion.
 
@@ -200,6 +200,6 @@ The grace corridor geometry works identically for above/below anchoring — it's
 
 - [Hover Dashboard State Machine](hover-dashboard-state-machine.md) — Dismiss logic and event patterns
 - [Dev Build Marker & Logging](dev-build-marker-logging.md) — Debug logging for diagnostic traces during development
-- [Overlay Interactivity](overlay-interactivity.md) (existing page) — Pass/Interactive window split and ISessionInteractionRouter
+- [Overlay Interactivity](overlay-interactivity.md) — OverlayPanel single-class design and ISessionInteractionRouter
 - [Sparkline Reference Time](sparkline-reference-time.md) — ReferenceTime anchor on SparklineControl for correct fixture-preview rendering
 - [WinForms Custom Property Serialization](winforms-custom-property-serialization.md) — WFO1000 fix for SparklineControl.Timestamps and other non-serializable UserControl properties

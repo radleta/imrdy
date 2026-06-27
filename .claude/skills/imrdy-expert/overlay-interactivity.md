@@ -1,39 +1,42 @@
 ---
 tags: [imrdy-expert/overlay]
-summary: "Overlay split into Passive/Interactive classes; context menus dispatched via ISessionInteractionRouter + MenuAnchor.AtControl(owner, location) — vanilla WinForms, no P/Invoke band-aids"
+summary: "OverlayPanel: single non-layered class replacing the former Passive/Interactive/Base split; context menus dispatched via ISessionInteractionRouter + MenuAnchor.AtControl(owner, location) — vanilla WinForms, no P/Invoke band-aids"
 ---
 
 # Overlay Interactivity Pattern
 
 ## Architecture in One Sentence
 
-The overlay is split into two classes (`PassiveOverlayWindow`, `InteractiveOverlayWindow`) sharing `OverlayWindowBase`. The interactive variant is **activatable** (no `WS_EX_NOACTIVATE`) and dispatches all user actions through `ISessionInteractionRouter` — left-clicks call `ActivateSession`/`ActivateWorkspace`, right-clicks call `OpenSessionMenu`/`OpenWorkspaceMenu` with `MenuAnchor.AtControl(this, e.Location)`, and the router uses the standard WinForms owner-based `ContextMenuStrip.Show(Control, Point)` internally.
+`OverlayPanel` is a single non-layered WinForms `Form` that is always interactive. All user actions dispatch through `ISessionInteractionRouter` — left-clicks call `ActivateSession`/`ActivateWorkspace`, right-clicks call `OpenSessionMenu`/`OpenWorkspaceMenu` with `MenuAnchor.AtControl(this, e.Location)`, and the router uses the standard WinForms owner-based `ContextMenuStrip.Show(Control, Point)` internally.
 
-## Class Split
+## Class Design (Single Class)
 
-| | `PassiveOverlayWindow` | `InteractiveOverlayWindow` |
-|---|---|---|
-| ExStyles added | `WS_EX_TRANSPARENT` + `WS_EX_NOACTIVATE` | none |
-| Input handling | none | `OnMouseDown` / `OnMouseUp` overrides + `WM_NCHITTEST` |
-| Activatable | no | yes |
-| Use case | purely visual, never receives clicks | clickable, owns context menus |
+The former three-class hierarchy (`OverlayWindowBase` / `PassiveOverlayWindow` / `InteractiveOverlayWindow`) was collapsed and all three deleted. `OverlayPanel` is a single class:
 
-`OverlayWindowBase` provides `WS_EX_LAYERED + WS_EX_TOOLWINDOW`, `TopMost = true`, the bitmap cache, `UpdateLayeredWindow` rendering, and `HitIconIndex` slot math. `TrayApp.CreateOverlay` picks the concrete class based on `config.Overlay.Interactive` at construction time — no runtime mode switching.
+| Attribute | Value |
+|---|---|
+| Base | WinForms `Form` (non-layered) |
+| Extended styles | `WS_EX_TOOLWINDOW` |
+| Rendering | `OnPaint` (no `UpdateLayeredWindow`) |
+| Input | `OnMouseDown` / `OnMouseUp` overrides |
+| Backdrop | DWM mica (via `DwmSetWindowAttribute`, same as dashboard forms; `DrawToBitmap` captures GDI+ only — no mica in render PNGs) |
+| Activatable | yes (always) |
+| Click-through | none — inter-chip gaps are opaque panel chrome; clicks there are no-ops (WM_NCHITTEST dropped, Decision 11) |
 
-## Why Activatable
+`OverlayConfig.Interactive` was removed. There is no passive (fully click-through) variant — use `overlay.enabled: false` to suppress the overlay entirely. `OverlayPanel` is recreated on config change (old panel disposed, new panel constructed from fresh config values). `TrayApp.CreateOverlay` now constructs `OverlayPanel` unconditionally with no mode selection.
 
-The interactive overlay must be activatable because right-clicks need to transfer foreground to it so the popup `ContextMenuStrip` receives hover hot-track messages. With `WS_EX_NOACTIVATE`, `SetForegroundWindow` is silently rejected; the menu shows but items don't highlight on hover until the first click "wakes" it (the classic Raymond Chen NotifyIcon-from-non-foreground bug).
+## Why Always Activatable
 
-The trade-off — clicks momentarily make the overlay foreground — is desirable, not a regression. Every interaction with the overlay either explicitly switches focus (left-click switches to a session terminal) or shows a menu. There is no "incidental" click on an interactive control that should NOT take focus.
+`OverlayPanel` must be activatable because right-clicks need to transfer foreground to it so the popup `ContextMenuStrip` receives hover hot-track messages. With `WS_EX_NOACTIVATE`, `SetForegroundWindow` is silently rejected; the menu shows but items don't highlight on hover until the first click "wakes" it (the classic Raymond Chen NotifyIcon-from-non-foreground bug).
 
-The passive variant keeps `WS_EX_NOACTIVATE` because it never receives input — it's purely a status display.
+The trade-off — clicks momentarily make the overlay foreground — is desirable, not a regression. Every interaction with the overlay either explicitly switches focus (left-click switches to a session terminal) or shows a menu.
 
 ## Vanilla Right-Click — No P/Invoke
 
 Overlay right-clicks go through the shared interaction router with an `AtControl` anchor; the router resolves the menu and calls the standard owner-based `Show` overload:
 
 ```csharp
-// InteractiveOverlayWindow
+// OverlayPanel
 protected override void OnMouseUp(MouseEventArgs e)
 {
     if (e.Button == MouseButtons.Right && HitIconIndex(e.X, out var idx) && idx < _items.Count)
@@ -57,87 +60,73 @@ public void OpenSessionMenu(string id, MenuAnchor anchor)
 }
 ```
 
-That's the entire overlay-menu path. `ShowContextMenuAt` is the single place that branches on anchor kind (`AtControl` → `menu.Show(owner, location)`; `AtTrayIcon` → `NotifyIconMenuHost`). WinForms' internal `ToolStripManager.ModalMenuFilter` handles foreground/dismissal because the owner is a real activatable form.
+`ShowContextMenuAt` is the single place that branches on anchor kind (`AtControl` → `menu.Show(owner, location)`; `AtTrayIcon` → `NotifyIconMenuHost`). WinForms' internal `ToolStripManager.ModalMenuFilter` handles foreground/dismissal because the owner is a real activatable form.
 
-**What we deleted to get here** (~150 lines across the codebase):
-- `SetForegroundWindow` + `PostMessage(WM_NULL)` P/Invoke calls
-- `OverlayMenuPresenter` class + hidden owner `NativeWindow`
-- `ForceTopMost` / `SetWindowPos` / `HWND_TOPMOST` plumbing
-- `ContextMenuStrip.Opened` handler that re-applied topmost
-- 5-second `TopMost` watchdog timer
-- `ApplyInteractiveStyle` runtime style-toggling
-- `WM_RBUTTONUP` / `WM_LBUTTONDOWN` interception in `WndProc` with `BeginInvoke` defer
+## Hit-Testing (No WM_NCHITTEST Override)
 
-Every one of those was compensating for a single root cause: cutting WinForms out of its own menu pipeline by intercepting at the message-pump level and using the owner-less `Show(Point)` overload.
+The `WM_NCHITTEST` gap click-through policy was dropped in the OverlayPanel redesign (Decision 11). `OverlayPanel` has **no `WM_NCHITTEST` override** in `WndProc`.
 
-## Hit-Test Policy (Click-Through)
+**Rationale**: the former layered overlay had a large mostly-transparent bounding box, so gaps between icons needed `HTTRANSPARENT` to let clicks fall through. The new bounded mica panel has no transparent regions — inter-chip gaps are opaque panel chrome. A click in a gap is a simple no-op: `HitIconIndex` returns false, the `OnMouseDown`/`OnMouseUp` handlers take no action.
 
-Click-through over gaps between icons is the only Win32-level concern that has no managed equivalent:
+`PInvokeOverlay.ScreenToClientPoint(hwnd, lParam)` is still used for DPI-correct screen→client conversion in the hover-highlight poll and hit-testing. **Do NOT** substitute `Bounds.Left`/`Bounds.Top` subtraction — it diverges from the OS transform at DPI scales > 100%. The helper wraps the Win32 `ScreenToClient` P/Invoke with 64-bit-safe lParam decoding and LOWORD/HIWORD sign-extension for multi-monitor setups.
 
-```csharp
-// InteractiveOverlayWindow.WndProc — only intercepts WM_NCHITTEST
-if (m.Msg == WM_NCHITTEST)
-{
-    var (sx, sy) = PInvokeOverlay.DecodeLParamPoint(m.LParam); // SCREEN coords
-    PInvokeOverlay.ScreenToClientPoint(Handle, ref sx, ref sy);
-    m.Result = HitIconIndex(sx, out _) ? (IntPtr)HTCLIENT : (IntPtr)HTTRANSPARENT;
-    return;
-}
-base.WndProc(ref m);  // ALWAYS call base for everything else
-```
+Note: `DecodeLParamPoint` (the former standalone helper) was removed from `PInvokeOverlay`. Decoding is now done inside `ScreenToClientPoint`.
 
-**Coordinate-space rule:** `WM_NCHITTEST` lParam is **screen coordinates** — call `ScreenToClientPoint` after `DecodeLParamPoint`. Mouse events handled in `OnMouseDown`/`OnMouseUp` already arrive in client coordinates via `MouseEventArgs.Location`.
+## PInvokeOverlay Surface
 
-`PassiveOverlayWindow` doesn't override `WndProc` at all — `WS_EX_TRANSPARENT` makes the OS skip hit-testing entirely.
+`PInvokeOverlay.cs` in `src/Imrdy.Windows/Desktop/` retains:
+- `WS_EX_TOOLWINDOW` constant
+- `ScreenToClientPoint(hwnd, lParam)` — DPI-correct screen→client conversion
+- `WindowAtPoint(point)` — used by hover-dashboard z-order gating
 
-## DecodeLParamPoint Helper
+Stripped (no longer needed without `WS_EX_LAYERED`):
+- `UpdateLayeredWindow` and associated GDI plumbing
+- `DecodeLParamPoint` (merged into `ScreenToClientPoint`)
+- `WS_EX_LAYERED` constant
 
-`PInvokeOverlay.DecodeLParamPoint(IntPtr)` returns `(int X, int Y)` and handles two correctness concerns:
+Added:
+- `RegisterWindowMessage` — used for `TaskbarCreated` message registration so the overlay can re-pin after Explorer restart.
 
-- **64-bit safety:** `(int)(nint)lParam` — NOT `IntPtr.ToInt32()` which throws `OverflowException` when upper 32 bits are non-zero.
-- **Sign-extension:** LOWORD/HIWORD are signed shorts; negative values legitimately occur on multi-monitor setups where the window sits on a monitor positioned left/above the primary. Coords ≥ 0x8000 are subtracted from 0x10000.
+## SurfaceInteracted Event
 
-`PInvokeOverlay.ScreenToClientPoint(hwnd, ref x, ref y)` wraps the Win32 `ScreenToClient` P/Invoke. **Do NOT** substitute `Bounds.Left`/`Bounds.Top` subtraction — it diverges from the OS transform at DPI scales > 100%.
+`OverlayPanel` exposes `SurfaceInteracted` (fires after a successful left-click dispatch, inside the try block, before any catch). Right-click does NOT fire the event — WinForms handles menu dismissal naturally.
 
-## OverlayConfig.Interactive Typing
+**Subscription lifecycle (P6 — TrayApp owns all wiring):**
+- TrayApp subscribes to `_overlayPanel.SurfaceInteracted` after construction
+- On config change: capture old reference, unsubscribe, dispose old panel, construct new panel, re-subscribe
+- Controllers call `HandleSurfaceInteraction()` via TrayApp dispatch — base ctor does NOT self-subscribe
 
-Stored as `bool?` (nullable), not `bool`. STJ source-gen ignores CLR field initializers (`= true`), so a missing `interactive` key in the JSON config deserializes to `null`, not `true`. `EnsureDefaults` coalesces:
+## ImrdyPalette — Shared Theme
 
-```csharp
-overlay = overlay with { Interactive = overlay.Interactive ?? true };
-```
-
-Callers also coalesce at point-of-use as defense-in-depth: `config.Overlay.Interactive ?? true`.
+`src/Imrdy.Windows/Theme/ImrdyPalette.cs` provides palette colors and `ApplyMica` / `ApplyRoundedRegion` helpers. Extracted from `HoverDashboardFormBase`; consumed by `HoverDashboardFormBase`, `SessionDashboardForm`, `WorkspaceDashboardForm`, and `OverlayPanel`. Use `ImrdyPalette` constants instead of inline `Color.FromArgb` calls in any surface that inherits or hosts overlay-adjacent UI.
 
 ## NotifyIconMenuHost — Tray Right-Click Only
 
 `NotifyIconMenuHost` at `src/Imrdy.Windows/Menus/` is **still used for tray-icon right-click** (`NotifyIcon.MouseClick` handler). It reflects `NotifyIcon.ShowContextMenu` (private) and wraps it in `AttachThreadInput`. The tray uses this path because clicks on the `NotifyIcon` arrive via the shell's tray notification protocol, not as `OnMouseUp` events on a form — there's no activatable owner control to pass to `menu.Show`.
 
-The two dispatch modes are unified behind `MenuAnchor`: `MenuAnchor.AtTrayIcon(NotifyIcon)` → `NotifyIconMenuHost`, `MenuAnchor.AtControl(Control, Point)` → `menu.Show(owner, location)`. `TrayApp.ShowContextMenuAt` is the **one and only** site that branches on anchor kind; `NotifyIconMenuHost` and `menu.Show` are not referenced anywhere else — not from the overlay, not from toast activation, not from controller-menu items.
+The two dispatch modes are unified behind `MenuAnchor`: `MenuAnchor.AtTrayIcon(NotifyIcon)` → `NotifyIconMenuHost`, `MenuAnchor.AtControl(Control, Point)` → `menu.Show(owner, location)`. `TrayApp.ShowContextMenuAt` is the **one and only** site that branches on anchor kind.
+
+## Updates — 2026-06-26 (OverlayPanel redesign)
+
+Supersedes the 2026-04-19 Passive/Interactive split and the 2026-04-21 interaction-router additions:
+
+- **Collapsed three-class hierarchy to single `OverlayPanel`** — `OverlayWindowBase`, `PassiveOverlayWindow`, `InteractiveOverlayWindow` all deleted.
+- **Non-layered rendering** — replaced `UpdateLayeredWindow` + GDI bitmap path with `OnPaint` + DWM mica backdrop.
+- **`OverlayConfig.Interactive` removed** — panel is always interactive. No runtime mode switching. No passive variant.
+- **`OverlayConfig.Monitor` added** — int field for multi-monitor selection.
+- **Spacing default** — bumped from 4 to 8 px.
+- **`DecodeLParamPoint` removed from PInvokeOverlay** — merged into `ScreenToClientPoint`.
+- **`RegisterWindowMessage` added** — for `TaskbarCreated` re-pin after Explorer restart.
+- **`ImrdyPalette` extracted** — palette colors and DWM helpers consolidated into shared theme class.
+- **`IsDashboardHoverActive` removed from hover-dashboard controllers** — z-order gate now reads `Form.Bounds` directly.
+- **`overlay` render component added** — `OverlayRenderer` + `NullSessionInteractionRouter`; 4 fixture files; covered by `imrdy render --all`.
 
 ## Updates — 2026-04-21 (interaction router)
 
-All user-initiated session/workspace actions — tray click, overlay click, toast activation, controller menu, session menu — now route through a single `ISessionInteractionRouter` contract (`src/Imrdy.Windows/Interaction/`). Four methods: `ActivateSession(id)` / `ActivateWorkspace(path)` for primary (left-click) intents, `OpenSessionMenu(id, MenuAnchor)` / `OpenWorkspaceMenu(path, MenuAnchor)` for secondary (right-click) intents.
-
-- **Overlay right-click now calls `router.OpenSessionMenu/OpenWorkspaceMenu` with `MenuAnchor.AtControl(this, e.Location)`** — replaces the earlier `IOverlayClickRouter.ShowContextMenu(owner, location, id, type)` contract (which has been deleted).
-- **`MenuAnchor` value type** unifies the two anchoring modes: `AtTrayIcon(NotifyIcon)` → `NotifyIconMenuHost`; `AtControl(Control, Point)` → `menu.Show(owner, location)`. Single branch point lives in `TrayApp.ShowContextMenuAt`.
-- **Two-phase shape enforced by the contract** — every router method internally runs `MarkSessionInteracted`/`MarkWorkspaceInteracted` (age-reset + icon refresh) **then** dispatches the intent. Callers no longer duplicate this bookkeeping inline per surface.
-- **Hand cursor on interactive overlay** — `InteractiveOverlayWindow` sets `Cursor = Cursors.Hand` at construction. `WM_NCHITTEST` returning `HTTRANSPARENT` over gaps means the cursor is only visible over icons; over gaps the OS routes cursor selection to the window below.
-
-Root-cause insight: every surface (tray, overlay, toast, controller menu) had been duplicating the age-reset + icon-refresh logic inline at the event handler. The router contract enforces the uniform two-phase shape — Mark, then Dispatch. Adding a new surface is one call site; adding a new verb (e.g. `DismissSession`) is one interface method and one implementation — all surfaces get it for free.
-
-## Updates — 2026-04-19 (vanilla refactor)
-
-Supersedes the earlier "delegate to NotifyIcon" approach. Implemented in the post-Step-12 cleanup of `tray-overlay-parity`:
-
-- **Split overlay into `Passive` / `Interactive` / `Base`** — interactivity decided at construction, not runtime. `WS_EX_NOACTIVATE` moved off the interactive variant so it can be foreground for menus.
-- **Vanilla mouse handling** — replaced `WM_LBUTTONDOWN` / `WM_RBUTTONUP` interception with `OnMouseDown` / `OnMouseUp` overrides that always call `base`. `WndProc` now intercepts only `WM_NCHITTEST`.
-- **Vanilla menu show** — `IOverlayClickRouter.ShowContextMenu` now takes `(Control owner, Point clientLocation, string id, DisplayItemType type)`; implementation is `menu.Show(owner, clientLocation)`. Menu anchors at the click point.
-- **Removed topmost watchdog** — `Form.TopMost = true` is sufficient.
-- **Deleted P/Invoke band-aids** — `SetForegroundWindow`, `PostWmNull`, `ForceTopMost`, `SetWindowPos`, `ReapplyTopMost` removed from `PInvokeOverlay`. Class shrunk significantly.
-- **Deleted `OverlayMenuPresenter`** + hidden owner `NativeWindow` — the activatable interactive overlay IS the owner.
+All user-initiated session/workspace actions now route through `ISessionInteractionRouter` contract (`src/Imrdy.Windows/Interaction/`). Four methods: `ActivateSession(id)` / `ActivateWorkspace(path)` for primary intents, `OpenSessionMenu(id, MenuAnchor)` / `OpenWorkspaceMenu(path, MenuAnchor)` for secondary intents. Two-phase shape enforced: `MarkSessionInteracted`/`MarkWorkspaceInteracted` then dispatch. Still applies to `OverlayPanel`.
 
 ## Related
 
 - [Architecture](architecture.md) — Overlay rendering loop, timer interactions
 - [Status Mapping](status-mapping.md) — Icon color/aging by status
+- [Render Verb Architecture](render-verb-architecture.md) — `overlay` component coverage in `imrdy render --all`

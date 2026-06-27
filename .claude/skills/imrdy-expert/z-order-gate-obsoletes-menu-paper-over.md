@@ -13,7 +13,7 @@ Before `WindowFromPoint` z-order gating was introduced, hover-intent detection u
 
 `HoverDashboardController.OnDrainTick` now calls `PInvokeOverlay.WindowAtPoint(cursor)` once per tick. The `cursorOverOverlay` boolean is `true` only when both conditions hold:
 
-1. The cursor is geometrically inside the overlay's `ActualScreenBounds` rectangle.
+1. The cursor is geometrically inside the overlay's `Form.Bounds` rectangle.
 2. `WindowFromPoint` returns the overlay's own HWND — meaning the overlay is the topmost window at that pixel.
 
 When a tray context menu is open, the menu's HWND is above the overlay in Z-order and appears under the cursor. `WindowFromPoint` therefore returns the menu's HWND, not the overlay HWND. Condition 2 fails, `cursorOverOverlay` is false, and the dwell counter never increments. The dashboard cannot trigger while any foreign window covers the overlay row — the correctness guarantee the hide-on-menu logic was providing is now delivered by the z-order gate itself, with no extra state.

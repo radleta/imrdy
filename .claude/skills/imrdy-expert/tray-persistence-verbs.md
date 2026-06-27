@@ -17,7 +17,7 @@ Use this page as the diagnostic checklist when a tray-side change "doesn't seem 
 
 **Failure modes:**
 - The mutate lambda must produce a fully-formed `ImrdyConfig` — partial-record updates that drop nested objects (e.g., `c with { Tray = null }`) can fail `EnsureDefaults` round-tripping on the next read.
-- Three-state nullable fields (`OverlayConfig.Interactive` = `bool?`, `DiagnosticsConfig.IpcEnabled` = `bool?`) must NOT be flattened to a concrete `bool` in `EnsureDefaults`. The null state is semantically distinct from `false`.
+- Three-state nullable fields (`DiagnosticsConfig.IpcEnabled` = `bool?`) must NOT be flattened to a concrete `bool` in `EnsureDefaults`. The null state is semantically distinct from `false`. (`OverlayConfig.Interactive` was a `bool?` with the same pattern but was removed in the OverlayPanel redesign.)
 
 ## Workspaces — `~/.imrdy/workspaces.json`
 

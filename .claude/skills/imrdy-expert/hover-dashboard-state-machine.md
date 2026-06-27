@@ -65,7 +65,7 @@ Add an event that fires after successful **surface action** (left-click dispatch
 **1. Overlay fires event after successful dispatch:**
 
 ```csharp
-// In InteractiveOverlayWindow
+// In OverlayPanel
 protected override void OnMouseUp(MouseEventArgs e)
 {
     try

@@ -194,8 +194,8 @@ imrdy config set overlay.enabled true
 | `overlay.enabled` | `false` | Show the overlay window |
 | `overlay.position` | `"bottom-right"` | `"bottom-right"` or `"bottom-left"` |
 | `overlay.size` | `64` | Icon size in pixels (32–256) |
-| `overlay.spacing` | `4` | Gap between icons in pixels (0–32) |
-| `overlay.interactive` | `true` | Click icons to switch sessions and right-click for session menus; set to `false` for full click-through |
+| `overlay.spacing` | `8` | Gap between icons in pixels (0–32) |
+| `overlay.monitor` | `0` | Monitor index to dock to (0 = primary) |
 
 **CLI examples:**
 ```bash
@@ -205,7 +205,7 @@ imrdy config set overlay.size 128
 
 **Controller menu:** Right-click the controller icon → **Overlay** — toggle enabled, select position, select size.
 
-**V1 limitations:** Primary monitor only. No animation, no drag to reposition, no peek mode.
+**V1 limitations:** No animation, no drag to reposition, no peek mode.
 
 ## Controller Tray Icon
 
@@ -253,7 +253,7 @@ Supports Windows 10 (20H1+) and Windows 11 (all versions through 24H2).
 {
   "tray": { "enabled": true, "iconStyle": "dots" },
   "sound": { "enabled": true, "defaultPack": "random", "disabledPacks": [] },
-  "overlay": { "enabled": false, "position": "bottom-right", "size": 64, "spacing": 4 },
+  "overlay": { "enabled": false, "position": "bottom-right", "size": 64, "spacing": 8 },
   "diagnostics": { "ipcEnabled": null }
 }
 ```
