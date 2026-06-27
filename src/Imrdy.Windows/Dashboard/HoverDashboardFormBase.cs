@@ -172,9 +172,21 @@ internal abstract class HoverDashboardFormBase : Form
             }
         }
 
-        // X: centre on cursor, then clamp to working area (width is fixed at FormMinWidth).
-        var anchorX = Math.Max(workingArea.Left,
-            Math.Min(cursor.X - this.Width / 2, workingArea.Right - this.Width));
+        // X: keep the form directly above the docked overlay panel, biased toward the
+        // hovered chip. The form width is fixed (FormMinWidth), so centring it on the
+        // cursor would clamp a left/right-docked overlay's popup hard against the screen
+        // edge — reading as "stuck to the screen end" rather than "above the overlay".
+        // Instead, constrain the form's span to the overlay's span (sliding toward the
+        // cursor within that range); fall back to centring over the overlay when the form
+        // is wider than the overlay. A final working-area clamp covers multi-monitor edges.
+        int anchorX;
+        var lowBound  = overlayBounds.Left;
+        var highBound = overlayBounds.Right - this.Width;
+        if (lowBound <= highBound)
+            anchorX = Math.Max(lowBound, Math.Min(cursor.X - this.Width / 2, highBound));
+        else
+            anchorX = overlayBounds.Left + (overlayBounds.Width - this.Width) / 2;
+        anchorX = Math.Max(workingArea.Left, Math.Min(anchorX, workingArea.Right - this.Width));
 
         return (anchorMode, anchorX, anchorY);
     }
@@ -241,15 +253,19 @@ internal abstract class HoverDashboardFormBase : Form
     }
 
     /// <summary>
-    /// DWM mica/acrylic backdrop + rounded Region clip.
+    /// Rounded Region clip for the form shape. DWM mica is intentionally NOT applied:
+    /// the form fades via Form.Opacity (a layered window) and paints an opaque BgForm
+    /// fill, so the system backdrop is never visible — its only effect was compositing
+    /// opaque white into the Region-carved corners (worst as a flicker during resize
+    /// re-clips). Omitting mica keeps the carved corners transparent (desktop shows
+    /// through) with no white artifact. Contrast with OverlayPanel, which is never
+    /// layered (no fade) and so safely uses DWM corner rounding + mica.
     /// Derived classes that override OnHandleCreated MUST call base.OnHandleCreated(e) FIRST
-    /// so DWM and Region are applied before any derived initialization.
-    /// Silently swallows HRESULT failures on Win10 19045.
+    /// so the Region is applied before any derived initialization.
     /// </summary>
     protected override void OnHandleCreated(EventArgs e)
     {
         base.OnHandleCreated(e);
-        ImrdyPalette.ApplyMica(this);
         ApplyRoundedRegion();
         _baseLogger.LogDebug(
             "HoverDashboardFormBase: handle-created formBounds={Bounds} clientSize={CW}x{CH} regionRadius=14",

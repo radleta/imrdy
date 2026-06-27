@@ -19,7 +19,8 @@ The former three-class hierarchy (`OverlayWindowBase` / `PassiveOverlayWindow` /
 | Extended styles | `WS_EX_TOOLWINDOW` |
 | Rendering | `OnPaint` (no `UpdateLayeredWindow`) |
 | Input | `OnMouseDown` / `OnMouseUp` overrides |
-| Backdrop | DWM mica (via `DwmSetWindowAttribute`, same as dashboard forms; `DrawToBitmap` captures GDI+ only — no mica in render PNGs) |
+| Backdrop | DWM mica (via `DwmSetWindowAttribute`; overlay only — dashboard forms do not use mica; `DrawToBitmap` captures GDI+ only — no mica in render PNGs) |
+| Corner rounding | DWM native `DWMWCP_ROUND` via `ImrdyPalette.ApplyRoundedCorners` (Win11+); GDI `Region` clip fallback for Win10 ≤19045. `_usesDwmCorners` field tracks which path. GDI `Region` alone clips only GDI painting — DWM composited white into region-carved corners on Win11. |
 | Activatable | yes (always) |
 | Click-through | none — inter-chip gaps are opaque panel chrome; clicks there are no-ops (WM_NCHITTEST dropped, Decision 11) |
 
@@ -98,13 +99,19 @@ Added:
 
 ## ImrdyPalette — Shared Theme
 
-`src/Imrdy.Windows/Theme/ImrdyPalette.cs` provides palette colors and `ApplyMica` / `ApplyRoundedRegion` helpers. Extracted from `HoverDashboardFormBase`; consumed by `HoverDashboardFormBase`, `SessionDashboardForm`, `WorkspaceDashboardForm`, and `OverlayPanel`. Use `ImrdyPalette` constants instead of inline `Color.FromArgb` calls in any surface that inherits or hosts overlay-adjacent UI.
+`src/Imrdy.Windows/Theme/ImrdyPalette.cs` provides palette colors and `ApplyMica` / `ApplyRoundedRegion` / `ApplyRoundedCorners` helpers. Extracted from `HoverDashboardFormBase`; consumed by `HoverDashboardFormBase`, `SessionDashboardForm`, `WorkspaceDashboardForm`, and `OverlayPanel`. `ApplyRoundedCorners(Form): bool` sets `DWMWA_WINDOW_CORNER_PREFERENCE = DWMWCP_ROUND`; returns true when DWM takes ownership of rounding (Win11+), false when the caller must fall back to `ApplyRoundedRegion` (Win10). Use `ImrdyPalette` constants instead of inline `Color.FromArgb` calls in any surface that inherits or hosts overlay-adjacent UI.
 
 ## NotifyIconMenuHost — Tray Right-Click Only
 
 `NotifyIconMenuHost` at `src/Imrdy.Windows/Menus/` is **still used for tray-icon right-click** (`NotifyIcon.MouseClick` handler). It reflects `NotifyIcon.ShowContextMenu` (private) and wraps it in `AttachThreadInput`. The tray uses this path because clicks on the `NotifyIcon` arrive via the shell's tray notification protocol, not as `OnMouseUp` events on a form — there's no activatable owner control to pass to `menu.Show`.
 
 The two dispatch modes are unified behind `MenuAnchor`: `MenuAnchor.AtTrayIcon(NotifyIcon)` → `NotifyIconMenuHost`, `MenuAnchor.AtControl(Control, Point)` → `menu.Show(owner, location)`. `TrayApp.ShowContextMenuAt` is the **one and only** site that branches on anchor kind.
+
+## Updates — 2026-06-27 (DWM corner rounding; mica removed from dashboards; placement fix)
+
+- **DWM native corner rounding on overlay** — `ImrdyPalette.ApplyRoundedCorners(Form): bool` added; `OverlayPanel` calls it first and falls back to `ApplyRoundedRegion` only when it returns false (Win10 ≤19045). Root cause: GDI `Region` clipped only GDI painting, not the DWM mica backdrop, producing opaque white corners on Win11.
+- **Mica removed from dashboards** — `ImrdyPalette.ApplyMica` is no longer called from `HoverDashboardFormBase.OnHandleCreated`. Dashboards fade via `Form.Opacity` (layered window); mica on a layered form composites white into GDI-Region-clipped corners.
+- **Dashboard anchor X constrained to overlay span** — `ComputeAnchorPlacement` now biases anchorX toward the hovered chip within the overlay's horizontal span (falls back to overlay center; final working-area clamp retained). Cursor-centering pinned the popup to the screen edge for an edge-docked overlay.
 
 ## Updates — 2026-06-26 (OverlayPanel redesign)
 

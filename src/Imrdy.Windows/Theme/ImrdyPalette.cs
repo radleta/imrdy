@@ -14,8 +14,10 @@ namespace Imrdy.Windows.Theme;
 internal static class ImrdyPalette
 {
     // DWM backdrop constants
-    private const int DWMWA_SYSTEMBACKDROP_TYPE = 38;
-    private const int DWMSBT_MAINWINDOW         = 2; // Mica
+    private const int DWMWA_SYSTEMBACKDROP_TYPE      = 38;
+    private const int DWMSBT_MAINWINDOW              = 2; // Mica
+    private const int DWMWA_WINDOW_CORNER_PREFERENCE = 33;
+    private const int DWMWCP_ROUND                   = 2;
 
     [DllImport("dwmapi.dll")]
     private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int attrValue, int attrSize);
@@ -35,16 +37,41 @@ internal static class ImrdyPalette
     /// where DWMWA_SYSTEMBACKDROP_TYPE is not supported. The form degrades to its solid
     /// <see cref="BgForm"/> fill on those builds.
     /// </summary>
-    internal static void ApplyMica(Form form)
+    internal static bool ApplyMica(Form form)
     {
         try
         {
             var backdropType = DWMSBT_MAINWINDOW;
-            DwmSetWindowAttribute(form.Handle, DWMWA_SYSTEMBACKDROP_TYPE, ref backdropType, sizeof(int));
+            var hr = DwmSetWindowAttribute(form.Handle, DWMWA_SYSTEMBACKDROP_TYPE, ref backdropType, sizeof(int));
+            return hr == 0;
         }
         catch (Exception)
         {
             // Expected on Win10 19045 and earlier — swallow silently.
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Rounds the window's corners via DWM (Win11 build 22000+). DWM rounds the window
+    /// frame and its mica backdrop together, so the corners stay transparent — unlike a
+    /// GDI Region, which leaves the DWM backdrop compositing opaque white wedges in the
+    /// carved-out corners. Returns true when DWM applied the rounding (S_OK); returns
+    /// false on Win10 (≤19045) where the attribute is unsupported, so callers fall back
+    /// to ApplyRoundedRegion there (Win10 has no system backdrop, so the GDI region
+    /// rounds cleanly without the white-wedge artifact).
+    /// </summary>
+    internal static bool ApplyRoundedCorners(Form form)
+    {
+        try
+        {
+            var pref = DWMWCP_ROUND;
+            var hr   = DwmSetWindowAttribute(form.Handle, DWMWA_WINDOW_CORNER_PREFERENCE, ref pref, sizeof(int));
+            return hr == 0;
+        }
+        catch (Exception)
+        {
+            return false;
         }
     }
 

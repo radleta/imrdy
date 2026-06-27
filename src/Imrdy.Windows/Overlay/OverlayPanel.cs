@@ -65,6 +65,9 @@ internal sealed class OverlayPanel : Form
     // Nullable — no initial hover target; set by controller via SetHoveredChipId.
     private string? _hoveredChipId;
 
+    // True when DWM owns corner rounding (Win11 22000+); false on Win10 where the GDI Region fallback is used.
+    private bool _usesDwmCorners;
+
     // ── Events ────────────────────────────────────────────────────────────────────
 
     /// <summary>
@@ -138,7 +141,9 @@ internal sealed class OverlayPanel : Form
     {
         base.OnHandleCreated(e);
         ImrdyPalette.ApplyMica(this);
-        ImrdyPalette.ApplyRoundedRegion(this);
+        _usesDwmCorners = ImrdyPalette.ApplyRoundedCorners(this);
+        if (!_usesDwmCorners)
+            ImrdyPalette.ApplyRoundedRegion(this);
         PinAcrossVirtualDesktops();
     }
 
@@ -146,7 +151,9 @@ internal sealed class OverlayPanel : Form
     {
         base.OnResize(e);
         // Region clip must track every size change or the rounded-corner shape becomes stale.
-        ImrdyPalette.ApplyRoundedRegion(this);
+        // Skipped when DWM owns the rounding — DWM tracks size automatically.
+        if (!_usesDwmCorners)
+            ImrdyPalette.ApplyRoundedRegion(this);
     }
 
     /// <summary>

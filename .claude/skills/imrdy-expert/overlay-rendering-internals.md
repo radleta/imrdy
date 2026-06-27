@@ -13,7 +13,9 @@ code-cites:
 
 `OverlayPanel` (`src/Imrdy.Windows/Overlay/OverlayPanel.cs`) is a non-layered WinForms `Form` that renders via `OnPaint`. It replaces the former `OverlayWindowBase` / `PassiveOverlayWindow` / `InteractiveOverlayWindow` three-class hierarchy, which was layered (`WS_EX_LAYERED`) and rendered via `UpdateLayeredWindow`. All layered-window GDI plumbing has been removed.
 
-DWM mica backdrop is applied in `OnHandleCreated` via `DwmSetWindowAttribute` (same as dashboard forms). `DrawToBitmap` captures only GDI+ content — rendered PNGs show the standard WinForms background color, not mica.
+DWM mica backdrop is applied in `OnHandleCreated` via `DwmSetWindowAttribute` (overlay only — dashboard forms do not use mica; see [Hover Dashboard Form Lifecycle](hover-dashboard-form-lifecycle.md)). `DrawToBitmap` captures only GDI+ content — rendered PNGs show the standard WinForms background color, not mica.
+
+DWM native corner rounding is applied via `ImrdyPalette.ApplyRoundedCorners(this)` (sets `DWMWA_WINDOW_CORNER_PREFERENCE = DWMWCP_ROUND`). This returns true on Win11+ (DWM owns the rounding) and false on Win10 ≤19045 (falls back to GDI `Region` clip via `ApplyRoundedRegion`). `OverlayPanel._usesDwmCorners` tracks which path was taken. Root cause for the switch: a GDI `Region` clips only GDI painting, not the DWM mica backdrop, so DWM composited opaque white into Region-carved corners on Win11.
 
 ## Bitmap Cache
 

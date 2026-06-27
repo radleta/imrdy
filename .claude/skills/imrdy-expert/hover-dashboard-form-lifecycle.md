@@ -10,7 +10,7 @@ summary: "HoverDashboardFormBase owns the shared shell (DWM, focus guard, pin/un
 `HoverDashboardFormBase` (abstract `Form`) owns the shared shell that both dashboard peers need:
 
 - `FormBorderStyle.None`, `TopMost=true`, `ShowInTaskbar=false`
-- DWM mica/acrylic backdrop applied in `OnHandleCreated`
+- No DWM mica backdrop — dashboards fade via `Form.Opacity` (layered window); mica on a layered form composites white into GDI `Region`-carved corners. `ImrdyPalette.ApplyMica` is NOT called from `OnHandleCreated`. Overlay uses DWM mica; dashboards do not.
 - Rounded `Region` clip (radius 14)
 - `WM_MOUSEACTIVATE` focus guard (`MA_NOACTIVATE` when unpinned / `MA_ACTIVATE` when pinned)
 - `Pin()` / `Unpin()` / `IsPinned` API — two-click pin-then-activate invariant
@@ -88,7 +88,7 @@ if (formBounds.Right > workingArea.Right)
 
 **Key details:**
 - Use `Screen.FromControl(_overlayWindow)`, NOT `Screen.PrimaryScreen` — fails on multi-monitor setups where the overlay is on a secondary monitor.
-- Clamp X because bottom-right overlay positions push the form toward the right edge; the centred X calculation can overflow.
+- X is constrained to the overlay panel's horizontal span, biased toward the hovered chip (falls back to overlay center when the form is wider than the overlay). Final working-area clamp is retained. Do NOT center on cursor X — for an edge-docked overlay this pins the popup to the screen edge.
 - The grace-corridor geometry (`Rectangle.Union` + `BridgeGap` expansion) is agnostic to above/below — it works identically either way.
 
 ### Part 2: Recreate-Per-Show — Virtual Desktop Binding Strategy
