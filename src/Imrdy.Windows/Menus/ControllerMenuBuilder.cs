@@ -85,10 +85,9 @@ internal static class ControllerMenuBuilder
                 await Task.Run(() => ConfigReader.Update(c => c with { Tray = c.Tray with { IconStyle = newStyle } }));
                 onConfigChanged(ConfigReader.Read());
             }
-            else if (tag == "toggle-overlay")
+            else if (await TryHandleOverlayTag(tag, state, onConfigChanged))
             {
-                await Task.Run(() => ConfigReader.Update(c => c with { Overlay = c.Overlay with { Enabled = !state.Config.Overlay.Enabled } }));
-                onConfigChanged(ConfigReader.Read());
+                // overlay tag handled
             }
             else if (tag == "toggle-tray")
             {
@@ -106,18 +105,6 @@ internal static class ControllerMenuBuilder
                 var workspacePath = tag["switch-workspace:".Length..];
                 if (!string.IsNullOrEmpty(workspacePath))
                     onSwitchWorkspace(workspacePath);
-            }
-            else if (tag.StartsWith("set-overlay-position:", StringComparison.Ordinal))
-            {
-                var position = tag["set-overlay-position:".Length..];
-                await Task.Run(() => ConfigReader.Update(c => c with { Overlay = c.Overlay with { Position = position } }));
-                onConfigChanged(ConfigReader.Read());
-            }
-            else if (tag.StartsWith("set-overlay-size:", StringComparison.Ordinal))
-            {
-                if (!int.TryParse(tag["set-overlay-size:".Length..], out var size)) return;
-                await Task.Run(() => ConfigReader.Update(c => c with { Overlay = c.Overlay with { Size = size } }));
-                onConfigChanged(ConfigReader.Read());
             }
             else if (tag == "open-config")
             {
@@ -146,6 +133,59 @@ internal static class ControllerMenuBuilder
         {
             logger?.LogError(ex, "Error handling menu click: {Tag}", tag);
         }
+    }
+
+    /// <summary>
+    /// Handles overlay-related menu tags. Returns <c>true</c> when the tag was recognized
+    /// (regardless of whether a mutation occurred), <c>false</c> when it is not an overlay tag.
+    /// On int-parse failure the tag is still recognized — returns <c>true</c> without mutating.
+    /// </summary>
+    internal static async Task<bool> TryHandleOverlayTag(
+        string tag,
+        ControllerMenuState state,
+        Action<ImrdyConfig> onConfigChanged)
+    {
+        if (tag == "toggle-overlay")
+        {
+            await Task.Run(() => ConfigReader.Update(c => c with { Overlay = c.Overlay with { Enabled = !c.Overlay.Enabled } }));
+            onConfigChanged(ConfigReader.Read());
+            return true;
+        }
+        if (tag == "toggle-overlay-lock")
+        {
+            await Task.Run(() => ConfigReader.Update(c => c with { Overlay = c.Overlay with { Locked = !c.Overlay.Locked } }));
+            onConfigChanged(ConfigReader.Read());
+            return true;
+        }
+        if (tag.StartsWith("set-overlay-position:", StringComparison.Ordinal))
+        {
+            var position = tag["set-overlay-position:".Length..];
+            await Task.Run(() => ConfigReader.Update(c => c with { Overlay = c.Overlay with { Position = position } }));
+            onConfigChanged(ConfigReader.Read());
+            return true;
+        }
+        if (tag.StartsWith("set-overlay-size:", StringComparison.Ordinal))
+        {
+            if (!int.TryParse(tag["set-overlay-size:".Length..], out var size)) return true;
+            await Task.Run(() => ConfigReader.Update(c => c with { Overlay = c.Overlay with { Size = size } }));
+            onConfigChanged(ConfigReader.Read());
+            return true;
+        }
+        if (tag.StartsWith("set-overlay-spacing:", StringComparison.Ordinal))
+        {
+            if (!int.TryParse(tag["set-overlay-spacing:".Length..], out var spacing)) return true;
+            await Task.Run(() => ConfigReader.Update(c => c with { Overlay = c.Overlay with { Spacing = spacing } }));
+            onConfigChanged(ConfigReader.Read());
+            return true;
+        }
+        if (tag.StartsWith("set-overlay-monitor:", StringComparison.Ordinal))
+        {
+            if (!int.TryParse(tag["set-overlay-monitor:".Length..], out var monitor)) return true;
+            await Task.Run(() => ConfigReader.Update(c => c with { Overlay = c.Overlay with { Monitor = monitor } }));
+            onConfigChanged(ConfigReader.Read());
+            return true;
+        }
+        return false;
     }
 
     private static void OpenFolder(string exe, string args, ILogger? logger)

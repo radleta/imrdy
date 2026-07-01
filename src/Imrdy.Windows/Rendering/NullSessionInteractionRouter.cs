@@ -15,4 +15,5 @@ internal sealed class NullSessionInteractionRouter : ISessionInteractionRouter
     public void ActivateWorkspace(string workspacePath) { }
     public void OpenSessionMenu(string sessionId, MenuAnchor anchor) { }
     public void OpenWorkspaceMenu(string workspacePath, MenuAnchor anchor) { }
+    public void OpenOverlayMenu(MenuAnchor anchor) { }
 }

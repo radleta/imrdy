@@ -1,5 +1,6 @@
 using System.Globalization;
 using Imrdy.Core.Icons;
+using Imrdy.Core.Overlay;
 
 namespace Imrdy.Core.Menus;
 
@@ -77,56 +78,56 @@ internal static class ControllerMenuModel
         };
     }
 
-    private static MenuItemModel BuildOverlaySubmenu(ControllerMenuState state)
+    public static MenuItemModel BuildOverlaySubmenu(ControllerMenuState state)
     {
         var overlay = state.Config.Overlay;
+        var currentAnchor = OverlayAnchor.Parse(overlay.Position);
         var children = new List<MenuItemModel>
         {
-            new MenuItemModel
-            {
-                Label = "Enabled",
-                Tag = "toggle-overlay",
-                Checked = overlay.Enabled,
-            },
+            // (1) toggle
+            new MenuItemModel { Label = "Enabled", Tag = "toggle-overlay", Checked = overlay.Enabled },
+            // (2) sep
             new MenuItemModel { Type = MenuItemType.Separator },
-            new MenuItemModel
-            {
-                Label = "Bottom Right",
-                Tag = "set-overlay-position:bottom-right",
-                Checked = string.Equals(overlay.Position, "bottom-right", StringComparison.OrdinalIgnoreCase),
-            },
-            new MenuItemModel
-            {
-                Label = "Bottom Left",
-                Tag = "set-overlay-position:bottom-left",
-                Checked = string.Equals(overlay.Position, "bottom-left", StringComparison.OrdinalIgnoreCase),
-            },
+            // (3) 6 position anchors
+            new MenuItemModel { Label = "Top Left",      Tag = "set-overlay-position:top-left",      Checked = currentAnchor == OverlayAnchor.Parse("top-left") },
+            new MenuItemModel { Label = "Top Center",    Tag = "set-overlay-position:top-center",    Checked = currentAnchor == OverlayAnchor.Parse("top-center") },
+            new MenuItemModel { Label = "Top Right",     Tag = "set-overlay-position:top-right",     Checked = currentAnchor == OverlayAnchor.Parse("top-right") },
+            new MenuItemModel { Label = "Bottom Left",   Tag = "set-overlay-position:bottom-left",   Checked = currentAnchor == OverlayAnchor.Parse("bottom-left") },
+            new MenuItemModel { Label = "Bottom Center", Tag = "set-overlay-position:bottom-center", Checked = currentAnchor == OverlayAnchor.Parse("bottom-center") },
+            new MenuItemModel { Label = "Bottom Right",  Tag = "set-overlay-position:bottom-right",  Checked = currentAnchor == OverlayAnchor.Parse("bottom-right") },
+            // (4) sep
             new MenuItemModel { Type = MenuItemType.Separator },
-            new MenuItemModel
-            {
-                Label = "Small (48px)",
-                Tag = "set-overlay-size:48",
-                Checked = overlay.Size == 48,
-            },
-            new MenuItemModel
-            {
-                Label = "Medium (64px)",
-                Tag = "set-overlay-size:64",
-                Checked = overlay.Size == 64,
-            },
-            new MenuItemModel
-            {
-                Label = "Large (96px)",
-                Tag = "set-overlay-size:96",
-                Checked = overlay.Size == 96,
-            },
-            new MenuItemModel
-            {
-                Label = "Extra Large (128px)",
-                Tag = "set-overlay-size:128",
-                Checked = overlay.Size == 128,
-            },
+            // (5) size presets
+            new MenuItemModel { Label = "Small (48px)",        Tag = "set-overlay-size:48",  Checked = overlay.Size == 48 },
+            new MenuItemModel { Label = "Medium (64px)",       Tag = "set-overlay-size:64",  Checked = overlay.Size == 64 },
+            new MenuItemModel { Label = "Large (96px)",        Tag = "set-overlay-size:96",  Checked = overlay.Size == 96 },
+            new MenuItemModel { Label = "Extra Large (128px)", Tag = "set-overlay-size:128", Checked = overlay.Size == 128 },
+            // (6) sep
+            new MenuItemModel { Type = MenuItemType.Separator },
+            // (7) spacing presets
+            new MenuItemModel { Label = "Spacing: 4px",  Tag = "set-overlay-spacing:4",  Checked = overlay.Spacing == 4 },
+            new MenuItemModel { Label = "Spacing: 8px",  Tag = "set-overlay-spacing:8",  Checked = overlay.Spacing == 8 },
+            new MenuItemModel { Label = "Spacing: 12px", Tag = "set-overlay-spacing:12", Checked = overlay.Spacing == 12 },
+            new MenuItemModel { Label = "Spacing: 16px", Tag = "set-overlay-spacing:16", Checked = overlay.Spacing == 16 },
+            // (8) sep
+            new MenuItemModel { Type = MenuItemType.Separator },
         };
+
+        // (9) monitor selector — one item per monitor label
+        for (var i = 0; i < state.Monitors.Count; i++)
+        {
+            children.Add(new MenuItemModel
+            {
+                Label = state.Monitors[i],
+                Tag = $"set-overlay-monitor:{i}",
+                Checked = overlay.Monitor == i,
+            });
+        }
+
+        // (10) sep
+        children.Add(new MenuItemModel { Type = MenuItemType.Separator });
+        // (11) lock toggle
+        children.Add(new MenuItemModel { Label = "Lock Position", Tag = "toggle-overlay-lock", Checked = overlay.Locked });
 
         return new MenuItemModel
         {

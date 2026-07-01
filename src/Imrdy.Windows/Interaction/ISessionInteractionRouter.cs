@@ -32,4 +32,7 @@ internal interface ISessionInteractionRouter
 
     /// <summary>Secondary action: open the workspace's context menu at the given anchor.</summary>
     void OpenWorkspaceMenu(string workspacePath, MenuAnchor anchor);
+
+    /// <summary>Secondary action on the overlay gutter (no chip hit): open the enriched overlay settings menu at the given anchor.</summary>
+    void OpenOverlayMenu(MenuAnchor anchor);
 }

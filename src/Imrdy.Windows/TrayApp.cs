@@ -53,6 +53,8 @@ internal sealed class TrayApp : ApplicationContext, ISessionInteractionRouter
     private OverlayPanel? _overlayPanel;
     private bool _overlayEnabled;
     private OverlayConfig _overlayConfig = new();
+    private bool _overlayReloadDeferred;
+    private readonly ContextMenuStrip _overlayMenu;
     private bool _trayEnabled = true;
     private readonly BalloonTipManager _balloonTipManager;
     private readonly WorkspaceVisibility _workspaceVisibility = new();
@@ -168,6 +170,9 @@ internal sealed class TrayApp : ApplicationContext, ISessionInteractionRouter
         // this, Control.BeginInvoke silently fails for overlay-only users whose
         // ContextMenuStrip is never shown.
         _ = _controllerIcon.ContextMenuStrip!.Handle;
+
+        _overlayMenu = OverlayMenuBuilder.Create(GetControllerState, OnConfigChanged, _logger);
+        _ = _overlayMenu.Handle;
 
         StartIpcServer();
 
@@ -344,6 +349,12 @@ internal sealed class TrayApp : ApplicationContext, ISessionInteractionRouter
     {
         try
         {
+            if (_overlayReloadDeferred && _overlayPanel?.IsDragging != true)
+            {
+                _pendingChanges.Enqueue("CONFIG_RELOAD");
+                _overlayReloadDeferred = false;
+            }
+
             var processed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             while (_pendingChanges.TryDequeue(out var item))
             {
@@ -1478,6 +1489,8 @@ internal sealed class TrayApp : ApplicationContext, ISessionInteractionRouter
         ShowContextMenuAt(entry.Menu, anchor);
     }
 
+    public void OpenOverlayMenu(MenuAnchor anchor) => ShowContextMenuAt(_overlayMenu, anchor);
+
     // Dispatches a menu to the right mechanism for the anchor:
     //   - Tray NotifyIcon (shell-delivered click): NotifyIconMenuHost (reflects the
     //     NotifyIcon's private ShowContextMenu via AttachThreadInput).
@@ -1615,6 +1628,7 @@ internal sealed class TrayApp : ApplicationContext, ISessionInteractionRouter
             InstalledPacks = _loadedPacks.Select(p => p.Name).ToList(),
             InstalledGraphicsPacks = _graphicsPackLoader.LoadPacks(ImrdyPaths.GraphicsPacksDir)
                 .Select(p => p.Name).ToList(),
+            Monitors = Screen.AllScreens.Select((s, i) => $"Monitor {i + 1} ({s.Bounds.Width}×{s.Bounds.Height})").ToList(),
             Config = ConfigReader.Read(),
             LogPath = ImrdyPaths.MonitorLog,
             DevBuild = BuildDevState(),
@@ -1774,82 +1788,109 @@ internal sealed class TrayApp : ApplicationContext, ISessionInteractionRouter
             _logger.LogInformation("Tray icons {State}", _trayEnabled ? "enabled" : "disabled");
         }
 
-        var overlayNowEnabled = config.Overlay.Enabled;
-        if (config.Overlay != _overlayConfig || overlayNowEnabled != _overlayEnabled)
+        var newOverlay = config.Overlay;
+        var oldOverlay = _overlayConfig;
+        var enabledChanged = newOverlay.Enabled != _overlayEnabled;
+
+        if (newOverlay != oldOverlay || enabledChanged)
         {
-            // Any overlay config change recreates the panel. OverlayConfig properties are
-            // init-only — a fresh OverlayPanel is the only way to apply new monitor/position/
-            // size/spacing. Unsubscribe from the old panel BEFORE disposing controllers.
-            // Invariant order: workspace → session → overlay (prevents late overlay events
-            // from invoking HandleSurfaceInteraction on a half-disposed controller).
-            if (_overlayPanel is not null)
+            // Drag-in-flight guard: defer the whole overlay block until dragging ends.
+            if (_overlayPanel is { IsDragging: true })
             {
-                if (_workspaceHoverController is not null)
-                    _overlayPanel.SurfaceInteracted -= _workspaceHoverController.HandleSurfaceInteraction;
-                if (_hoverController is not null)
-                    _overlayPanel.SurfaceInteracted -= _hoverController.HandleSurfaceInteraction;
-                _logger.LogDebug("TrayApp: unsubscribed hover controllers from _overlayPanel.SurfaceInteracted");
-            }
-            if (_hoverController is not null && _workspaceHoverController is not null)
-            {
-                _hoverController.FormShown -= _workspaceHoverController.HideIfVisible;
-                _workspaceHoverController.FormShown -= _hoverController.HideIfVisible;
-            }
-            _workspaceHoverController?.Dispose();
-            _workspaceHoverController = null;
-            _hoverController?.Dispose();
-            _hoverController = null;
-            _overlayPanel?.Dispose();
-            _overlayPanel = null;
-            _overlayConfig = config.Overlay;
-
-            if (overlayNowEnabled)
-            {
-                try
-                {
-                    _overlayPanel = CreateOverlay(config.Overlay);
-                    _overlayPanel.Show();
-                    RefreshOverlay();
-                    _logger.LogInformation("Overlay enabled with position={Position}, size={Size}",
-                        config.Overlay.Position, config.Overlay.Size);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex, "Failed to create overlay window during config change");
-                    _overlayPanel = null;
-                    overlayNowEnabled = false;
-                }
-
-                if (_overlayPanel is not null)
-                {
-                    _hoverController = new SessionHoverDashboardController(
-                        _overlayPanel,
-                        _desktopManager,
-                        _loggerFactory,
-                        _hookAccumulationStore,
-                        () => _sessions.Values.ToList(),
-                        _gitCache);
-                    _loggedNullHoverControllerWarning = false; // F6: reset so next absence is reported
-                    _workspaceHoverController = new WorkspaceHoverDashboardController(
-                        _overlayPanel,
-                        _desktopManager,
-                        _loggerFactory,
-                        _workspaceStore,
-                        GetWorkspaceLastSeen,
-                        () => _desktopManager?.GetCurrentDesktopIndex(),
-                        _gitCache);
-                    _overlayPanel.SurfaceInteracted += _hoverController.HandleSurfaceInteraction;
-                    _overlayPanel.SurfaceInteracted += _workspaceHoverController.HandleSurfaceInteraction;
-                    _hoverController.FormShown += _workspaceHoverController.HideIfVisible;
-                    _workspaceHoverController.FormShown += _hoverController.HideIfVisible;
-                    _logger.LogDebug("TrayApp: subscribed _hoverController and _workspaceHoverController to _overlayPanel.SurfaceInteracted + cross-controller FormShown");
-                }
+                _overlayReloadDeferred = true;
+                // fall through — do NOT touch the overlay this tick
             }
             else
             {
-                _logger.LogInformation("Overlay disabled");
+                // Structural-delta classification: zero the non-structural triple (Position/Monitor/Locked)
+                // so the generated record comparer tests only structural fields (Enabled/Size/Spacing).
+                // Never pass these zeroed records to CalculatePosition / OverlayAnchor.Parse.
+                var sOld = oldOverlay with { Position = "", Monitor = 0, Locked = false };
+                var sNew = newOverlay with { Position = "", Monitor = 0, Locked = false };
+                var structuralDelta = sOld != sNew;
+
+                if (!structuralDelta && _overlayPanel is not null && !enabledChanged)
+                {
+                    // Non-structural fast path: in-place re-place (no flash, no dispose+recreate).
+                    _overlayPanel.ApplyPositionConfig(newOverlay.Position, newOverlay.Monitor, newOverlay.Locked);
+                    _overlayConfig = newOverlay;
+                }
+                else
+                {
+                    // Structural / enabled-toggle / panel-null: existing dispose+recreate path.
+                    // Invariant unsubscribe order: workspace ctrl → session ctrl → cross-ctrl FormShown
+                    // → dispose controllers → dispose panel.
+                    if (_overlayPanel is not null)
+                    {
+                        if (_workspaceHoverController is not null)
+                            _overlayPanel.SurfaceInteracted -= _workspaceHoverController.HandleSurfaceInteraction;
+                        if (_hoverController is not null)
+                            _overlayPanel.SurfaceInteracted -= _hoverController.HandleSurfaceInteraction;
+                        _logger.LogDebug("TrayApp: unsubscribed hover controllers from _overlayPanel.SurfaceInteracted");
+                    }
+                    if (_hoverController is not null && _workspaceHoverController is not null)
+                    {
+                        _hoverController.FormShown -= _workspaceHoverController.HideIfVisible;
+                        _workspaceHoverController.FormShown -= _hoverController.HideIfVisible;
+                    }
+                    _workspaceHoverController?.Dispose();
+                    _workspaceHoverController = null;
+                    _hoverController?.Dispose();
+                    _hoverController = null;
+                    _overlayPanel?.Dispose();
+                    _overlayPanel = null;
+                    _overlayConfig = config.Overlay;
+
+                    var overlayNowEnabled = newOverlay.Enabled;
+                    if (overlayNowEnabled)
+                    {
+                        try
+                        {
+                            _overlayPanel = CreateOverlay(config.Overlay);
+                            _overlayPanel.Show();
+                            RefreshOverlay();
+                            _logger.LogInformation("Overlay enabled with position={Position}, size={Size}",
+                                config.Overlay.Position, config.Overlay.Size);
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogWarning(ex, "Failed to create overlay window during config change");
+                            _overlayPanel = null;
+                            overlayNowEnabled = false;
+                        }
+
+                        if (_overlayPanel is not null)
+                        {
+                            _hoverController = new SessionHoverDashboardController(
+                                _overlayPanel,
+                                _desktopManager,
+                                _loggerFactory,
+                                _hookAccumulationStore,
+                                () => _sessions.Values.ToList(),
+                                _gitCache);
+                            _loggedNullHoverControllerWarning = false; // F6: reset so next absence is reported
+                            _workspaceHoverController = new WorkspaceHoverDashboardController(
+                                _overlayPanel,
+                                _desktopManager,
+                                _loggerFactory,
+                                _workspaceStore,
+                                GetWorkspaceLastSeen,
+                                () => _desktopManager?.GetCurrentDesktopIndex(),
+                                _gitCache);
+                            _overlayPanel.SurfaceInteracted += _hoverController.HandleSurfaceInteraction;
+                            _overlayPanel.SurfaceInteracted += _workspaceHoverController.HandleSurfaceInteraction;
+                            _hoverController.FormShown += _workspaceHoverController.HideIfVisible;
+                            _workspaceHoverController.FormShown += _hoverController.HideIfVisible;
+                            _logger.LogDebug("TrayApp: subscribed _hoverController and _workspaceHoverController to _overlayPanel.SurfaceInteracted + cross-controller FormShown");
+                        }
+                    }
+                    else
+                    {
+                        _logger.LogInformation("Overlay disabled");
+                    }
+                    _overlayEnabled = overlayNowEnabled;
+                }
             }
-            _overlayEnabled = overlayNowEnabled;
         }
     }
 
@@ -2235,6 +2276,7 @@ internal sealed class TrayApp : ApplicationContext, ISessionInteractionRouter
         _controllerIcon.Visible = false;
         _controllerIcon.Icon?.Dispose();
         _controllerIcon.ContextMenuStrip?.Dispose();
+        _overlayMenu?.Dispose();
         _controllerIcon.Dispose();
 
         // Dispose overlay panel

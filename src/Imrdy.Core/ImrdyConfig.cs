@@ -36,6 +36,11 @@ public record OverlayConfig
     /// Zero-based index of the monitor the overlay docks to. 0 = primary monitor (default).
     /// </summary>
     public int Monitor { get; init; } = 0;
+
+    /// <summary>
+    /// When true the overlay position is locked and cannot be changed by dragging.
+    /// </summary>
+    public bool Locked { get; init; } = false;
 }
 
 public record DiagnosticsConfig

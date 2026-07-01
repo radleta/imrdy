@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
@@ -6,6 +7,7 @@ using Imrdy.Core;
 using Imrdy.Core.Desktop;
 using Imrdy.Core.Display;
 using Imrdy.Core.Graphics;
+using Imrdy.Core.Overlay;
 using Imrdy.Core.Status;
 using Imrdy.Windows.Desktop;
 using Imrdy.Windows.Icons;
@@ -43,12 +45,34 @@ internal sealed class OverlayPanel : Form
     private static readonly uint _wmTaskbarCreated =
         PInvokeOverlay.RegisterWindowMessage("TaskbarCreated");
 
+    // ── WndProc message constants ─────────────────────────────────────────────────
+    // Used by the focus-preservation + drag-cancel guards in WndProc.
+    private const int WM_MOUSEACTIVATE = 0x0021;
+    private const int MA_NOACTIVATE    = 3;
+    private const int WM_CANCELMODE    = 0x001F;
+
     // ── Fields ────────────────────────────────────────────────────────────────────
     private readonly OverlayConfig _config;
     private readonly ISessionInteractionRouter _router;
     private readonly IDesktopManager? _desktopManager;
     private readonly ILogger _logger;
     private readonly GraphicsPackLoader _graphicsPackLoader;
+
+    // ── Mutable position state ─────────────────────────────────────────────────────
+    // Initialized from config in ctor; mutated by ApplyPositionConfig (UI-thread only).
+    // _config is retained for Size/Spacing reads (structural; applied via recreate).
+    private string _position;
+    private int    _monitor;
+    private bool   _locked;
+
+    // ── Drag FSM state ─────────────────────────────────────────────────────────────
+    // States: Idle (no button) → Armed (_dragArmed, !_isDragging) → Dragging (_isDragging).
+    // Capture is held in Armed + Dragging; released by ResetDragState on every exit path.
+    private bool  _isDragging;
+    private bool  _dragArmed;         // Left button pressed; threshold not yet crossed.
+    private Point _dragStartScreen;   // Cursor.Position at mouse-down (physical screen px).
+    private Point _formStartLocation; // this.Location at mouse-down (logical px, Per-Monitor V2).
+    private int   _downHitIndex;      // Chip index at mouse-down; -1 = gutter click.
 
     // Both declared non-nullable and MUST be ctor-initialized to satisfy CS8618
     // under Nullable=enable + TreatWarningsAsErrors.
@@ -91,6 +115,16 @@ internal sealed class OverlayPanel : Form
         _desktopManager    = desktopManager;
         _logger            = loggerFactory.CreateLogger<OverlayPanel>();
         _graphicsPackLoader = graphicsPackLoader;
+
+        // Mutable position state — initialized from config; updated in-place by ApplyPositionConfig.
+        _position   = config.Position;
+        _monitor    = config.Monitor;
+        _locked     = config.Locked;
+        _isDragging       = false;
+        _dragArmed        = false;
+        _dragStartScreen  = default;
+        _formStartLocation = default;
+        _downHitIndex     = -1;
 
         // Ctor-init both non-nullable fields (CS8618).
         _items = Array.Empty<DisplayItem>();
@@ -335,6 +369,14 @@ internal sealed class OverlayPanel : Form
 
     protected override void WndProc(ref Message m)
     {
+        // Focus preservation: always return MA_NOACTIVATE — no base call (Raymond Chen).
+        // The overlay never steals foreground; the terminal keeps focus through every drag
+        // and click. Unlike HoverDashboardFormBase there is no pin concept — always NoActivate.
+        if (m.Msg == WM_MOUSEACTIVATE) { m.Result = (IntPtr)MA_NOACTIVATE; return; }
+
+        // Drag cancel: foreground stolen (app-switch, ALT+TAB, etc.) → release capture.
+        if (m.Msg == WM_CANCELMODE) { ResetDragState(); }   // fall through to base
+
         // Guard FIRST: RegisterWindowMessage returns 0 on failure (atom-table exhausted).
         // Without this guard, a 0 value would match WM_NULL (0x0000) and fire
         // PinAcrossVirtualDesktops on every no-op message — catastrophic throughput hit.
@@ -450,49 +492,209 @@ internal sealed class OverlayPanel : Form
         Invalidate();
     }
 
+    /// <summary>
+    /// Updates the three mutable position fields and re-docks the panel in place —
+    /// no dispose/recreate, no Show, no flash.
+    /// </summary>
+    /// <remarks>
+    /// Contract:
+    ///   requires — caller runs on the UI/message-pump thread; handle created.
+    ///   ensures  — _position/_monitor/_locked == arguments; this.Location recomputed in place.
+    ///   invariants — never calls this.Activate(); never changes this.Size.
+    ///   throws   — never (out-of-range monitor absorbed by ResolveTargetScreen primary fallback).
+    ///
+    /// THREAD-AFFINITY: the Debug.Assert guard is stripped in Release builds.
+    /// Valid callers: OnMouseUp (drag drop) and TrayApp.OnConfigChanged (drain tick) only.
+    /// </remarks>
+    public void ApplyPositionConfig(string position, int monitor, bool locked)
+    {
+        Debug.Assert(!InvokeRequired, "ApplyPositionConfig must be called on the UI thread");
+        _position = position;
+        _monitor  = monitor;
+        _locked   = locked;
+        this.Location = CalculatePosition();
+    }
+
+    /// <summary>
+    /// True while the user is actively dragging the panel (threshold crossed).
+    /// Read by TrayApp.OnConfigChanged to defer overlay reconfiguration mid-drag.
+    /// The field is initialized false here; mutations land in Step 08.
+    /// </summary>
+    public bool IsDragging => _isDragging;
+
     // ── Mouse handling ────────────────────────────────────────────────────────────
 
     protected override void OnMouseDown(MouseEventArgs e)
     {
-        if (e.Button == MouseButtons.Left && HitIconIndex(e.X, out var idx) && idx < _items.Count)
+        if (e.Button == MouseButtons.Left)
         {
-            var item = _items[idx];
-            try
+            // Record start points for the drag FSM regardless of lock state
+            // (needed for the click branch — _downHitIndex dispatches activation on LeftUp).
+            _dragStartScreen   = Cursor.Position;
+            _formStartLocation = this.Location;
+            _downHitIndex      = HitIconIndex(e.X, out var idx) ? idx : -1;
+
+            if (!_locked)
             {
-                if (item.ItemType == DisplayItemType.Session)
-                    _router.ActivateSession(item.Id);
-                else
-                    _router.ActivateWorkspace(item.Id);
-                SurfaceInteracted?.Invoke();
+                // Arm the drag: capture keeps WM_MOUSEMOVE/WM_LBUTTONUP flowing
+                // even when the cursor leaves the panel during a fast drag.
+                _dragArmed   = true;
+                this.Capture = true;
             }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "OverlayPanel: left-click dispatch failed for {ItemType} {Id}",
-                    item.ItemType, item.Id);
-            }
+            // MUST NOT call this.Activate() — focus-preservation invariant.
+            // Activation relocated to the OnMouseUp click branch.
         }
         base.OnMouseDown(e);
     }
 
-    protected override void OnMouseUp(MouseEventArgs e)
+    protected override void OnMouseMove(MouseEventArgs e)
     {
-        if (e.Button == MouseButtons.Right && HitIconIndex(e.X, out var idx) && idx < _items.Count)
+        if (_isDragging)
         {
-            var item = _items[idx];
-            try
+            // Active drag: convert physical-pixel Cursor.Position delta to logical pixels
+            // before applying to this.Location (Per-Monitor V2 coordinate space).
+            // At 150% DPI the raw physical delta is 1.5× the logical delta — without
+            // this conversion the panel trails the cursor (Risk 2).
+            var dx    = Cursor.Position.X - _dragStartScreen.X;
+            var dy    = Cursor.Position.Y - _dragStartScreen.Y;
+            float scale = this.DeviceDpi / 96f;
+            this.Location = new Point(
+                _formStartLocation.X + (int)(dx / scale),
+                _formStartLocation.Y + (int)(dy / scale));
+            // Re-assert static cursor — OS suppresses WM_SETCURSOR during capture,
+            // making the instance this.Cursor invisible while dragging.
+            Cursor.Current = Cursors.SizeAll;
+        }
+        else if (_dragArmed)
+        {
+            // Armed but below threshold: check whether the cursor has left the DragSize rect.
+            var dragSize = SystemInformation.DragSize;
+            var dragRect = new Rectangle(
+                _dragStartScreen.X - dragSize.Width  / 2,
+                _dragStartScreen.Y - dragSize.Height / 2,
+                dragSize.Width,
+                dragSize.Height);
+            if (!dragRect.Contains(Cursor.Position))
             {
-                var anchor = MenuAnchor.AtControl(this, e.Location);
-                if (item.ItemType == DisplayItemType.Session)
-                    _router.OpenSessionMenu(item.Id, anchor);
-                else
-                    _router.OpenWorkspaceMenu(item.Id, anchor);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "OverlayPanel: right-click menu failed for {ItemType} {Id}",
-                    item.ItemType, item.Id);
+                _isDragging    = true;
+                Cursor.Current = Cursors.SizeAll;
             }
         }
+        else
+        {
+            // Idle hover-hint via instance cursor (WM_SETCURSOR path — not suppressed when not capturing).
+            // Four cases by _locked × hit:
+            //   !locked + chip  → Hand   (click affordance)
+            //   !locked + gutter→ SizeAll (drag affordance)
+            //    locked + chip  → Hand   (click still works when locked)
+            //    locked + gutter→ Default (gutter is not draggable when locked)
+            this.Cursor = HitIconIndex(e.X, out _) ? Cursors.Hand : (_locked ? Cursors.Default : Cursors.SizeAll);
+        }
+
+        base.OnMouseMove(e);
+    }
+
+    protected override void OnMouseLeave(EventArgs e)
+    {
+        // Reset idle hover-hint cursor only — never cancel an active captured drag.
+        // Capture keeps WM_MOUSEMOVE/WM_LBUTTONUP flowing while the cursor is outside the panel;
+        // OnMouseMove re-asserts Cursor.Current = SizeAll on the next move event.
+        if (!_isDragging)
+            this.Cursor = Cursors.Default;
+        base.OnMouseLeave(e);
+    }
+
+    protected override void OnKeyDown(KeyEventArgs e)
+    {
+        if (e.KeyCode == Keys.Escape && (_dragArmed || _isDragging))
+        {
+            var wasDragging = _isDragging;
+            ResetDragState();
+            if (wasDragging)
+                this.Location = CalculatePosition(); // Revert panel to persisted anchor; no persist write.
+            // Pure-Armed branch (threshold not yet crossed) skips CalculatePosition() —
+            // the panel has not moved from its persisted position.
+            e.Handled = true;
+        }
+        base.OnKeyDown(e);
+    }
+
+    protected override void OnMouseUp(MouseEventArgs e)
+    {
+        if (e.Button == MouseButtons.Left)
+        {
+            if (_isDragging)
+            {
+                // Drag completion: snap to nearest anchor, re-place flash-free, persist async.
+                var (position, monitor) = ComputeSnap();
+                ApplyPositionConfig(position, monitor, _locked);
+                ResetDragState();
+                // Fire-and-forget persist — no CancellationToken (ConfigReader.Update wraps
+                // synchronous AtomicFileWriter; no cancellation point inside).
+                // ContinueWith runs only on fault; unwraps AggregateException for structured logs.
+                _ = Task.Run(() => ConfigReader.Update(c => c with
+                    {
+                        Overlay = c.Overlay with { Position = position, Monitor = monitor }
+                    }))
+                    .ContinueWith(
+                        t => _logger.LogError(t.Exception?.InnerException ?? t.Exception,
+                            "overlay config persist failed"),
+                        TaskContinuationOptions.OnlyOnFaulted);
+                // No activation on drag completion (drag ≠ click — SurfaceInteracted not fired).
+            }
+            else
+            {
+                // Click branch: pointer moved less than DragSize — treat as a click.
+                ResetDragState();
+                if (_downHitIndex >= 0 && _downHitIndex < _items.Count)
+                {
+                    var item = _items[_downHitIndex];
+                    try
+                    {
+                        if (item.ItemType == DisplayItemType.Session)
+                            _router.ActivateSession(item.Id);
+                        else
+                            _router.ActivateWorkspace(item.Id);
+                        SurfaceInteracted?.Invoke();
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "OverlayPanel: left-click dispatch failed for {ItemType} {Id}",
+                            item.ItemType, item.Id);
+                    }
+                }
+                // Gutter click (_downHitIndex < 0): no-op.
+            }
+        }
+        else if (e.Button == MouseButtons.Right)
+        {
+            if (HitIconIndex(e.X, out var idx) && idx < _items.Count)
+            {
+                // Chip right-click: open the session/workspace context menu.
+                var item = _items[idx];
+                try
+                {
+                    var anchor = MenuAnchor.AtControl(this, e.Location);
+                    if (item.ItemType == DisplayItemType.Session)
+                        _router.OpenSessionMenu(item.Id, anchor);
+                    else
+                        _router.OpenWorkspaceMenu(item.Id, anchor);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "OverlayPanel: right-click menu failed for {ItemType} {Id}",
+                        item.ItemType, item.Id);
+                }
+            }
+            else
+            {
+                // Gutter/padding right-click: open the overlay settings menu.
+                // Invariant: OverlayPanel never builds a menu directly — all routing goes through
+                // ISessionInteractionRouter so call sites are uniform and auditable.
+                _router.OpenOverlayMenu(MenuAnchor.AtControl(this, e.Location));
+            }
+        }
+
         base.OnMouseUp(e);
     }
 
@@ -530,39 +732,48 @@ internal sealed class OverlayPanel : Form
     }
 
     /// <summary>
-    /// Computes the bottom-edge dock position on the resolved target monitor.
-    /// Uses the monitor's WorkingArea so placement is correct on any selected screen.
-    /// Adds a reserve when the taskbar is auto-hidden (WorkingArea == Bounds).
-    /// Garbage/unknown Position falls back to bottom-right (spec §Error Handling).
+    /// Computes the dock position for one of the six anchors on the resolved target monitor.
+    /// Reads <c>_position</c> (mutable) — NOT <c>_config.Position</c> — so in-place
+    /// re-docking via <see cref="ApplyPositionConfig"/> takes effect without recreate.
+    /// Garbage/unknown position strings fall back to bottom-right (spec §Error Handling).
     /// </summary>
     private Point CalculatePosition()
     {
-        var screen     = ResolveTargetScreen();
-        var wa         = screen.WorkingArea;
+        var anchor = OverlayAnchor.Parse(_position);
+        var screen = ResolveTargetScreen();
+        var wa     = screen.WorkingArea;
         const int margin = 16;
 
         // Auto-hide taskbar detection: WorkingArea equals Bounds when no strip is reserved.
         // Reserve ~8 px so the panel stays above the taskbar pop-up zone.
         var taskbarReserve = wa == screen.Bounds ? 8 : 0;
 
-        var y = wa.Bottom - this.Height - taskbarReserve;
-        var x = _config.Position == "bottom-left"
-            ? wa.Left  + margin
-            : wa.Right - this.Width - margin;
-
+        int x = anchor.Horizontal switch
+        {
+            HorizontalAnchor.Left   => wa.Left + margin,
+            HorizontalAnchor.Center => wa.Left + (wa.Width - this.Width) / 2,
+            _                       => wa.Right - this.Width - margin,   // Right
+        };
+        int y = anchor.Vertical switch
+        {
+            VerticalAnchor.Top => wa.Top + margin,
+            _                  => wa.Bottom - this.Height - taskbarReserve, // Bottom
+        };
         return new Point(x, y);
     }
 
     /// <summary>
     /// Returns the Screen the panel should dock to. Falls back to primary (or first)
-    /// screen when config.Monitor is out of range.
+    /// screen when <c>_monitor</c> is out of range.
+    /// Reads <c>_monitor</c> (mutable) — NOT <c>_config.Monitor</c> — so
+    /// <see cref="ApplyPositionConfig"/> re-targets the correct monitor in-place.
     /// Null-coalescing on Screen.PrimaryScreen prevents CS8602 under TreatWarningsAsErrors.
     /// </summary>
     private Screen ResolveTargetScreen()
     {
         var screens = Screen.AllScreens;
-        if (_config.Monitor >= 0 && _config.Monitor < screens.Length)
-            return screens[_config.Monitor];
+        if (_monitor >= 0 && _monitor < screens.Length)
+            return screens[_monitor];
         return Screen.PrimaryScreen ?? screens[0];
     }
 
@@ -584,6 +795,61 @@ internal sealed class OverlayPanel : Form
         // Null in the render path — pinning skipped via null-conditional.
         // Idempotent; COM-exception absorption lives inside the IDesktopManager impl.
         _desktopManager?.PinWindowToAllDesktops(this.Handle);
+    }
+
+    // ── Drag helpers ─────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Idempotent drag-state cleanup. Called from every FSM exit path — drop, Escape,
+    /// and WM_CANCELMODE. Releases capture and resets the static cursor.
+    /// </summary>
+    private void ResetDragState()
+    {
+        _dragArmed  = false;
+        _isDragging = false;
+        if (this.Capture) this.Capture = false;
+        Cursor.Current = Cursors.Default;
+    }
+
+    /// <summary>
+    /// Computes the snap anchor on release. Uses the monitor under the cursor
+    /// (not under the panel) to support multi-monitor drag-to-other-display.
+    /// Horizontal: left-third → Left; middle-third → Center; right-third → Right.
+    /// Vertical: top-half → Top; bottom-half → Bottom.
+    /// Returns the position config string and the monitor index in Screen.AllScreens.
+    /// </summary>
+    private (string position, int monitor) ComputeSnap()
+    {
+        var screen = Screen.FromPoint(Cursor.Position);
+        var wa     = screen.WorkingArea;
+        var center = new Point(this.Left + this.Width / 2, this.Top + this.Height / 2);
+
+        var h = center.X < wa.Left + wa.Width / 3
+            ? HorizontalAnchor.Left
+            : center.X < wa.Left + 2 * wa.Width / 3
+                ? HorizontalAnchor.Center
+                : HorizontalAnchor.Right;
+
+        var v = center.Y < wa.Top + wa.Height / 2
+            ? VerticalAnchor.Top
+            : VerticalAnchor.Bottom;
+
+        return (new OverlayAnchor(h, v).ToConfigString(), IndexOfScreen(screen));
+    }
+
+    /// <summary>
+    /// Returns the index of <paramref name="screen"/> in <see cref="Screen.AllScreens"/>
+    /// matched by <see cref="Screen.DeviceName"/>. Falls back to 0 when not found.
+    /// </summary>
+    private static int IndexOfScreen(Screen screen)
+    {
+        var screens = Screen.AllScreens;
+        for (var i = 0; i < screens.Length; i++)
+        {
+            if (string.Equals(screens[i].DeviceName, screen.DeviceName, StringComparison.OrdinalIgnoreCase))
+                return i;
+        }
+        return 0;
     }
 
     // ── Glyph bitmap cache (ported from OverlayWindowBase) ───────────────────────
