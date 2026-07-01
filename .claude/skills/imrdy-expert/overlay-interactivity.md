@@ -1,13 +1,13 @@
 ---
 tags: [imrdy-expert/overlay]
-summary: "OverlayPanel: single non-layered class replacing the former Passive/Interactive/Base split; context menus dispatched via ISessionInteractionRouter + MenuAnchor.AtControl(owner, location) — vanilla WinForms, no P/Invoke band-aids"
+summary: "OverlayPanel: single non-layered draggable class (6-anchor snap); context menus dispatched via ISessionInteractionRouter + MenuAnchor.AtControl(owner, location); gutter right-click opens overlay settings via OpenOverlayMenu; WM_MOUSEACTIVATE→MA_NOACTIVATE preserves terminal focus"
 ---
 
 # Overlay Interactivity Pattern
 
 ## Architecture in One Sentence
 
-`OverlayPanel` is a single non-layered WinForms `Form` that is always interactive. All user actions dispatch through `ISessionInteractionRouter` — left-clicks call `ActivateSession`/`ActivateWorkspace`, right-clicks call `OpenSessionMenu`/`OpenWorkspaceMenu` with `MenuAnchor.AtControl(this, e.Location)`, and the router uses the standard WinForms owner-based `ContextMenuStrip.Show(Control, Point)` internally.
+`OverlayPanel` is a single non-layered WinForms `Form` that is always interactive and draggable. All user actions dispatch through `ISessionInteractionRouter` — left-clicks (non-drag) call `ActivateSession`/`ActivateWorkspace`; chip right-clicks call `OpenSessionMenu`/`OpenWorkspaceMenu` with `MenuAnchor.AtControl(this, e.Location)`; gutter right-clicks (no chip hit) call `OpenOverlayMenu(MenuAnchor.AtControl(this, e.Location))`; drag (threshold-gated from `OnMouseDown`) repositions the panel to one of six snap anchors (top/bottom × left/center/right) with flash-free Position+Monitor persistence. The router uses the standard WinForms owner-based `ContextMenuStrip.Show(Control, Point)` internally.
 
 ## Class Design (Single Class)
 
@@ -24,32 +24,39 @@ The former three-class hierarchy (`OverlayWindowBase` / `PassiveOverlayWindow` /
 | Activatable | yes (always) |
 | Click-through | none — inter-chip gaps are opaque panel chrome; clicks there are no-ops (WM_NCHITTEST dropped, Decision 11) |
 
-`OverlayConfig.Interactive` was removed. There is no passive (fully click-through) variant — use `overlay.enabled: false` to suppress the overlay entirely. `OverlayPanel` is recreated on config change (old panel disposed, new panel constructed from fresh config values). `TrayApp.CreateOverlay` now constructs `OverlayPanel` unconditionally with no mode selection.
+`OverlayConfig.Interactive` was removed. There is no passive (fully click-through) variant — use `overlay.enabled: false` to suppress the overlay entirely. `OverlayPanel` is recreated on structural config changes (Enabled/Size/Spacing); non-structural changes (Position/Monitor/Locked) apply in-place via `ApplyPositionConfig` (no flash, no dispose+recreate). `TrayApp.CreateOverlay` constructs `OverlayPanel` unconditionally with no mode selection. A drag-in-flight guard (`_overlayReloadDeferred`) defers any config reload until dragging ends.
 
-## Why Always Activatable
+## Focus Preservation vs. Activatability
 
-`OverlayPanel` must be activatable because right-clicks need to transfer foreground to it so the popup `ContextMenuStrip` receives hover hot-track messages. With `WS_EX_NOACTIVATE`, `SetForegroundWindow` is silently rejected; the menu shows but items don't highlight on hover until the first click "wakes" it (the classic Raymond Chen NotifyIcon-from-non-foreground bug).
+`OverlayPanel` handles `WM_MOUSEACTIVATE` with an unconditional `MA_NOACTIVATE` return (Raymond Chen pattern — no `base.WndProc` call). The overlay **never steals foreground** through any mouse interaction: not on left-click, not on drag initiation, not ever. Terminal focus is preserved throughout.
 
-The trade-off — clicks momentarily make the overlay foreground — is desirable, not a regression. Every interaction with the overlay either explicitly switches focus (left-click switches to a session terminal) or shows a menu.
+The form is **not** `WS_EX_NOACTIVATE`, so it can still be activated programmatically (via `SetForegroundWindow`). WinForms' owner-based `menu.Show(Control, Point)` calls `SetForegroundWindow` on the owner internally when opening a `ContextMenuStrip`, bypassing `WM_MOUSEACTIVATE`. Context menus therefore receive hover hot-track messages correctly — no `AttachThreadInput` or foreground-transfer band-aids needed.
+
+Do NOT add `WS_EX_NOACTIVATE` to the overlay extended styles — that would cause `SetForegroundWindow` to be silently rejected and break context-menu hover highlighting.
 
 ## Vanilla Right-Click — No P/Invoke
 
-Overlay right-clicks go through the shared interaction router with an `AtControl` anchor; the router resolves the menu and calls the standard owner-based `Show` overload:
+Overlay right-clicks go through the shared interaction router with an `AtControl` anchor; the router resolves the menu and calls the standard owner-based `Show` overload. Right-click dispatches by hit result: chip hit → session/workspace menu; gutter (no chip hit) → overlay settings menu.
 
 ```csharp
-// OverlayPanel
-protected override void OnMouseUp(MouseEventArgs e)
+// OverlayPanel — right-click branch of OnMouseUp
+else if (e.Button == MouseButtons.Right)
 {
-    if (e.Button == MouseButtons.Right && HitIconIndex(e.X, out var idx) && idx < _items.Count)
+    var anchor = MenuAnchor.AtControl(this, e.Location);
+    if (HitIconIndex(e.X, out var idx) && idx < _items.Count)
     {
+        // Chip right-click: open the session/workspace context menu.
         var item = _items[idx];
-        var anchor = MenuAnchor.AtControl(this, e.Location);
         if (item.ItemType == DisplayItemType.Session)
             _router.OpenSessionMenu(item.Id, anchor);
         else
             _router.OpenWorkspaceMenu(item.Id, anchor);
     }
-    base.OnMouseUp(e);
+    else
+    {
+        // Gutter/padding right-click: open the overlay settings menu.
+        _router.OpenOverlayMenu(anchor);
+    }
 }
 
 // TrayApp (ISessionInteractionRouter impl)
@@ -62,6 +69,20 @@ public void OpenSessionMenu(string id, MenuAnchor anchor)
 ```
 
 `ShowContextMenuAt` is the single place that branches on anchor kind (`AtControl` → `menu.Show(owner, location)`; `AtTrayIcon` → `NotifyIconMenuHost`). WinForms' internal `ToolStripManager.ModalMenuFilter` handles foreground/dismissal because the owner is a real activatable form.
+
+## Drag-to-Reposition
+
+`OverlayPanel` supports drag repositioning with 6-anchor edge snap (top/bottom × left/center/right). The drag FSM runs across three mouse event overrides:
+
+- `OnMouseDown` (left button): records `_dragStartScreen`, `_downHitIndex`, `_formStartLocation`; sets `_dragArmed = true`; calls `Capture = true` (tracks cursor outside panel bounds).
+- `OnMouseMove`: if `_isDragging`, translates `(dx, dy)` to logical pixels via `DeviceDpi / 96f` scale and moves `this.Location`; if `_dragArmed` and threshold (`SystemInformation.DragSize`) exceeded, promotes to `_isDragging = true`; sets `Cursor.Current = Cursors.SizeAll` during capture.
+- `OnMouseUp` (left button): if `_isDragging` → `ComputeSnap()` → `ApplyPositionConfig(position, monitor, _locked)` → async `ConfigReader.Update`; if not dragging (click) → dispatch to `ActivateSession`/`ActivateWorkspace`.
+
+`OnKeyDown` (Escape while dragging): resets drag state and reverts `this.Location` to the persisted anchor via `CalculatePosition()`. `WM_CANCELMODE` (foreground stolen by alt-tab): calls `ResetDragState()` — cursor capture released, position reverted on next `CalculatePosition` call (UpdateItems tick).
+
+`overlay.locked: true` disables drag initiation — `OnMouseDown` still records `_downHitIndex` for click dispatch but does not set `_dragArmed`. Hover cursor in gutter becomes `Cursors.Default` (not `SizeAll`) when locked.
+
+`ComputeSnap()` returns `(position, monitor)` — the 6-anchor string nearest the current panel center and the index of the screen it landed on. `ApplyPositionConfig` then calls `CalculatePosition` (which calls `OverlayAnchor.Parse(position)`) and sets `this.Location` in-place — same path as the non-structural config fast path.
 
 ## Hit-Testing (No WM_NCHITTEST Override)
 
@@ -128,9 +149,17 @@ Supersedes the 2026-04-19 Passive/Interactive split and the 2026-04-21 interacti
 - **`IsDashboardHoverActive` removed from hover-dashboard controllers** — z-order gate now reads `Form.Bounds` directly.
 - **`overlay` render component added** — `OverlayRenderer` + `NullSessionInteractionRouter`; 4 fixture files; covered by `imrdy render --all`.
 
+## Updates — 2026-07-01 (drag + OpenOverlayMenu + Locked + structural-delta reload)
+
+- **Drag-to-reposition** — `OverlayPanel` now supports threshold-gated drag to one of six snap anchors (top/bottom × left/center/right); `OnMouseMove` added; `OnMouseUp` distinguishes drag completion from click; `ComputeSnap` + `ApplyPositionConfig` for in-place positioning; async `ConfigReader.Update` persists Position+Monitor.
+- **`OpenOverlayMenu(MenuAnchor)` — 5th router method** — gutter right-click (no chip hit) calls `_router.OpenOverlayMenu`. `OverlayMenuBuilder` in `src/Imrdy.Windows/Menus/` builds the overlay settings submenu (6 positions, spacing presets, per-monitor selector, Lock toggle). Reachable from both the tray controller menu and the overlay gutter right-click.
+- **`OverlayConfig.Locked`** — new bool field (default false). Disables drag when true; hover cursor in gutter becomes `Cursors.Default`. `overlay.locked` is persisted via `ConfigReader.Update`. Lock toggle is in the overlay settings submenu.
+- **WM_MOUSEACTIVATE → MA_NOACTIVATE** — `WndProc` now always returns MA_NOACTIVATE (no base call). Terminal focus is preserved through all mouse interactions. "Why Always Activatable" section renamed to "Focus Preservation vs. Activatability".
+- **Structural-delta reload** — `OnConfigChanged` gains a non-structural fast path: Position/Monitor/Locked changes call `ApplyPositionConfig` in-place; only Enabled/Size/Spacing trigger dispose+recreate. `_overlayReloadDeferred` defers reload while drag is in flight.
+
 ## Updates — 2026-04-21 (interaction router)
 
-All user-initiated session/workspace actions now route through `ISessionInteractionRouter` contract (`src/Imrdy.Windows/Interaction/`). Four methods: `ActivateSession(id)` / `ActivateWorkspace(path)` for primary intents, `OpenSessionMenu(id, MenuAnchor)` / `OpenWorkspaceMenu(path, MenuAnchor)` for secondary intents. Two-phase shape enforced: `MarkSessionInteracted`/`MarkWorkspaceInteracted` then dispatch. Still applies to `OverlayPanel`.
+All user-initiated session/workspace actions now route through `ISessionInteractionRouter` contract (`src/Imrdy.Windows/Interaction/`). Initially four methods: `ActivateSession(id)` / `ActivateWorkspace(path)` for primary intents, `OpenSessionMenu(id, MenuAnchor)` / `OpenWorkspaceMenu(path, MenuAnchor)` for secondary intents. A fifth method (`OpenOverlayMenu`) was added in 2026-07-01. Two-phase shape enforced: `MarkSessionInteracted`/`MarkWorkspaceInteracted` then dispatch. Still applies to `OverlayPanel`.
 
 ## Related
 

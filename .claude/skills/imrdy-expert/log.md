@@ -62,3 +62,4 @@
 2026-06-26T21:22:45Z created displayitem-source-gen-gotcha
 2026-06-26T21:22:53Z created stj-source-gen-interface-caveat
 2026-06-26T21:22:59Z created render-fixture-offscreen-pattern
+2026-07-01T16:48:01Z created internals-visible-to-mechanism

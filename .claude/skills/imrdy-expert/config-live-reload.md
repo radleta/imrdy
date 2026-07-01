@@ -1,6 +1,6 @@
 ---
 tags: [imrdy-expert/architecture]
-summary: "config.json FSW routes through OnConfigChanged for full live reload (sound + icon style + tray god toggle + overlay); startup uses LoadSoundConfig separately"
+summary: "config.json FSW routes through OnConfigChanged for full live reload (sound + icon style + tray god toggle + overlay); overlay structural-delta: Position/Monitor/Locked apply in-place, Enabled/Size/Spacing recreate; startup uses LoadSoundConfig separately"
 ---
 
 # Config Live Reload
@@ -47,7 +47,7 @@ The try/catch swallows `IOException`/`JsonException` from mid-write transient re
 | Sound (`config.Sound`) | Reloads packs, updates `_soundEnabled`, clears sound bag cache |
 | Icon style (`config.Tray.IconStyle`) | Value-compared; on change: refreshes all session icons, invalidates overlay style cache |
 | Tray god toggle (`config.Tray.Enabled`) | Value-compared; on change: shows/hides all tray icons via `ApplyTrayEnabledToAll` |
-| Overlay (`config.Overlay`) | Struct-compared; on any change: disposes old panel, controllers, and subscriptions; recreates from fresh config values if `overlay.enabled: true` |
+| Overlay (`config.Overlay`) | Structural-delta classification: non-structural changes (Position/Monitor/Locked) call `ApplyPositionConfig` in-place — no flash, no dispose+recreate; structural changes (Enabled/Size/Spacing) or Enabled toggle: disposes old panel, controllers, and subscriptions; recreates from fresh config values if `overlay.enabled: true`. Drag-in-flight guard: defers the entire overlay block via `_overlayReloadDeferred` until `IsDragging == false`. |
 
 All comparisons are value-based — a controller-menu change that also writes the file produces a harmless second no-op call.
 
@@ -62,7 +62,7 @@ FSW trigger:   OnConfigChanged(read)    → sound + icon style + tray toggle + o
 
 ## Gotcha: Direct File Edits Apply Immediately
 
-Because `OnConfigChanged` is comprehensive, editing `config.json` directly (or via `imrdy config set`) live-applies all settings — overlay enable/disable, tray enable/disable, icon style changes — without restarting the tray. The overlay panel is disposed and recreated from the new values. No restart is needed for any config property.
+Because `OnConfigChanged` is comprehensive, editing `config.json` directly (or via `imrdy config set`) live-applies all settings — overlay position/lock/monitor, overlay enable/disable, tray enable/disable, icon style changes — without restarting the tray. Structural overlay changes (Size/Spacing/Enabled toggle) dispose and recreate the panel; non-structural changes (Position/Monitor/Locked) apply in-place with no flash. No restart is needed for any config property.
 
 ## Cross-references
 

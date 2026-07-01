@@ -9,7 +9,7 @@ You are an expert in the imrdy project — a Windows system tray monitor for Cla
 
 - [Architecture](architecture.md) — Seven entry points, timer interactions, field preservation, and state file lifecycle
 - [State File Write Path](state-file-write-path.md) — Session state files use direct File.WriteAllBytes (not AtomicFileWriter) because delete-then-move suppresses FSW Changed events
-- [Config Live Reload](config-live-reload.md) — config.json FSW routes through OnConfigChanged for full live reload (sound + icon style + tray god toggle + overlay); startup uses LoadSoundConfig separately
+- [Config Live Reload](config-live-reload.md) — config.json FSW routes through OnConfigChanged for full live reload (sound + icon style + tray god toggle + overlay); overlay structural-delta: Position/Monitor/Locked apply in-place, Enabled/Size/Spacing recreate; startup uses LoadSoundConfig separately
 - [Tray vs Hook Write Race](tray-hook-write-race.md) — Hook and tray both RMW session state files with no coordination — tray-side field changes are silently dropped if the field isn't on the FieldPreservation list
 - [Tray Persistence Verbs](tray-persistence-verbs.md) — Catalog of every place the tray process writes JSON state to disk — debugging checklist for persistence loss
 - [Field Preservation Catalog](field-preservation-catalog.md) — The 6 sticky fields, the merge pattern, and the symmetry contract every new tray-owned field must satisfy
@@ -18,7 +18,7 @@ You are an expert in the imrdy project — a Windows system tray monitor for Cla
 - [Teammate Detection](teammate-detection.md) — 4-layer teammate-aware notification system — deterministic gate, state tracking, consensus promotion, idle_prompt suppression
 - [Notification Dwell](notification-dwell.md) — Dwell timer system that gates toast/sound behind status settling — prevents notification storms
 - [Status Mapping](status-mapping.md) — Two-layer status mapping: hook event → base status → RGB color, with 9 base statuses
-- [Overlay Interactivity](overlay-interactivity.md) — OverlayPanel single non-layered class (replaces former Passive/Interactive/Base split); context menus dispatched via ISessionInteractionRouter + MenuAnchor.AtControl(owner, location) — vanilla WinForms, no P/Invoke band-aids
+- [Overlay Interactivity](overlay-interactivity.md) — OverlayPanel single non-layered draggable class (6-anchor snap, Locked field, WM_MOUSEACTIVATE→MA_NOACTIVATE focus guard); context menus dispatched via ISessionInteractionRouter (5 methods); gutter right-click → OpenOverlayMenu; structural-delta config reload
 - [Hover Dashboard Form Lifecycle](hover-dashboard-form-lifecycle.md) — HoverDashboardFormBase owns the shared shell (DWM, focus guard, pin/unpin, anchor placement); derived forms (SessionDashboardForm, WorkspaceDashboardForm) own their content panels — field-promote all dynamic controls for Update(vm) access
 - [Hover Dashboard State Machine](hover-dashboard-state-machine.md) — HoverDashboardControllerBase owns the dwell/grace state machine; derived controllers plug in domain-specific dispatch (TryHitTestForOurDomain → BuildViewModel → CreateForm → ShowForm → ApplyViewModelUpdate); cross-controller hide protocol via FormShown event wired in TrayApp
 - [Workspace Dashboard Architecture](workspace-dashboard-architecture.md) — WorkspaceDashboardForm + WorkspaceHoverDashboardController: BuildViewModel hit-index flow, VM-as-render-contract, live "ago" refresh, Update-refresh-all-fields pattern, GitInfo Ahead/Behind, cross-controller hide via FormShown
@@ -45,6 +45,7 @@ You are an expert in the imrdy project — a Windows system tray monitor for Cla
 - [displayitem-source-gen-gotcha](displayitem-source-gen-gotcha.md) — ImrdyJsonContext must explicitly register DisplayItem and List<DisplayItem> for source-gen serialization
 - [stj-source-gen-interface-caveat](stj-source-gen-interface-caveat.md) — STJ source-gen registers concrete List<T> but callers must query by concrete type, not interface
 - [render-fixture-offscreen-pattern](render-fixture-offscreen-pattern.md) — Offscreen-Show pattern for deterministic Form fixture rendering in imrdy tests
+- [internals-visible-to-mechanism](internals-visible-to-mechanism.md) — Imrdy.Core grants InternalsVisibleTo to assembly named 'imrdy' (the Imrdy.Windows project) — not 'Imrdy.Windows'. Internal Core classes (e.g. ControllerMenuModel) are accessible from Windows code without making them public. Use 'imrdy' (lowercase) as the assembly-name key in any future InternalsVisibleTo grant from Core.
 
 ## Meta
 
