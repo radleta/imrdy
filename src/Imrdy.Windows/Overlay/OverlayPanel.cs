@@ -36,8 +36,20 @@ internal sealed class OverlayPanel : Form
     internal const int ChipCornerRadius = 6;
     internal const int PanelPadding     = 4;
 
-    // Depends on _config.Size (runtime value) — cannot be const.
-    private int MinimumPanelWidth => 2 * PanelPadding + _config.Size;
+    // ── Grip layout constants (Decision D2/D5) ─────────────────────────────────────
+    // Left grip handle — the sole drag-arming zone (hit-testing lands in Step 04b).
+    // GripWidthLogical is the LOGICAL-px seed; the GripWidth property below DPI-scales
+    // it via the same DeviceDpi/96f convention OnMouseMove already applies to the drag
+    // delta (L567 in research.md). Paint (this step) and hit-test (Step 04b) both
+    // consume this one GripWidth value — the sync gate that keeps chip slot math from
+    // desyncing (Risk 2).
+    internal const int GripWidthLogical = 14;
+
+    // Depends on DeviceDpi (runtime, only meaningful once the handle is created) — cannot be const.
+    private int GripWidth => (int)(GripWidthLogical * this.DeviceDpi / 96f);
+
+    // Depends on _config.Size + GripWidth (runtime values) — cannot be const.
+    private int MinimumPanelWidth => 2 * PanelPadding + GripWidth + _config.Size;
 
     // ── TaskbarCreated registration ───────────────────────────────────────────────
     // RegisterWindowMessage returns 0 on failure (atom-table exhausted — rare).
@@ -64,6 +76,8 @@ internal sealed class OverlayPanel : Form
     private string _position;
     private int    _monitor;
     private bool   _locked;
+    private int?   _offsetX;
+    private int?   _offsetY;
 
     // ── Drag FSM state ─────────────────────────────────────────────────────────────
     // States: Idle (no button) → Armed (_dragArmed, !_isDragging) → Dragging (_isDragging).
@@ -86,8 +100,24 @@ internal sealed class OverlayPanel : Form
     // Seed value — tuned visually in step 10.
     private static readonly Color _chipBgBase = Color.FromArgb(50, 52, 66);
 
+    // Grip glyph dot colors: fixed dimmed/hover alpha over white (Decision D5).
+    // PROCESS-LIFETIME shared brushes (the standard WinForms SystemBrushes-style shared-
+    // brush pattern) — declared once, reused across every OnPaint call and every
+    // OverlayPanel instance for the life of the process. Do NOT dispose these in
+    // Dispose(bool)/InvalidateStyleCache: unlike the per-instance _cache bitmap
+    // dictionary (which IS correctly disposed per-instance there), disposing a
+    // process-lifetime brush would leave it disposed for the NEXT recreated
+    // OverlayPanel (structural config reload), which would then throw
+    // ObjectDisposedException on every OnPaint (Risk 6).
+    private static readonly SolidBrush _gripDimBrush   = new(Color.FromArgb(90,  255, 255, 255));
+    private static readonly SolidBrush _gripHoverBrush = new(Color.FromArgb(200, 255, 255, 255));
+
     // Nullable — no initial hover target; set by controller via SetHoveredChipId.
     private string? _hoveredChipId;
+
+    // True when the cursor is within the grip band (Decision D5) — updated in
+    // OnMouseMove; toggles the grip glyph between dimmed (false) and brightened (true).
+    private bool _gripHovered;
 
     // True when DWM owns corner rounding (Win11 22000+); false on Win10 where the GDI Region fallback is used.
     private bool _usesDwmCorners;
@@ -100,6 +130,16 @@ internal sealed class OverlayPanel : Form
     /// Right-click does not raise this event — menu dismissal is handled by WinForms.
     /// </summary>
     public event Action? SurfaceInteracted;
+
+    /// <summary>
+    /// Raised after a grip-drag completes (drop) — regardless of whether the release point
+    /// lands over a chip. Distinct from <see cref="SurfaceInteracted"/>: a drag-drop never
+    /// dispatches a session/workspace activation, so that event does not fire. TrayApp's
+    /// hover-dashboard controllers subscribe to set their post-interaction cooldown here too
+    /// — otherwise a chip left under the cursor after the drop would ghost-reshow its
+    /// dashboard via the normal dwell timer (Risk 10).
+    /// </summary>
+    public event Action? DragCompleted;
 
     // ── Constructor ───────────────────────────────────────────────────────────────
 
@@ -120,6 +160,8 @@ internal sealed class OverlayPanel : Form
         _position   = config.Position;
         _monitor    = config.Monitor;
         _locked     = config.Locked;
+        _offsetX    = config.OffsetX;
+        _offsetY    = config.OffsetY;
         _isDragging       = false;
         _dragArmed        = false;
         _dragStartScreen  = default;
@@ -201,20 +243,28 @@ internal sealed class OverlayPanel : Form
 
     /// <summary>
     /// Rendering Contract (spec §Rendering Contract / State × Tier Matrix).
-    /// Pure function of (_items, _hoveredChipId, config). Geometry from the same slot
-    /// math HitIconIndex uses — hit-test and paint can never diverge.
-    /// Per chip (L→R, Spacing between, PanelPadding inset):
+    /// Pure function of (_items, _hoveredChipId, _gripHovered, config).
+    /// The grip (Decision D2/D5) is drawn first, unconditionally, in the left
+    /// GripWidth-wide band — always visible, dimmed until hover — so it renders even for
+    /// the empty-overlay placeholder state. Per chip (L→R, Spacing between,
+    /// PanelPadding + GripWidth inset):
     ///   1. Chip background — rounded rect at tier-driven alpha (aging visual).
     ///   2. Status glyph — from (style,status) cache, full alpha tiers 0–3, ~85% tier4.
     ///   3. Alert cue — non-color outline for error/permission (Decision 2d).
     ///   4. Hover highlight — controller-pushed via SetHoveredChipId.
     /// Empty state: single dimmed placeholder; panel never zero-width/invisible (Decision 6).
+    /// NOTE: HitIconIndex does not yet subtract GripWidth — this step is rendering +
+    /// layout only; the hit-test shift lands in Step 04b (research §Patterns, Risk 2).
     /// </summary>
     protected override void OnPaint(PaintEventArgs e)
     {
         var g = e.Graphics;
         g.SmoothingMode = SmoothingMode.AntiAlias;
         g.Clear(ImrdyPalette.BgForm);
+
+        // Drawn independent of the chip loop so the grip is always present, even for an
+        // empty overlay (Decision D5).
+        PaintGrip(g);
 
         var items = _items;
 
@@ -225,14 +275,46 @@ internal sealed class OverlayPanel : Form
             return;
         }
 
-        var size    = _config.Size;
-        var spacing = _config.Spacing;
+        var size      = _config.Size;
+        var spacing   = _config.Spacing;
+        var gripWidth = GripWidth;
 
         for (var i = 0; i < items.Count; i++)
         {
             var item  = items[i];
-            var chipX = PanelPadding + i * (size + spacing);
+            var chipX = PanelPadding + gripWidth + i * (size + spacing);
             PaintChip(g, chipX, PanelPadding, size, item);
+        }
+    }
+
+    /// <summary>
+    /// Draws the left grip handle (Decision D2/D5): a 6-dot (2 columns × 3 rows)
+    /// drag-handle glyph, vertically centered in the GripWidth-wide band at the panel's
+    /// left edge. Dimmed by default; brightened when <see cref="_gripHovered"/> is true.
+    /// Uses the process-lifetime static readonly grip brushes only — never allocates a
+    /// Brush/Pen here (Risk 6; OnPaint runs on every drain tick and hover transition).
+    /// </summary>
+    private void PaintGrip(Graphics g)
+    {
+        var gripWidth = GripWidth;
+        var brush     = _gripHovered ? _gripHoverBrush : _gripDimBrush;
+
+        const int dotSize    = 3;
+        const int rowSpacing = 4;
+        const int colSpacing = 5;
+
+        var gridHeight = 3 * dotSize + 2 * rowSpacing;
+        var startY     = (this.ClientSize.Height - gridHeight) / 2;
+
+        var gridWidth = 2 * dotSize + colSpacing;
+        var col1X     = PanelPadding + Math.Max(0, (gripWidth - gridWidth) / 2);
+        var col2X     = col1X + dotSize + colSpacing;
+
+        for (var row = 0; row < 3; row++)
+        {
+            var y = startY + row * (dotSize + rowSpacing);
+            g.FillEllipse(brush, col1X, y, dotSize, dotSize);
+            g.FillEllipse(brush, col2X, y, dotSize, dotSize);
         }
     }
 
@@ -286,11 +368,14 @@ internal sealed class OverlayPanel : Form
     {
         // Single dimmed imrdy-glyph placeholder for zero-session empty state (Decision 6).
         // Panel stays visible at MinimumPanelWidth. Seed values tuned in step 10.
+        // Origin shifted right by GripWidth (same as the per-chip loop) so it never sits
+        // underneath the grip glyph.
         const int   placeholderChipAlpha  = 50;
         const float placeholderGlyphAlpha = 0.30f;
 
         var size     = _config.Size;
-        var chipRect = new Rectangle(PanelPadding, PanelPadding, size, size);
+        var chipX    = PanelPadding + GripWidth;
+        var chipRect = new Rectangle(chipX, PanelPadding, size, size);
 
         using var bgPath  = BuildRoundedRect(chipRect, ChipCornerRadius);
         using var bgBrush = new SolidBrush(
@@ -303,7 +388,7 @@ internal sealed class OverlayPanel : Form
             // "circles"/"idle" (green circle) at very low opacity → calm "ready, no sessions" feel.
             // The glyph style can be updated to an imrdy brand icon when one is available.
             var glyph     = GetOrCreateBitmap("circles", "idle");
-            var glyphRect = new Rectangle(PanelPadding + ChipPadding, PanelPadding + ChipPadding, glyphSize, glyphSize);
+            var glyphRect = new Rectangle(chipX + ChipPadding, PanelPadding + ChipPadding, glyphSize, glyphSize);
             using var ia  = new ImageAttributes();
             var cm        = new ColorMatrix();
             cm.Matrix33   = placeholderGlyphAlpha;
@@ -493,25 +578,28 @@ internal sealed class OverlayPanel : Form
     }
 
     /// <summary>
-    /// Updates the three mutable position fields and re-docks the panel in place —
+    /// Updates the five mutable position fields and re-docks the panel in place —
     /// no dispose/recreate, no Show, no flash.
     /// </summary>
     /// <remarks>
     /// Contract:
     ///   requires — caller runs on the UI/message-pump thread; handle created.
-    ///   ensures  — _position/_monitor/_locked == arguments; this.Location recomputed in place.
+    ///   ensures  — _position/_monitor/_locked/_offsetX/_offsetY == arguments; this.Location
+    ///              recomputed in place via the offset→anchor→default resolution chain.
     ///   invariants — never calls this.Activate(); never changes this.Size.
     ///   throws   — never (out-of-range monitor absorbed by ResolveTargetScreen primary fallback).
     ///
     /// THREAD-AFFINITY: the Debug.Assert guard is stripped in Release builds.
     /// Valid callers: OnMouseUp (drag drop) and TrayApp.OnConfigChanged (drain tick) only.
     /// </remarks>
-    public void ApplyPositionConfig(string position, int monitor, bool locked)
+    public void ApplyPositionConfig(string position, int monitor, bool locked, int? offsetX, int? offsetY)
     {
         Debug.Assert(!InvokeRequired, "ApplyPositionConfig must be called on the UI thread");
         _position = position;
         _monitor  = monitor;
         _locked   = locked;
+        _offsetX  = offsetX;
+        _offsetY  = offsetY;
         this.Location = CalculatePosition();
     }
 
@@ -534,7 +622,9 @@ internal sealed class OverlayPanel : Form
             _formStartLocation = this.Location;
             _downHitIndex      = HitIconIndex(e.X, out var idx) ? idx : -1;
 
-            if (!_locked)
+            // Grip is the ONLY drag-arming zone (D10) — chip and gutter mouse-downs still
+            // record _downHitIndex above (for the click branch) but never arm the drag.
+            if (IsGripHit(e.X) && !_locked)
             {
                 // Arm the drag: capture keeps WM_MOUSEMOVE/WM_LBUTTONUP flowing
                 // even when the cursor leaves the panel during a fast drag.
@@ -549,6 +639,11 @@ internal sealed class OverlayPanel : Form
 
     protected override void OnMouseMove(MouseEventArgs e)
     {
+        // Grip dim↔hover state (Decision D5) — independent of the drag FSM branches
+        // below; e.X is already client-relative (WM_MOUSEMOVE lParam), matching the
+        // existing HitIconIndex(e.X, ...) call sites elsewhere in this method.
+        UpdateGripHover(e.X);
+
         if (_isDragging)
         {
             // Active drag: convert physical-pixel Cursor.Position delta to logical pixels
@@ -567,8 +662,14 @@ internal sealed class OverlayPanel : Form
         }
         else if (_dragArmed)
         {
-            // Armed but below threshold: check whether the cursor has left the DragSize rect.
-            var dragSize = SystemInformation.DragSize;
+            // Armed but below threshold: check whether the cursor has left the drag-threshold
+            // rect. GetSystemMetricsForDpi (D6) is Per-Monitor-V2-aware, unlike
+            // SystemInformation.DragSize, which wraps the non-Per-Monitor-V2-aware
+            // GetSystemMetrics and yields the wrong threshold on a monitor whose DPI
+            // differs from the system DPI.
+            var dragSize = new Size(
+                PInvokeOverlay.GetSystemMetricForDpi(PInvokeOverlay.SM_CXDRAG, this.DeviceDpi),
+                PInvokeOverlay.GetSystemMetricForDpi(PInvokeOverlay.SM_CYDRAG, this.DeviceDpi));
             var dragRect = new Rectangle(
                 _dragStartScreen.X - dragSize.Width  / 2,
                 _dragStartScreen.Y - dragSize.Height / 2,
@@ -583,12 +684,17 @@ internal sealed class OverlayPanel : Form
         else
         {
             // Idle hover-hint via instance cursor (WM_SETCURSOR path — not suppressed when not capturing).
-            // Four cases by _locked × hit:
-            //   !locked + chip  → Hand   (click affordance)
-            //   !locked + gutter→ SizeAll (drag affordance)
-            //    locked + chip  → Hand   (click still works when locked)
-            //    locked + gutter→ Default (gutter is not draggable when locked)
-            this.Cursor = HitIconIndex(e.X, out _) ? Cursors.Hand : (_locked ? Cursors.Default : Cursors.SizeAll);
+            // Three zones (D10 — grip is the ONLY drag-arming zone, gutter is no longer draggable):
+            //   chip           → Hand    (click affordance, locked or not)
+            //   grip + !locked → SizeAll (drag affordance)
+            //   grip + locked  → Default (grip is inert when locked)
+            //   gutter (else)  → Default (never draggable, click is a no-op)
+            if (HitIconIndex(e.X, out _))
+                this.Cursor = Cursors.Hand;
+            else if (IsGripHit(e.X) && !_locked)
+                this.Cursor = Cursors.SizeAll;
+            else
+                this.Cursor = Cursors.Default;
         }
 
         base.OnMouseMove(e);
@@ -601,6 +707,8 @@ internal sealed class OverlayPanel : Form
         // OnMouseMove re-asserts Cursor.Current = SizeAll on the next move event.
         if (!_isDragging)
             this.Cursor = Cursors.Default;
+        // The cursor left the panel entirely, so it is no longer over the grip band.
+        UpdateGripHover(-1);
         base.OnMouseLeave(e);
     }
 
@@ -625,21 +733,41 @@ internal sealed class OverlayPanel : Form
         {
             if (_isDragging)
             {
-                // Drag completion: snap to nearest anchor, re-place flash-free, persist async.
-                var (position, monitor) = ComputeSnap();
-                ApplyPositionConfig(position, monitor, _locked);
-                ResetDragState();
+                // Drag completion (D1 — free-float + edge snap): compute the free-float
+                // origin from the dragged Location, magnetically snap to a working-area
+                // edge/corner within 24px, clamp fully on-screen (D9), re-place flash-free,
+                // persist async. Uses the monitor under the CURSOR (not the panel) — same
+                // multi-monitor convention the retired ComputeSnap() used.
+                var screen      = Screen.FromPoint(Cursor.Position);
+                var workingArea = screen.WorkingArea;
+                var snapped     = OverlayPlacement.ComputeEdgeSnap(this.Location, this.Size, workingArea);
+                var clamped     = OverlayPlacement.ClampToWorkingArea(snapped, this.Size, workingArea);
+                var monitor     = IndexOfScreen(screen);
+                var offsetX     = clamped.X - workingArea.Left;
+                var offsetY     = clamped.Y - workingArea.Top;
+
+                // Apply in-memory FIRST so the panel lands correctly even if the persist
+                // below fails (step contract — snapped offset applied before the write).
+                ApplyPositionConfig(_position, monitor, _locked, offsetX, offsetY);
+
                 // Fire-and-forget persist — no CancellationToken (ConfigReader.Update wraps
                 // synchronous AtomicFileWriter; no cancellation point inside).
                 // ContinueWith runs only on fault; unwraps AggregateException for structured logs.
                 _ = Task.Run(() => ConfigReader.Update(c => c with
                     {
-                        Overlay = c.Overlay with { Position = position, Monitor = monitor }
+                        Overlay = c.Overlay with { OffsetX = offsetX, OffsetY = offsetY, Monitor = monitor }
                     }))
                     .ContinueWith(
                         t => _logger.LogError(t.Exception?.InnerException ?? t.Exception,
-                            "overlay config persist failed"),
+                            "overlay offset persist failed"),
                         TaskContinuationOptions.OnlyOnFaulted);
+
+                // Post-drop cooldown (Risk 10): the drag-drop path never dispatches an
+                // activation, so SurfaceInteracted does not fire — raise DragCompleted so
+                // TrayApp's hover controllers set their own post-interaction cooldown.
+                DragCompleted?.Invoke();
+
+                ResetDragState();
                 // No activation on drag completion (drag ≠ click — SurfaceInteracted not fired).
             }
             else
@@ -726,40 +854,25 @@ internal sealed class OverlayPanel : Form
         var count      = Math.Max(1, items.Count);
         var panelWidth = Math.Max(
             MinimumPanelWidth,
-            count * _config.Size + (count - 1) * _config.Spacing + 2 * PanelPadding);
+            GripWidth + count * _config.Size + (count - 1) * _config.Spacing + 2 * PanelPadding);
         var panelHeight = _config.Size + 2 * PanelPadding;
         this.Size = new Size(panelWidth, panelHeight);
     }
 
     /// <summary>
-    /// Computes the dock position for one of the six anchors on the resolved target monitor.
-    /// Reads <c>_position</c> (mutable) — NOT <c>_config.Position</c> — so in-place
-    /// re-docking via <see cref="ApplyPositionConfig"/> takes effect without recreate.
-    /// Garbage/unknown position strings fall back to bottom-right (spec §Error Handling).
+    /// Computes the dock position via the Core offset→anchor→default resolution chain
+    /// (<see cref="OverlayPlacement.ResolveOrigin"/>). Reads the mutable
+    /// <c>_offsetX</c>/<c>_offsetY</c>/<c>_position</c> fields — NOT <c>_config.*</c> — so
+    /// in-place re-docking via <see cref="ApplyPositionConfig"/> takes effect without
+    /// recreate. The raw nullable offsets are passed straight through; Core owns the null
+    /// resolution and the 16px margin / bottom taskbar-reserve constants — do not
+    /// duplicate them here. Garbage/unknown position strings fall back to bottom-right
+    /// (spec §Error Handling), handled inside <see cref="OverlayAnchor.Parse"/>.
     /// </summary>
     private Point CalculatePosition()
     {
-        var anchor = OverlayAnchor.Parse(_position);
         var screen = ResolveTargetScreen();
-        var wa     = screen.WorkingArea;
-        const int margin = 16;
-
-        // Auto-hide taskbar detection: WorkingArea equals Bounds when no strip is reserved.
-        // Reserve ~8 px so the panel stays above the taskbar pop-up zone.
-        var taskbarReserve = wa == screen.Bounds ? 8 : 0;
-
-        int x = anchor.Horizontal switch
-        {
-            HorizontalAnchor.Left   => wa.Left + margin,
-            HorizontalAnchor.Center => wa.Left + (wa.Width - this.Width) / 2,
-            _                       => wa.Right - this.Width - margin,   // Right
-        };
-        int y = anchor.Vertical switch
-        {
-            VerticalAnchor.Top => wa.Top + margin,
-            _                  => wa.Bottom - this.Height - taskbarReserve, // Bottom
-        };
-        return new Point(x, y);
+        return OverlayPlacement.ResolveOrigin(_offsetX, _offsetY, _position, screen.WorkingArea, this.Size);
     }
 
     /// <summary>
@@ -778,16 +891,41 @@ internal sealed class OverlayPanel : Form
     }
 
     /// <summary>
-    /// Maps a client X coordinate to a chip slot index. Subtracts PanelPadding before
-    /// delegating to TryGetItemAtClientPoint so the slot math matches OnPaint geometry:
-    /// both use i * (size + spacing) as the chip origin, offset by PanelPadding from
-    /// the panel left edge. A click in the left PanelPadding gutter returns false.
+    /// Maps a client X coordinate to a chip slot index. Subtracts PanelPadding + GripWidth
+    /// before delegating to TryGetItemAtClientPoint so the slot math matches OnPaint
+    /// geometry: both use i * (size + spacing) as the chip origin, offset by
+    /// PanelPadding + GripWidth from the panel left edge (the grip band shifts every chip
+    /// right by GripWidth — Risk 2's paint/hit-test sync gate). A click in the left
+    /// PanelPadding gutter or the grip band returns false.
     /// </summary>
     private bool HitIconIndex(int clientX, out int index)
     {
         return DisplayItemCollection.TryGetItemAtClientPoint(
-            _items, clientX - PanelPadding, _config.Size, _config.Spacing,
+            _items, clientX - PanelPadding - GripWidth, _config.Size, _config.Spacing,
             out _, out index);
+    }
+
+    /// <summary>
+    /// True when <paramref name="clientX"/> falls inside the left grip band — the SOLE
+    /// drag-arming zone (D10). The single source of truth consumed by both the grip-hit
+    /// test in <see cref="OnMouseDown"/> and the hover-dim state in
+    /// <see cref="UpdateGripHover"/>, so the two never desync (Risk 2's paint/hit-test sync
+    /// gate extends to hover). A negative <paramref name="clientX"/> (e.g. from
+    /// <see cref="OnMouseLeave"/>) always resolves to false.
+    /// </summary>
+    private bool IsGripHit(int clientX) => clientX >= 0 && clientX < PanelPadding + GripWidth;
+
+    /// <summary>
+    /// Updates <see cref="_gripHovered"/> from a client-X coordinate and invalidates only
+    /// the grip band on a dim↔hover transition (Decision D5). No-op when the state does not
+    /// change — avoids redundant repaints on every mouse-move tick.
+    /// </summary>
+    private void UpdateGripHover(int clientX)
+    {
+        var hovered = IsGripHit(clientX);
+        if (hovered == _gripHovered) return;
+        _gripHovered = hovered;
+        Invalidate(new Rectangle(0, 0, PanelPadding + GripWidth, this.ClientSize.Height));
     }
 
     private void PinAcrossVirtualDesktops()
@@ -812,34 +950,10 @@ internal sealed class OverlayPanel : Form
     }
 
     /// <summary>
-    /// Computes the snap anchor on release. Uses the monitor under the cursor
-    /// (not under the panel) to support multi-monitor drag-to-other-display.
-    /// Horizontal: left-third → Left; middle-third → Center; right-third → Right.
-    /// Vertical: top-half → Top; bottom-half → Bottom.
-    /// Returns the position config string and the monitor index in Screen.AllScreens.
-    /// </summary>
-    private (string position, int monitor) ComputeSnap()
-    {
-        var screen = Screen.FromPoint(Cursor.Position);
-        var wa     = screen.WorkingArea;
-        var center = new Point(this.Left + this.Width / 2, this.Top + this.Height / 2);
-
-        var h = center.X < wa.Left + wa.Width / 3
-            ? HorizontalAnchor.Left
-            : center.X < wa.Left + 2 * wa.Width / 3
-                ? HorizontalAnchor.Center
-                : HorizontalAnchor.Right;
-
-        var v = center.Y < wa.Top + wa.Height / 2
-            ? VerticalAnchor.Top
-            : VerticalAnchor.Bottom;
-
-        return (new OverlayAnchor(h, v).ToConfigString(), IndexOfScreen(screen));
-    }
-
-    /// <summary>
     /// Returns the index of <paramref name="screen"/> in <see cref="Screen.AllScreens"/>
     /// matched by <see cref="Screen.DeviceName"/>. Falls back to 0 when not found.
+    /// Used by the <see cref="OnMouseUp"/> drag-drop free-float branch to resolve the
+    /// persisted <c>Monitor</c> index for the screen under the cursor at release.
     /// </summary>
     private static int IndexOfScreen(Screen screen)
     {

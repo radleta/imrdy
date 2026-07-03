@@ -1,5 +1,6 @@
 using Imrdy.Core;
 using Imrdy.Core.Menus;
+using Imrdy.Core.Overlay;
 using Microsoft.Extensions.Logging;
 
 namespace Imrdy.Windows.Menus;
@@ -85,7 +86,7 @@ internal static class ControllerMenuBuilder
                 await Task.Run(() => ConfigReader.Update(c => c with { Tray = c.Tray with { IconStyle = newStyle } }));
                 onConfigChanged(ConfigReader.Read());
             }
-            else if (await TryHandleOverlayTag(tag, state, onConfigChanged))
+            else if (await TryHandleOverlayTag(tag, state, onConfigChanged, logger))
             {
                 // overlay tag handled
             }
@@ -143,49 +144,99 @@ internal static class ControllerMenuBuilder
     internal static async Task<bool> TryHandleOverlayTag(
         string tag,
         ControllerMenuState state,
-        Action<ImrdyConfig> onConfigChanged)
+        Action<ImrdyConfig> onConfigChanged,
+        ILogger? logger = null)
     {
         if (tag == "toggle-overlay")
         {
-            await Task.Run(() => ConfigReader.Update(c => c with { Overlay = c.Overlay with { Enabled = !c.Overlay.Enabled } }));
+            await PersistOverlayUpdateAsync(
+                c => c with { Overlay = c.Overlay with { Enabled = !c.Overlay.Enabled } },
+                "overlay enabled toggle persist failed", logger);
             onConfigChanged(ConfigReader.Read());
             return true;
         }
         if (tag == "toggle-overlay-lock")
         {
-            await Task.Run(() => ConfigReader.Update(c => c with { Overlay = c.Overlay with { Locked = !c.Overlay.Locked } }));
+            await PersistOverlayUpdateAsync(
+                c => c with { Overlay = c.Overlay with { Locked = !c.Overlay.Locked } },
+                "overlay lock toggle persist failed", logger);
             onConfigChanged(ConfigReader.Read());
             return true;
         }
         if (tag.StartsWith("set-overlay-position:", StringComparison.Ordinal))
         {
             var position = tag["set-overlay-position:".Length..];
-            await Task.Run(() => ConfigReader.Update(c => c with { Overlay = c.Overlay with { Position = position } }));
+            // D7 — a preset must also write the RESOLVED offset (via Core AnchorToOffset)
+            // for the target monitor, or the overlay would not actually move under the
+            // offset-as-source-of-truth model (offset wins over Position when both present
+            // — see OverlayPlacement.ResolveOrigin). workingArea/panelSize come from the
+            // menu-open-time state snapshot (state.OverlayWorkingArea/OverlayPanelSize) —
+            // exactly the basis ControllerMenuModel.BuildOverlaySubmenu used to render the
+            // Checked state the user just clicked, so write and Checked-state stay coherent.
+            var (offsetX, offsetY) = OverlayPlacement.AnchorToOffset(
+                position, state.OverlayWorkingArea, state.OverlayPanelSize);
+            await PersistOverlayUpdateAsync(
+                c => c with { Overlay = c.Overlay with { Position = position, OffsetX = offsetX, OffsetY = offsetY } },
+                "overlay position preset persist failed", logger);
             onConfigChanged(ConfigReader.Read());
             return true;
         }
         if (tag.StartsWith("set-overlay-size:", StringComparison.Ordinal))
         {
             if (!int.TryParse(tag["set-overlay-size:".Length..], out var size)) return true;
-            await Task.Run(() => ConfigReader.Update(c => c with { Overlay = c.Overlay with { Size = size } }));
+            await PersistOverlayUpdateAsync(
+                c => c with { Overlay = c.Overlay with { Size = size } },
+                "overlay size preset persist failed", logger);
             onConfigChanged(ConfigReader.Read());
             return true;
         }
         if (tag.StartsWith("set-overlay-spacing:", StringComparison.Ordinal))
         {
             if (!int.TryParse(tag["set-overlay-spacing:".Length..], out var spacing)) return true;
-            await Task.Run(() => ConfigReader.Update(c => c with { Overlay = c.Overlay with { Spacing = spacing } }));
+            await PersistOverlayUpdateAsync(
+                c => c with { Overlay = c.Overlay with { Spacing = spacing } },
+                "overlay spacing preset persist failed", logger);
             onConfigChanged(ConfigReader.Read());
             return true;
         }
         if (tag.StartsWith("set-overlay-monitor:", StringComparison.Ordinal))
         {
             if (!int.TryParse(tag["set-overlay-monitor:".Length..], out var monitor)) return true;
-            await Task.Run(() => ConfigReader.Update(c => c with { Overlay = c.Overlay with { Monitor = monitor } }));
+            await PersistOverlayUpdateAsync(
+                c => c with { Overlay = c.Overlay with { Monitor = monitor } },
+                "overlay monitor preset persist failed", logger);
             onConfigChanged(ConfigReader.Read());
             return true;
         }
         return false;
+    }
+
+    /// <summary>
+    /// Shared RMW-persist helper for the 6 overlay menu handlers above (Risk 8 —
+    /// csharp-expert "swallowed exceptions" / concurrent-write race). <paramref name="mutate"/>
+    /// runs inside <see cref="ConfigReader.Update"/> on a background thread via
+    /// <see cref="Task.Run(Action)"/>; the antecedent task is still awaited here (so a fault
+    /// propagates to the caller's existing try/catch exactly as before), but a SEPARATE,
+    /// deliberately-discarded fault-observing continuation also logs the full exception with
+    /// a handler-specific message via <paramref name="logger"/> — mirroring the drag-drop
+    /// persist pattern in <c>OverlayPanel.OnMouseUp</c> (Step 04b). The continuation task is
+    /// intentionally never awaited: awaiting a <c>TaskContinuationOptions.OnlyOnFaulted</c>
+    /// continuation directly throws <see cref="TaskCanceledException"/> on the (common)
+    /// success path, since the continuation itself transitions to Canceled when its predicate
+    /// does not match. Writes serialize through <see cref="ConfigReader.Update"/> /
+    /// <c>AtomicFileWriter</c>; the resulting FSW re-entrant reload is a harmless no-op
+    /// (config-live-reload.md, R4), so no additional ordering guard is needed here.
+    /// </summary>
+    private static async Task PersistOverlayUpdateAsync(
+        Func<ImrdyConfig, ImrdyConfig> mutate,
+        string faultMessage,
+        ILogger? logger)
+    {
+        var updateTask = Task.Run(() => ConfigReader.Update(mutate));
+        _ = updateTask.ContinueWith(
+            t => logger?.LogError(t.Exception?.InnerException ?? t.Exception, faultMessage),
+            TaskContinuationOptions.OnlyOnFaulted);
+        await updateTask;
     }
 
     private static void OpenFolder(string exe, string args, ILogger? logger)

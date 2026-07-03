@@ -1,9 +1,20 @@
+using System.Drawing;
 using Imrdy.Core.Menus;
 
 namespace Imrdy.Core.Tests.Helpers;
 
 internal static class MenuTestHelper
 {
+    /// <summary>
+    /// Representative 1920×1040 working area (1920×1080 minus an 8px auto-hide-taskbar
+    /// reserve zone, though the exact reserve isn't material here) and a round 200×72
+    /// panel size — used by <see cref="ControllerMenuState.OverlayWorkingArea"/>/
+    /// <see cref="ControllerMenuState.OverlayPanelSize"/> so overlay position-preset
+    /// Checked-state tests (D7) have deterministic, easy-to-hand-verify geometry.
+    /// </summary>
+    public static readonly Rectangle DefaultOverlayWorkingArea = new(0, 0, 1920, 1040);
+    public static readonly Size DefaultOverlayPanelSize = new(200, 72);
+
     public static ControllerMenuState EmptyControllerState() => new()
     {
         Sessions = [],
@@ -13,6 +24,8 @@ internal static class MenuTestHelper
         Monitors = [],
         Config = new ImrdyConfig(),
         LogPath = @"C:\test\.imrdy\logs\monitor.log",
+        OverlayWorkingArea = DefaultOverlayWorkingArea,
+        OverlayPanelSize = DefaultOverlayPanelSize,
     };
 
     public static ControllerMenuState ActiveControllerState() => new()
@@ -32,6 +45,8 @@ internal static class MenuTestHelper
         Monitors = [],
         Config = new ImrdyConfig { Sound = new SoundConfig { Enabled = true, DefaultPack = "random" } },
         LogPath = @"C:\test\.imrdy\logs\monitor.log",
+        OverlayWorkingArea = DefaultOverlayWorkingArea,
+        OverlayPanelSize = DefaultOverlayPanelSize,
     };
 
     public static ControllerMenuState SoundDisabledControllerState()

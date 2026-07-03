@@ -41,6 +41,20 @@ public record OverlayConfig
     /// When true the overlay position is locked and cannot be changed by dragging.
     /// </summary>
     public bool Locked { get; init; } = false;
+
+    /// <summary>
+    /// Persisted free-float position: monitor-relative offset in logical px from the
+    /// target monitor's working-area origin. Null means "no free-float position set" —
+    /// resolution falls back to the legacy <see cref="Position"/> anchor.
+    /// </summary>
+    public int? OffsetX { get; init; } = null;
+
+    /// <summary>
+    /// Persisted free-float position: monitor-relative offset in logical px from the
+    /// target monitor's working-area origin. Null means "no free-float position set" —
+    /// resolution falls back to the legacy <see cref="Position"/> anchor.
+    /// </summary>
+    public int? OffsetY { get; init; } = null;
 }
 
 public record DiagnosticsConfig

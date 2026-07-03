@@ -82,6 +82,25 @@ internal static class ControllerMenuModel
     {
         var overlay = state.Config.Overlay;
         var currentAnchor = OverlayAnchor.Parse(overlay.Position);
+
+        // D7 Checked-state contract (free-float offset is the source of truth once set):
+        //   offset present → Checked when it equals THIS anchor's resolved offset for the
+        //     target monitor (same OverlayPlacement.AnchorToOffset geometry the position-
+        //     preset write uses — see ControllerMenuBuilder.TryHandleOverlayTag);
+        //   offset null     → Checked when the legacy Position string names this anchor.
+        // Core stays WinForms-free: workingArea/panelSize come from state (populated by the
+        // Windows layer via Screen.AllScreens), never a direct Screen reference.
+        bool IsPositionChecked(string anchorString)
+        {
+            if (overlay.OffsetX.HasValue && overlay.OffsetY.HasValue)
+            {
+                var (anchorOffsetX, anchorOffsetY) = OverlayPlacement.AnchorToOffset(
+                    anchorString, state.OverlayWorkingArea, state.OverlayPanelSize);
+                return overlay.OffsetX.Value == anchorOffsetX && overlay.OffsetY.Value == anchorOffsetY;
+            }
+            return currentAnchor == OverlayAnchor.Parse(anchorString);
+        }
+
         var children = new List<MenuItemModel>
         {
             // (1) toggle
@@ -89,12 +108,12 @@ internal static class ControllerMenuModel
             // (2) sep
             new MenuItemModel { Type = MenuItemType.Separator },
             // (3) 6 position anchors
-            new MenuItemModel { Label = "Top Left",      Tag = "set-overlay-position:top-left",      Checked = currentAnchor == OverlayAnchor.Parse("top-left") },
-            new MenuItemModel { Label = "Top Center",    Tag = "set-overlay-position:top-center",    Checked = currentAnchor == OverlayAnchor.Parse("top-center") },
-            new MenuItemModel { Label = "Top Right",     Tag = "set-overlay-position:top-right",     Checked = currentAnchor == OverlayAnchor.Parse("top-right") },
-            new MenuItemModel { Label = "Bottom Left",   Tag = "set-overlay-position:bottom-left",   Checked = currentAnchor == OverlayAnchor.Parse("bottom-left") },
-            new MenuItemModel { Label = "Bottom Center", Tag = "set-overlay-position:bottom-center", Checked = currentAnchor == OverlayAnchor.Parse("bottom-center") },
-            new MenuItemModel { Label = "Bottom Right",  Tag = "set-overlay-position:bottom-right",  Checked = currentAnchor == OverlayAnchor.Parse("bottom-right") },
+            new MenuItemModel { Label = "Top Left",      Tag = "set-overlay-position:top-left",      Checked = IsPositionChecked("top-left") },
+            new MenuItemModel { Label = "Top Center",    Tag = "set-overlay-position:top-center",    Checked = IsPositionChecked("top-center") },
+            new MenuItemModel { Label = "Top Right",     Tag = "set-overlay-position:top-right",     Checked = IsPositionChecked("top-right") },
+            new MenuItemModel { Label = "Bottom Left",   Tag = "set-overlay-position:bottom-left",   Checked = IsPositionChecked("bottom-left") },
+            new MenuItemModel { Label = "Bottom Center", Tag = "set-overlay-position:bottom-center", Checked = IsPositionChecked("bottom-center") },
+            new MenuItemModel { Label = "Bottom Right",  Tag = "set-overlay-position:bottom-right",  Checked = IsPositionChecked("bottom-right") },
             // (4) sep
             new MenuItemModel { Type = MenuItemType.Separator },
             // (5) size presets

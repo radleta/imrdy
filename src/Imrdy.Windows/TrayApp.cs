@@ -221,9 +221,10 @@ internal sealed class TrayApp : ApplicationContext, ISessionInteractionRouter
                 _gitCache);
             _overlayPanel.SurfaceInteracted += _hoverController.HandleSurfaceInteraction;
             _overlayPanel.SurfaceInteracted += _workspaceHoverController.HandleSurfaceInteraction;
+            _overlayPanel.DragCompleted += HandleOverlayDragCompleted;
             _hoverController.FormShown += _workspaceHoverController.HideIfVisible;
             _workspaceHoverController.FormShown += _hoverController.HideIfVisible;
-            _logger.LogDebug("TrayApp: subscribed _hoverController and _workspaceHoverController to _overlayPanel.SurfaceInteracted + cross-controller FormShown");
+            _logger.LogDebug("TrayApp: subscribed _hoverController and _workspaceHoverController to _overlayPanel.SurfaceInteracted + DragCompleted + cross-controller FormShown");
         }
 
         // Initial load to pick up existing sessions
@@ -479,6 +480,15 @@ internal sealed class TrayApp : ApplicationContext, ISessionInteractionRouter
             }
             return;
         }
+
+        // Drag-in-flight guard (Risk 10): a grip drag shares the mouse surface with the
+        // dwell/grace state machine — without this, the cursor sweeping across chips
+        // mid-drag could dwell-trigger a dashboard pop. Mirrors the _overlayReloadDeferred
+        // pattern — a drag-in-flight flag the hover drain tick honors — wired here per the
+        // P6 subscription-ownership rule (controllers/base ctor never self-subscribe).
+        if (_overlayPanel is { IsDragging: true })
+            return;
+
         _hoverController.OnDrainTick();
         _workspaceHoverController?.OnDrainTick();
 
@@ -1610,6 +1620,8 @@ internal sealed class TrayApp : ApplicationContext, ISessionInteractionRouter
 
     private ControllerMenuState GetControllerState()
     {
+        var config = ConfigReader.Read();
+
         return new ControllerMenuState
         {
             Sessions = _sessions.Values.Select(e => new SessionMenuState
@@ -1629,10 +1641,42 @@ internal sealed class TrayApp : ApplicationContext, ISessionInteractionRouter
             InstalledGraphicsPacks = _graphicsPackLoader.LoadPacks(ImrdyPaths.GraphicsPacksDir)
                 .Select(p => p.Name).ToList(),
             Monitors = Screen.AllScreens.Select((s, i) => $"Monitor {i + 1} ({s.Bounds.Width}×{s.Bounds.Height})").ToList(),
-            Config = ConfigReader.Read(),
+            Config = config,
             LogPath = ImrdyPaths.MonitorLog,
             DevBuild = BuildDevState(),
+            OverlayWorkingArea = ResolveScreenForMonitor(config.Overlay.Monitor).WorkingArea,
+            OverlayPanelSize = _overlayPanel?.Size ?? EstimateOverlayPanelSize(config.Overlay),
         };
+    }
+
+    /// <summary>
+    /// Resolves the <see cref="Screen"/> for a persisted monitor index, falling back to the
+    /// primary (or first) screen when out of range — same convention as
+    /// <c>OverlayPanel.ResolveTargetScreen</c>. Used by <see cref="GetControllerState"/> to
+    /// supply <see cref="ControllerMenuState.OverlayWorkingArea"/> so the overlay position
+    /// presets (D7) can resolve/check offsets without Core taking a Screen dependency.
+    /// </summary>
+    private static Screen ResolveScreenForMonitor(int monitor)
+    {
+        var screens = Screen.AllScreens;
+        if (monitor >= 0 && monitor < screens.Length)
+            return screens[monitor];
+        return Screen.PrimaryScreen ?? screens[0];
+    }
+
+    /// <summary>
+    /// Estimates the overlay panel's Form size (logical px, unscaled — DeviceDpi is only
+    /// meaningful once a Form handle exists) for the rare case the overlay is currently
+    /// disabled (<c>_overlayPanel is null</c>) and the menu is opened anyway. Mirrors
+    /// <c>OverlayPanel.MinimumPanelWidth</c>'s formula at the single-chip (count=1) minimum,
+    /// using the same <see cref="OverlayPanel.PanelPadding"/>/<see cref="OverlayPanel.GripWidthLogical"/>
+    /// constants (internal, same assembly) so the estimate stays in sync with the real layout.
+    /// </summary>
+    private static Size EstimateOverlayPanelSize(OverlayConfig overlay)
+    {
+        var width = 2 * OverlayPanel.PanelPadding + OverlayPanel.GripWidthLogical + overlay.Size;
+        var height = 2 * OverlayPanel.PanelPadding + overlay.Size;
+        return new Size(width, height);
     }
 
     // --- Dev-build fixtures & preview-dashboard processes ---
@@ -1802,17 +1846,19 @@ internal sealed class TrayApp : ApplicationContext, ISessionInteractionRouter
             }
             else
             {
-                // Structural-delta classification: zero the non-structural triple (Position/Monitor/Locked)
-                // so the generated record comparer tests only structural fields (Enabled/Size/Spacing).
+                // Structural-delta classification: zero the non-structural quintuple
+                // (Position/Monitor/Locked/OffsetX/OffsetY) so the generated record comparer
+                // tests only structural fields (Enabled/Size/Spacing).
                 // Never pass these zeroed records to CalculatePosition / OverlayAnchor.Parse.
-                var sOld = oldOverlay with { Position = "", Monitor = 0, Locked = false };
-                var sNew = newOverlay with { Position = "", Monitor = 0, Locked = false };
+                var sOld = oldOverlay with { Position = "", Monitor = 0, Locked = false, OffsetX = null, OffsetY = null };
+                var sNew = newOverlay with { Position = "", Monitor = 0, Locked = false, OffsetX = null, OffsetY = null };
                 var structuralDelta = sOld != sNew;
 
                 if (!structuralDelta && _overlayPanel is not null && !enabledChanged)
                 {
                     // Non-structural fast path: in-place re-place (no flash, no dispose+recreate).
-                    _overlayPanel.ApplyPositionConfig(newOverlay.Position, newOverlay.Monitor, newOverlay.Locked);
+                    _overlayPanel.ApplyPositionConfig(newOverlay.Position, newOverlay.Monitor, newOverlay.Locked,
+                        newOverlay.OffsetX, newOverlay.OffsetY);
                     _overlayConfig = newOverlay;
                 }
                 else
@@ -1826,7 +1872,8 @@ internal sealed class TrayApp : ApplicationContext, ISessionInteractionRouter
                             _overlayPanel.SurfaceInteracted -= _workspaceHoverController.HandleSurfaceInteraction;
                         if (_hoverController is not null)
                             _overlayPanel.SurfaceInteracted -= _hoverController.HandleSurfaceInteraction;
-                        _logger.LogDebug("TrayApp: unsubscribed hover controllers from _overlayPanel.SurfaceInteracted");
+                        _overlayPanel.DragCompleted -= HandleOverlayDragCompleted;
+                        _logger.LogDebug("TrayApp: unsubscribed hover controllers from _overlayPanel.SurfaceInteracted + DragCompleted");
                     }
                     if (_hoverController is not null && _workspaceHoverController is not null)
                     {
@@ -1879,9 +1926,10 @@ internal sealed class TrayApp : ApplicationContext, ISessionInteractionRouter
                                 _gitCache);
                             _overlayPanel.SurfaceInteracted += _hoverController.HandleSurfaceInteraction;
                             _overlayPanel.SurfaceInteracted += _workspaceHoverController.HandleSurfaceInteraction;
+                            _overlayPanel.DragCompleted += HandleOverlayDragCompleted;
                             _hoverController.FormShown += _workspaceHoverController.HideIfVisible;
                             _workspaceHoverController.FormShown += _hoverController.HideIfVisible;
-                            _logger.LogDebug("TrayApp: subscribed _hoverController and _workspaceHoverController to _overlayPanel.SurfaceInteracted + cross-controller FormShown");
+                            _logger.LogDebug("TrayApp: subscribed _hoverController and _workspaceHoverController to _overlayPanel.SurfaceInteracted + DragCompleted + cross-controller FormShown");
                         }
                     }
                     else
@@ -1897,6 +1945,21 @@ internal sealed class TrayApp : ApplicationContext, ISessionInteractionRouter
     private OverlayPanel CreateOverlay(OverlayConfig config)
     {
         return new OverlayPanel(config, this, _desktopManager, _loggerFactory, _graphicsPackLoader);
+    }
+
+    /// <summary>
+    /// Subscribed to <see cref="OverlayPanel.DragCompleted"/> (P6 — TrayApp owns the wiring).
+    /// A grip-drag drop never dispatches a session/workspace activation, so
+    /// <see cref="OverlayPanel.SurfaceInteracted"/> does not fire for it. Reuses
+    /// <c>HandleSurfaceInteraction</c> on both hover controllers — idempotent
+    /// force-hide plus the post-interaction cooldown — so a chip left under the cursor
+    /// after the drop does not ghost-reshow its dashboard via the normal dwell timer
+    /// (Risk 10).
+    /// </summary>
+    private void HandleOverlayDragCompleted()
+    {
+        _hoverController?.HandleSurfaceInteraction();
+        _workspaceHoverController?.HandleSurfaceInteraction();
     }
 
     private void RefreshAllSessionIcons()
@@ -2257,7 +2320,8 @@ internal sealed class TrayApp : ApplicationContext, ISessionInteractionRouter
                 _overlayPanel.SurfaceInteracted -= _workspaceHoverController.HandleSurfaceInteraction;
             if (_hoverController is not null)
                 _overlayPanel.SurfaceInteracted -= _hoverController.HandleSurfaceInteraction;
-            _logger.LogDebug("TrayApp: unsubscribed hover controllers from _overlayPanel.SurfaceInteracted");
+            _overlayPanel.DragCompleted -= HandleOverlayDragCompleted;
+            _logger.LogDebug("TrayApp: unsubscribed hover controllers from _overlayPanel.SurfaceInteracted + DragCompleted");
         }
         if (_hoverController is not null && _workspaceHoverController is not null)
         {

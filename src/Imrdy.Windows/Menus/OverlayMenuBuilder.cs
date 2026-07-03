@@ -44,7 +44,7 @@ public static class OverlayMenuBuilder
     {
         try
         {
-            await ControllerMenuBuilder.TryHandleOverlayTag(tag, state, onConfigChanged);
+            await ControllerMenuBuilder.TryHandleOverlayTag(tag, state, onConfigChanged, logger);
         }
         catch (Exception ex)
         {

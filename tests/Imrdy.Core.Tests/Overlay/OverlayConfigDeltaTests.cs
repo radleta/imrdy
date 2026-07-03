@@ -4,14 +4,14 @@ namespace Imrdy.Core.Tests.Overlay;
 
 /// <summary>
 /// Locks the structural-delta classification contract used by TrayApp.OnConfigChanged (Step 07).
-/// Non-structural fields: Position, Monitor, Locked — zeroed via with-expression, result equals.
+/// Non-structural fields: Position, Monitor, Locked, OffsetX, OffsetY — zeroed via with-expression, result equals.
 /// Structural fields: Enabled, Size, Spacing — differ even after zeroing, result not equal.
 /// </summary>
 [Trait("Category", "Unit")]
 public class OverlayConfigDeltaTests
 {
     private static OverlayConfig Neutralize(OverlayConfig c) =>
-        c with { Position = "", Monitor = 0, Locked = false };
+        c with { Position = "", Monitor = 0, Locked = false, OffsetX = 0, OffsetY = 0 };
 
     // ---- Non-structural changes: neutralized pair must be equal ----
 
@@ -38,6 +38,24 @@ public class OverlayConfigDeltaTests
     {
         var old = new OverlayConfig { Locked = false };
         var updated = new OverlayConfig { Locked = true };
+
+        (Neutralize(old) == Neutralize(updated)).Should().BeTrue();
+    }
+
+    [Fact]
+    public void StructuralDelta_OffsetXChange_IsNonStructural()
+    {
+        var old = new OverlayConfig { OffsetX = null };
+        var updated = new OverlayConfig { OffsetX = 120 };
+
+        (Neutralize(old) == Neutralize(updated)).Should().BeTrue();
+    }
+
+    [Fact]
+    public void StructuralDelta_OffsetYChange_IsNonStructural()
+    {
+        var old = new OverlayConfig { OffsetY = null };
+        var updated = new OverlayConfig { OffsetY = 340 };
 
         (Neutralize(old) == Neutralize(updated)).Should().BeTrue();
     }
