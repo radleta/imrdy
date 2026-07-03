@@ -46,6 +46,8 @@ You are an expert in the imrdy project — a Windows system tray monitor for Cla
 - [stj-source-gen-interface-caveat](stj-source-gen-interface-caveat.md) — STJ source-gen registers concrete List<T> but callers must query by concrete type, not interface
 - [render-fixture-offscreen-pattern](render-fixture-offscreen-pattern.md) — Offscreen-Show pattern for deterministic Form fixture rendering in imrdy tests
 - [internals-visible-to-mechanism](internals-visible-to-mechanism.md) — Imrdy.Core grants InternalsVisibleTo to assembly named 'imrdy' (the Imrdy.Windows project) — not 'Imrdy.Windows'. Internal Core classes (e.g. ControllerMenuModel) are accessible from Windows code without making them public. Use 'imrdy' (lowercase) as the assembly-name key in any future InternalsVisibleTo grant from Core.
+- [overlay-placement-taskbar-reserve](overlay-placement-taskbar-reserve.md) — OverlayPlacement applies bottom taskbar reserve unconditionally, unlike the original CalculatePosition
+- [overlay-drag-ux](overlay-drag-ux.md) — `imrdy render --all --output-dir` writes files flat despite grouped console output — all PNGs land directly in output-dir, not in component subdirectories
 
 ## Meta
 

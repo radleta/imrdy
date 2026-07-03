@@ -63,3 +63,7 @@
 2026-06-26T21:22:53Z created stj-source-gen-interface-caveat
 2026-06-26T21:22:59Z created render-fixture-offscreen-pattern
 2026-07-01T16:48:01Z created internals-visible-to-mechanism
+2026-07-02T17:32:07Z updated overlay-rendering-internals
+2026-07-02T20:45:01Z created overlay-placement-taskbar-reserve
+2026-07-02T21:03:35Z created overlay-drag-ux
+2026-07-02T21:32:15Z updated overlay-interactivity

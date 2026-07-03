@@ -1,10 +1,11 @@
 ---
 tags: [imrdy-expert/overlay]
-summary: "OverlayPanel OnPaint rendering; bitmap cache keyed by (style,status); aging via chip-background opacity ladder in OnPaint; Form.Bounds reliability on non-layered forms; monitor placement via OverlayConfig.Monitor"
+summary: "OverlayPanel OnPaint rendering; bitmap cache keyed by (style,status); aging via chip-background opacity ladder in OnPaint; Form.Bounds reliability on non-layered forms; monitor/position placement reads mutable _monitor/_position fields, not config directly"
 code-cites:
   - src/Imrdy.Windows/Overlay/OverlayPanel.cs
   - src/Imrdy.Windows/Desktop/PInvokeOverlay.cs
   - src/Imrdy.Core/Status/StatusMap.cs
+  - src/Imrdy.Core/Overlay/OverlayAnchor.cs
 ---
 
 # Overlay Rendering Internals
@@ -35,16 +36,18 @@ AgingTier 0-4 is computed by `StatusMap.GetAgingTier` in `Imrdy.Core/Status/Stat
 | 3    | < 15 min            |
 | 4    | 15 min+             |
 
-**Aging is NOT baked into the cached glyph.** `OverlayPanel._cache` stores glyphs at full brightness, keyed by `(style, status)` only. Aging is applied at paint time as a chip-background opacity ladder in `OnPaint`: tier 0 is most opaque, tier 4 is faintest. Tier 4 also applies a slight additional glyph dim. No `ColorMatrix` is used in the overlay rendering path.
+**Aging is NOT baked into the cached glyph.** `OverlayPanel._cache` stores glyphs at full brightness, keyed by `(style, status)` only. Aging is applied at paint time as a chip-background opacity ladder in `OnPaint` → `PaintChip` → `ChipBgAlpha(tier, isAlert)`: tier 0 = alpha 255 (most opaque), tier 1 = 200, tier 2 = 160, tier 3 = 120, tier 4 = 80 (faintest). Alert statuses (`permission`/`error`, matched by `IsAlertStatus`) are floored at alpha 160 regardless of tier (Decision 2c — never the faint alpha of the old layered path). Tier 4 also applies a slight additional glyph dim (`ColorMatrix.Matrix33 = 0.85f`, applied only when `tier > 3`). No `ColorMatrix` is used for tiers 0-3.
 
 Note: the tray-icon renderers (`ParametricShapeRenderer`, `PackIconRenderer` in `src/Imrdy.Windows/Icons/`) still bake tier-based aging into their per-icon bitmaps (RGB multiplier for built-in shapes; `ApplyAgingColorMatrix` for SVG pack icons). That path is unchanged and separate from the overlay.
 
 ## OnPaint Rendering Flow
 
-`OverlayPanel.OnPaint` (or the drain-tick update method that triggers `Invalidate`):
-1. Gets or creates bitmaps for each display item from the lazy cache.
-2. Composites items into a horizontal row via `Graphics.DrawImage`.
-3. Standard WinForms invalidation / `Refresh` triggers the next `OnPaint`.
+`OverlayPanel.OnPaint` (`OverlayPanel.cs:213-237`):
+1. `g.Clear(ImrdyPalette.BgForm)`.
+2. Empty-state short-circuit: `items.Count == 0` → `PaintPlaceholderChip(g)` and return (Decision 6 — panel never zero-width/invisible).
+3. Otherwise, left-to-right loop: `chipX = PanelPadding + i * (size + spacing)`; each chip painted via `PaintChip(g, chipX, PanelPadding, size, item)`.
+
+`PaintChip` (`OverlayPanel.cs:239-283`) paints in this fixed order: (1) rounded chip background at tier-driven alpha, (2) status glyph from the `(style,status)` cache inset by `ChipPadding`, (3) alert cue outline for error/permission (`PaintAlertCue`), (4) hover highlight when `item.Id == _hoveredChipId` (`PaintHoverHighlight`). This is the **same slot math** `HitIconIndex`/`DisplayItemCollection.TryGetItemAtClientPoint` uses (offset by `PanelPadding` from the panel's left edge) — hit-test and paint geometry cannot diverge. Any new left-edge element (e.g. a grip glyph) that shifts chip origin must update both `OnPaint`'s `chipX` formula and `HitIconIndex`'s `clientX - PanelPadding` offset together, or hit-test and paint will disagree.
 
 No GDI DC juggling, no `UpdateLayeredWindow`, no premultiplied alpha requirement. The non-layered form renders via the normal WinForms paint pipeline.
 
@@ -76,12 +79,19 @@ Components stripped (no longer needed without `WS_EX_LAYERED`):
 | `GetActualWindowRect` + `RECT` struct | Workaround for Bounds-cache staleness; non-layered forms don't have this problem |
 | `DecodeLParamPoint` | Merged into `ScreenToClientPoint`; no longer a separate helper |
 
-## Monitor Placement
+## Monitor and Position Placement (mutable fields, not config directly)
 
-`OverlayConfig.Monitor` (int) selects which monitor the overlay docks to. `OverlayPanel.CalculatePosition` uses `Screen.AllScreens[config.Monitor]` (clamped to valid range) instead of the former `Screen.PrimaryScreen`-only placement. Dock position (`bottom-right` / `bottom-left`) and offset within the working area remain the same geometry as before.
+**Drift correction (2026-07-02):** placement does NOT read `_config.Monitor` / `_config.Position` directly — it reads two private mutable fields, `_monitor` (int) and `_position` (string), that are ctor-initialized from `config.Monitor`/`config.Position` and later overwritten in-place by `ApplyPositionConfig(position, monitor, locked)` without recreating the panel. This is what makes flash-free drag-drop and non-structural config live-reload possible (see [Config Live Reload](config-live-reload.md)).
+
+- `CalculatePosition()` (`OverlayPanel.cs:740-763`) calls `OverlayAnchor.Parse(_position)` then `ResolveTargetScreen()`; computes `x`/`y` from `screen.WorkingArea` for the 6 anchors (Left/Center/Right × Top/Bottom), with a 16px margin and an 8px auto-hide-taskbar reserve on the bottom edge.
+- `ResolveTargetScreen()` (`OverlayPanel.cs:772-778`) reads `_monitor` (not `config.Monitor`) against `Screen.AllScreens`, clamping to `Screen.PrimaryScreen ?? screens[0]` when out of range.
+- `ApplyPositionConfig(string position, int monitor, bool locked)` (`OverlayPanel.cs:509-516`) is the single mutation point for `_position`/`_monitor`/`_locked`; it recomputes `this.Location = CalculatePosition()` in place. Valid callers per its doc comment: `OnMouseUp` (drag drop) and `TrayApp.OnConfigChanged` (drain tick) only — asserted via `Debug.Assert(!InvokeRequired, ...)` (stripped in Release).
+
+Any future offset-based placement (free-float X/Y) should follow the same pattern: add mutable offset field(s) alongside `_position`/`_monitor`/`_locked`, mutate them only inside `ApplyPositionConfig` (or a renamed/extended equivalent), and never read `_config.*` directly from `CalculatePosition`/`ResolveTargetScreen`.
 
 ## Related
 
-- [Overlay Interactivity](overlay-interactivity.md) — OverlayPanel single-class design, input via OnMouseDown/OnMouseUp, ISessionInteractionRouter
+- [Overlay Interactivity](overlay-interactivity.md) — OverlayPanel single-class design, drag FSM (OnMouseDown/OnMouseMove/OnMouseUp), ISessionInteractionRouter
 - [Status Mapping](status-mapping.md) — StatusMap.GetAgingTier, StatusMap.ResolveColor
 - [Render Verb Architecture](render-verb-architecture.md) — overlay component in `imrdy render --all`
+- [Config Live Reload](config-live-reload.md) — structural-delta classification; Position/Monitor/Locked apply in-place via ApplyPositionConfig
