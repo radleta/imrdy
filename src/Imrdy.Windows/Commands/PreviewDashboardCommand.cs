@@ -17,9 +17,9 @@ namespace Imrdy.Windows.Commands;
 /// - Intentionally bypasses the Global\ImrdyMonitor mutex — preview is a dev tool
 ///   that must be invocable while the real tray is running.
 /// - Builds an inline ServiceCollection (no CliServiceBuilder / MonitorServiceBuilder).
-///   At step 04 the form is still a colored-rect stub, so only logging is registered.
-///   Step 05 (real child controls) will add TrayIconRendererFactory + GraphicsPackLoader
-///   here when DashboardForm's ctor/Show methods actually consume them.
+///   SessionDashboardForm's real child controls draw themselves via GDI+ and the shared
+///   ImrdyPalette, so ILoggerFactory is the only service it resolves — no renderer or
+///   graphics-pack registration is needed here.
 /// - Uses source-generated JSON (ImrdyJsonContext) for trim-safe deserialization.
 /// </summary>
 internal static class PreviewDashboardCommand
@@ -43,9 +43,8 @@ internal static class PreviewDashboardCommand
 
         // Build a minimal inline ServiceCollection before parsing so AddSerilog configures
         // Log.Logger (static) before any catch block may need it.
-        // At step 04 DashboardForm only needs ILoggerFactory (ArgumentNullException.ThrowIfNull in ctor).
-        // Step 05 will add TrayIconRendererFactory + GraphicsPackLoader here when the real
-        // child controls need them.
+        // SessionDashboardForm only needs ILoggerFactory (ArgumentNullException.ThrowIfNull in ctor);
+        // its child controls render via GDI+/ImrdyPalette rather than the icon renderers.
         var services = new ServiceCollection();
         services.AddSerilog(verbose: false, quiet: false);
 

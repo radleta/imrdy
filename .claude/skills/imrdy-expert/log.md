@@ -67,3 +67,9 @@
 2026-07-02T20:45:01Z created overlay-placement-taskbar-reserve
 2026-07-02T21:03:35Z created overlay-drag-ux
 2026-07-02T21:32:15Z updated overlay-interactivity
+2026-07-07T00:22:38Z updated render-verb-architecture
+2026-08-20T00:00:00Z updated overlay-rendering-internals
+2026-08-20T00:05:00Z updated config-live-reload
+2026-08-20T00:10:00Z updated overlay-placement-taskbar-reserve
+2026-08-20T00:15:00Z renamed overlay-drag-ux -> render-output-dir-flat-layout (filename/content mismatch)
+2026-08-20T00:20:00Z updated overlay-placement-taskbar-reserve (tag prefix imrdy -> imrdy-expert)

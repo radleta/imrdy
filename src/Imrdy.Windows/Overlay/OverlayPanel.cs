@@ -37,12 +37,11 @@ internal sealed class OverlayPanel : Form
     internal const int PanelPadding     = 4;
 
     // ── Grip layout constants (Decision D2/D5) ─────────────────────────────────────
-    // Left grip handle — the sole drag-arming zone (hit-testing lands in Step 04b).
+    // Left grip handle — the sole drag-arming zone (see HitIconIndex/IsGripHit).
     // GripWidthLogical is the LOGICAL-px seed; the GripWidth property below DPI-scales
-    // it via the same DeviceDpi/96f convention OnMouseMove already applies to the drag
-    // delta (L567 in research.md). Paint (this step) and hit-test (Step 04b) both
-    // consume this one GripWidth value — the sync gate that keeps chip slot math from
-    // desyncing (Risk 2).
+    // it via the same DeviceDpi/96f convention OnMouseMove applies to the drag delta.
+    // Paint (OnPaint) and hit-test (HitIconIndex) both consume this one GripWidth
+    // value — the sync gate that keeps chip slot math from desyncing (Risk 2).
     internal const int GripWidthLogical = 14;
 
     // Depends on DeviceDpi (runtime, only meaningful once the handle is created) — cannot be const.
@@ -253,8 +252,8 @@ internal sealed class OverlayPanel : Form
     ///   3. Alert cue — non-color outline for error/permission (Decision 2d).
     ///   4. Hover highlight — controller-pushed via SetHoveredChipId.
     /// Empty state: single dimmed placeholder; panel never zero-width/invisible (Decision 6).
-    /// NOTE: HitIconIndex does not yet subtract GripWidth — this step is rendering +
-    /// layout only; the hit-test shift lands in Step 04b (research §Patterns, Risk 2).
+    /// HitIconIndex subtracts the same PanelPadding + GripWidth inset, so paint and
+    /// hit-test share one origin (Risk 2's sync gate).
     /// </summary>
     protected override void OnPaint(PaintEventArgs e)
     {
@@ -606,7 +605,8 @@ internal sealed class OverlayPanel : Form
     /// <summary>
     /// True while the user is actively dragging the panel (threshold crossed).
     /// Read by TrayApp.OnConfigChanged to defer overlay reconfiguration mid-drag.
-    /// The field is initialized false here; mutations land in Step 08.
+    /// Set true in OnMouseMove once the drag threshold is crossed; reset to false by
+    /// ResetDragState on every FSM exit path (drop, Escape, WM_CANCELMODE).
     /// </summary>
     public bool IsDragging => _isDragging;
 

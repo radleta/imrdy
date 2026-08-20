@@ -1,6 +1,7 @@
 ---
 tags: [imrdy-expert/rendering]
 summary: "imrdy render verb: in-process PNG capture of WinForms surfaces without a screen — layer split, Program.cs placement, DrawToBitmap caveats, sequential STA execution"
+code-cites: []
 ---
 
 # Render Verb Architecture
@@ -79,6 +80,19 @@ For any UI-bearing change (SessionDashboardForm, WorkspaceDashboardForm, overlay
 4. **Run `imrdy render --all` and inspect every PNG** — mandatory fourth seal
 
 A passing verifier wave is NOT a substitute for visual inspection. Layout-collapse bugs (controls rendered at zero size) pass all three verifier gates cleanly. See the user-scoped `verify-fix-loop-expert` wiki for the full four-gate protocol.
+
+### PATH Binary Staleness Gotcha
+
+The bare `imrdy` command on PATH resolves to `~/.local/bin/imrdy.exe`, the deployed binary from the last `build-dev.sh` run. `dotnet build` only rebuilds the Debug assembly in `bin/Debug/.../imrdy.exe` — it does NOT touch the PATH binary. This means:
+
+- **`dotnet build` + `imrdy render --all`** = renders with yesterday's (or older) binary
+- **`./build-dev.sh` + `imrdy render --all`** = renders with today's source
+
+If a visual-seal step runs `imrdy render` via the bare PATH command without first running `./build-dev.sh`, the render will silently use a stale deployed binary, producing false-positive "defects" (visual artifacts from old code that are already fixed in source).
+
+**Solution:** Always run `./build-dev.sh` immediately before `imrdy render --all` during visual-seal verification. Alternatively, invoke the just-built Debug exe by its full bin path: `src/Imrdy.Windows/bin/Debug/net10.0-windows/win-x64/imrdy.exe render --all`.
+
+**Discovery:** During step 3 iteration 2, the visual seal reported a missing grip handle and wrong panel widths (72×72 / 360×72). The source in `OverlayPanel.cs` already had the grip correctly implemented. Running `./build-dev.sh` to redeploy the binary fixed the PATH binary; re-running `imrdy render --all` then showed the correct output (86×72 / 374×72) with the grip visible — no source change was needed.
 
 ## Deferred
 

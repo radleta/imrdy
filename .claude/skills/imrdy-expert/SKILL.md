@@ -18,7 +18,7 @@ You are an expert in the imrdy project — a Windows system tray monitor for Cla
 - [Teammate Detection](teammate-detection.md) — 4-layer teammate-aware notification system — deterministic gate, state tracking, consensus promotion, idle_prompt suppression
 - [Notification Dwell](notification-dwell.md) — Dwell timer system that gates toast/sound behind status settling — prevents notification storms
 - [Status Mapping](status-mapping.md) — Two-layer status mapping: hook event → base status → RGB color, with 9 base statuses
-- [Overlay Interactivity](overlay-interactivity.md) — OverlayPanel single non-layered draggable class (6-anchor snap, Locked field, WM_MOUSEACTIVATE→MA_NOACTIVATE focus guard); context menus dispatched via ISessionInteractionRouter (5 methods); gutter right-click → OpenOverlayMenu; structural-delta config reload
+- [Overlay Interactivity](overlay-interactivity.md) — DragCompleted event fires at end of drag-to-reposition in OnMouseUp; companion to SurfaceInteracted with separate contract; subscription lifecycle identical (P6 TrayApp owns wiring)
 - [Hover Dashboard Form Lifecycle](hover-dashboard-form-lifecycle.md) — HoverDashboardFormBase owns the shared shell (DWM, focus guard, pin/unpin, anchor placement); derived forms (SessionDashboardForm, WorkspaceDashboardForm) own their content panels — field-promote all dynamic controls for Update(vm) access
 - [Hover Dashboard State Machine](hover-dashboard-state-machine.md) — HoverDashboardControllerBase owns the dwell/grace state machine; derived controllers plug in domain-specific dispatch (TryHitTestForOurDomain → BuildViewModel → CreateForm → ShowForm → ApplyViewModelUpdate); cross-controller hide protocol via FormShown event wired in TrayApp
 - [Workspace Dashboard Architecture](workspace-dashboard-architecture.md) — WorkspaceDashboardForm + WorkspaceHoverDashboardController: BuildViewModel hit-index flow, VM-as-render-contract, live "ago" refresh, Update-refresh-all-fields pattern, GitInfo Ahead/Behind, cross-controller hide via FormShown
@@ -41,13 +41,13 @@ You are an expert in the imrdy project — a Windows system tray monitor for Cla
 - [WSLENV Distro Identity Gap](wslenv-distro-not-forwarded.md) — WSLENV doesn't auto-forward WSL_DISTRO_NAME; Windows binaries can't self-identify source distro
 - [WSL_DISTRO_NAME Env Var Gotcha](wsl-distro-env-var-gotcha.md) — WSL_DISTRO_NAME env var requires explicit pickup via IHookEnvironment; code exists but fallback was never wired
 - [HookServiceBuilder Relocation](hook-service-builder-relocation.md) — HookServiceBuilder relocated from Imrdy.Windows.DI to Imrdy.Core.Hooks to enable cross-platform consumer access
-- [overlay-rendering-internals](overlay-rendering-internals.md) — OverlayPanel OnPaint rendering; bitmap cache keyed by (style,status); aging via chip-background opacity ladder in OnPaint; Form.Bounds reliability on non-layered forms; monitor placement via OverlayConfig.Monitor
+- [overlay-rendering-internals](overlay-rendering-internals.md) — OverlayPanel OnPaint rendering; bitmap cache keyed by (style,status); aging via chip-background opacity ladder in OnPaint; Form.Bounds reliability on non-layered forms; monitor/position placement reads mutable _monitor/_position fields, not config directly
 - [displayitem-source-gen-gotcha](displayitem-source-gen-gotcha.md) — ImrdyJsonContext must explicitly register DisplayItem and List<DisplayItem> for source-gen serialization
 - [stj-source-gen-interface-caveat](stj-source-gen-interface-caveat.md) — STJ source-gen registers concrete List<T> but callers must query by concrete type, not interface
 - [render-fixture-offscreen-pattern](render-fixture-offscreen-pattern.md) — Offscreen-Show pattern for deterministic Form fixture rendering in imrdy tests
 - [internals-visible-to-mechanism](internals-visible-to-mechanism.md) — Imrdy.Core grants InternalsVisibleTo to assembly named 'imrdy' (the Imrdy.Windows project) — not 'Imrdy.Windows'. Internal Core classes (e.g. ControllerMenuModel) are accessible from Windows code without making them public. Use 'imrdy' (lowercase) as the assembly-name key in any future InternalsVisibleTo grant from Core.
 - [overlay-placement-taskbar-reserve](overlay-placement-taskbar-reserve.md) — OverlayPlacement applies bottom taskbar reserve unconditionally, unlike the original CalculatePosition
-- [overlay-drag-ux](overlay-drag-ux.md) — `imrdy render --all --output-dir` writes files flat despite grouped console output — all PNGs land directly in output-dir, not in component subdirectories
+- [render-output-dir-flat-layout](render-output-dir-flat-layout.md) — `imrdy render --all --output-dir` writes files flat despite grouped console output — all PNGs land directly in output-dir, not in component subdirectories
 
 ## Meta
 

@@ -47,7 +47,9 @@ Note: the tray-icon renderers (`ParametricShapeRenderer`, `PackIconRenderer` in 
 2. Empty-state short-circuit: `items.Count == 0` → `PaintPlaceholderChip(g)` and return (Decision 6 — panel never zero-width/invisible).
 3. Otherwise, left-to-right loop: `chipX = PanelPadding + i * (size + spacing)`; each chip painted via `PaintChip(g, chipX, PanelPadding, size, item)`.
 
-`PaintChip` (`OverlayPanel.cs:239-283`) paints in this fixed order: (1) rounded chip background at tier-driven alpha, (2) status glyph from the `(style,status)` cache inset by `ChipPadding`, (3) alert cue outline for error/permission (`PaintAlertCue`), (4) hover highlight when `item.Id == _hoveredChipId` (`PaintHoverHighlight`). This is the **same slot math** `HitIconIndex`/`DisplayItemCollection.TryGetItemAtClientPoint` uses (offset by `PanelPadding` from the panel's left edge) — hit-test and paint geometry cannot diverge. Any new left-edge element (e.g. a grip glyph) that shifts chip origin must update both `OnPaint`'s `chipX` formula and `HitIconIndex`'s `clientX - PanelPadding` offset together, or hit-test and paint will disagree.
+`PaintChip` (`OverlayPanel.cs:239-283`) paints in this fixed order: (1) rounded chip background at tier-driven alpha, (2) status glyph from the `(style,status)` cache inset by `ChipPadding`, (3) alert cue outline for error/permission (`PaintAlertCue`), (4) hover highlight when `item.Id == _hoveredChipId` (`PaintHoverHighlight`). This is the **same slot math** `HitIconIndex`/`DisplayItemCollection.TryGetItemAtClientPoint` uses — hit-test and paint geometry cannot diverge.
+
+The grip band occupies that left edge, so both sides carry the identical `PanelPadding + GripWidth` inset: `OnPaint`'s `chipX = PanelPadding + gripWidth + i * (size + spacing)` (`OverlayPanel.cs:285`) and `HitIconIndex`'s `clientX - PanelPadding - GripWidth` (`OverlayPanel.cs:904`). `GripWidth` is a single DPI-scaling property over the `GripWidthLogical = 14` seed (`OverlayPanel.cs:46-49`) — paint, hit-test, `IsGripHit`, and `MinimumPanelWidth` all read that one value. Any further left-edge element must extend both offsets together, or hit-test and paint will disagree.
 
 No GDI DC juggling, no `UpdateLayeredWindow`, no premultiplied alpha requirement. The non-layered form renders via the normal WinForms paint pipeline.
 
@@ -87,7 +89,7 @@ Components stripped (no longer needed without `WS_EX_LAYERED`):
 - `ResolveTargetScreen()` (`OverlayPanel.cs:772-778`) reads `_monitor` (not `config.Monitor`) against `Screen.AllScreens`, clamping to `Screen.PrimaryScreen ?? screens[0]` when out of range.
 - `ApplyPositionConfig(string position, int monitor, bool locked)` (`OverlayPanel.cs:509-516`) is the single mutation point for `_position`/`_monitor`/`_locked`; it recomputes `this.Location = CalculatePosition()` in place. Valid callers per its doc comment: `OnMouseUp` (drag drop) and `TrayApp.OnConfigChanged` (drain tick) only — asserted via `Debug.Assert(!InvokeRequired, ...)` (stripped in Release).
 
-Any future offset-based placement (free-float X/Y) should follow the same pattern: add mutable offset field(s) alongside `_position`/`_monitor`/`_locked`, mutate them only inside `ApplyPositionConfig` (or a renamed/extended equivalent), and never read `_config.*` directly from `CalculatePosition`/`ResolveTargetScreen`.
+Free-float placement follows that same pattern: `_offsetX` / `_offsetY` (`int?`, `OverlayPanel.cs:79-80`) sit alongside `_position`/`_monitor`/`_locked` and are mutated only inside `ApplyPositionConfig(position, monitor, locked, offsetX, offsetY)` (`OverlayPanel.cs:595`). `CalculatePosition` delegates the resolution chain (offset → `position` anchor → default) plus the snap/clamp math to pure `Imrdy.Core.Overlay.OverlayPlacement`. Any further placement input must extend the same field-plus-`ApplyPositionConfig` path and never read `_config.*` directly from `CalculatePosition`/`ResolveTargetScreen`.
 
 ## Related
 

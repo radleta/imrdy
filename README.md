@@ -180,7 +180,9 @@ All packs must declare a `license` field in `pack.json`. A stub `dev-test` pack 
 
 ## Overlay (Mode B)
 
-An alternative to the 16px tray icons: a floating borderless window that renders session characters as a horizontal row along the bottom screen edge. Uses the active graphics pack (or colored circles in dots mode). Stays on top via `Form.TopMost = true`.
+An alternative to the 16px tray icons: a floating borderless window that renders session characters as a horizontal row. Uses the active graphics pack (or colored circles in dots mode). Stays on top via `Form.TopMost = true`, and never steals focus from your terminal.
+
+The overlay free-floats: drag it by the grip handle on its left edge (six dots, dimmed until you hover it) and drop it anywhere. Release within ~24px of a screen edge or corner and it snaps flush; drop it further in and it stays where you put it. The position is remembered per monitor.
 
 **Enable:**
 ```bash
@@ -192,10 +194,15 @@ imrdy config set overlay.enabled true
 | Field | Default | Description |
 |-------|---------|-------------|
 | `overlay.enabled` | `false` | Show the overlay window |
-| `overlay.position` | `"bottom-right"` | `"bottom-right"` or `"bottom-left"` |
+| `overlay.position` | `"bottom-right"` | Fallback anchor used when no offset is set: `top-left`, `top-center`, `top-right`, `bottom-left`, `bottom-center`, `bottom-right` |
 | `overlay.size` | `64` | Icon size in pixels (32–256) |
 | `overlay.spacing` | `8` | Gap between icons in pixels (0–32) |
 | `overlay.monitor` | `0` | Monitor index to dock to (0 = primary) |
+| `overlay.locked` | `false` | Prevent repositioning by dragging the grip |
+| `overlay.offsetX` | `null` | Free-float X, in logical px from the target monitor's working-area origin. `null` falls back to `overlay.position` |
+| `overlay.offsetY` | `null` | Free-float Y, same units. `null` falls back to `overlay.position` |
+
+`overlay.offsetX` / `overlay.offsetY` are written for you when you drag the overlay or pick a position from its menu — you rarely need to set them by hand.
 
 **CLI examples:**
 ```bash
@@ -203,9 +210,18 @@ imrdy config set overlay.position bottom-left
 imrdy config set overlay.size 128
 ```
 
-**Controller menu:** Right-click the controller icon → **Overlay** — toggle enabled, select position, select size.
+`imrdy config set` covers `overlay.enabled`, `overlay.position`, `overlay.size`, and `overlay.spacing`. Set `monitor`, `locked`, and the offsets from the overlay menu (below) or by editing `~/.imrdy/config.json`.
 
-**V1 limitations:** No animation, no drag to reposition, no peek mode.
+**Mouse:**
+
+- **Drag the grip** (left edge) — reposition the overlay; snaps to a nearby edge or corner
+- **Left-click an icon** — switch to that session's desktop and focus its terminal
+- **Right-click an icon** — session or workspace menu
+- **Right-click the empty area** — overlay settings menu: the 6 positions, spacing presets, monitor selector, and a **Lock** toggle
+
+**Controller menu:** Right-click the controller icon → **Overlay** — the same settings menu: toggle enabled, position, size, spacing, monitor, and Lock.
+
+**Limitations:** No animation, no peek mode.
 
 ## Controller Tray Icon
 
@@ -215,7 +231,7 @@ A persistent controller icon (headphones) appears in the system tray whenever th
 - **Sound Pack** — Switch the active pack (Random, installed packs, or None)
 - **Enabled Packs** — Toggle individual packs on/off for random selection
 - **Icon Style** — Switch between dot icons and installed graphics packs (Dots, installed packs)
-- **Overlay** — Toggle overlay window, select position and size
+- **Overlay** — Toggle overlay window, select position, size, spacing, and monitor; lock its position
 - **Sessions** — View and switch to active sessions
 - **Workspaces** — View and switch to pinned workspaces
 - **Open Config Folder / Open Sounds Folder / View Log** — Quick access to file locations
@@ -253,7 +269,7 @@ Supports Windows 10 (20H1+) and Windows 11 (all versions through 24H2).
 {
   "tray": { "enabled": true, "iconStyle": "dots" },
   "sound": { "enabled": true, "defaultPack": "random", "disabledPacks": [] },
-  "overlay": { "enabled": false, "position": "bottom-right", "size": 64, "spacing": 8 },
+  "overlay": { "enabled": false, "position": "bottom-right", "size": 64, "spacing": 8, "monitor": 0, "locked": false, "offsetX": null, "offsetY": null },
   "diagnostics": { "ipcEnabled": null }
 }
 ```
