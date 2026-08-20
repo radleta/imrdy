@@ -4,9 +4,14 @@ using Imrdy.Core.Status;
 namespace Imrdy.Core.Hooks;
 
 /// <summary>
-/// Encapsulates the teammate gate logic for hook events.
-/// Teammate events (with agent_id) normally preserve the lead's status,
-/// but must clear "permission" when the permission has been resolved.
+/// Encapsulates the teammate gate for hook events.
+/// <para>
+/// Core invariant: <b>only the lead's own event stream determines whether the session is waiting
+/// for the user.</b> Subagent activity says nothing about lead readiness — modern Claude Code runs
+/// background agents that keep working after the lead has already returned control to the user.
+/// Subagent events therefore only refresh <c>last_teammate_at</c> (liveness, used for icon aging),
+/// with one exception: they clear a lead "permission" that the subagent itself resolved.
+/// </para>
 /// </summary>
 public static class TeammateGate
 {
@@ -21,27 +26,34 @@ public static class TeammateGate
     };
 
     /// <summary>
-    /// Lead statuses that appear idle (green icon) but should show busy when teammates are working.
-    /// "done" is excluded — consensus promotion handles that path separately.
+    /// Subagent events that mark work <b>ending</b> rather than work happening. They must not
+    /// refresh <c>last_teammate_at</c>: that field answers "when was a subagent last doing work",
+    /// and a stop is the moment work ceased. Refreshing on a terminal event holds the session teal
+    /// for a further 2 minutes after the last agent has already finished, and a stray one — an
+    /// observed <c>SubagentStop</c> with an empty <c>agent_type</c> and no matching
+    /// <c>SubagentStart</c> — invents agent activity for a session that never had any.
     /// </summary>
-    private static readonly HashSet<string> IdleLeadStatuses = new(StringComparer.OrdinalIgnoreCase)
+    private static readonly HashSet<string> TerminalActivityEvents = new(StringComparer.OrdinalIgnoreCase)
     {
-        "start",
-        "idle",
+        "SubagentStop",
+        "TaskCompleted",
+        "TeammateIdle",
+        "Stop",
     };
 
     /// <summary>
-    /// Teammate events that indicate active work (tool use, subagent activity).
+    /// Subagent lifecycle events. These describe a subagent starting, finishing, or going idle —
+    /// never whether the lead is waiting for the user. They may arrive on the lead's stream without
+    /// an <c>agent_id</c> (the parent spawns and reaps the subagent), so they must be filtered on
+    /// the lead path too, not just by the <c>agent_id</c> gate.
     /// </summary>
-    private static readonly HashSet<string> BusyTeammateEvents = new(StringComparer.OrdinalIgnoreCase)
+    private static readonly HashSet<string> SubagentLifecycleEvents = new(StringComparer.OrdinalIgnoreCase)
     {
-        "PreToolUse",
-        "PostToolUse",
-        "PostToolUseFailure",
         "SubagentStart",
         "SubagentStop",
-        "WorktreeCreate",
-        "UserPromptSubmit",
+        "TaskCreated",
+        "TaskCompleted",
+        "TeammateIdle",
     };
 
     /// <summary>
@@ -56,30 +68,35 @@ public static class TeammateGate
     }
 
     /// <summary>
-    /// Determines whether a teammate event should promote the lead from an idle status to busy.
-    /// Returns true when the lead is at an idle-equivalent status (start, idle) and the teammate
-    /// fires a work event, indicating the session is actively working via teammates.
+    /// True when the event describes subagent lifecycle rather than lead readiness.
+    /// Callers on the lead path must preserve the existing status for these events.
     /// </summary>
-    public static bool ShouldPromoteToBusy(string? existingStatus, string hookEventName)
+    public static bool IsSubagentLifecycleEvent(string hookEventName)
     {
-        return existingStatus is not null
-            && IdleLeadStatuses.Contains(existingStatus)
-            && BusyTeammateEvents.Contains(hookEventName);
+        return SubagentLifecycleEvents.Contains(hookEventName);
+    }
+
+    /// <summary>
+    /// True when the event means a subagent is actively working, as opposed to reporting that it
+    /// has stopped. Only ongoing activity refreshes the liveness window.
+    /// </summary>
+    public static bool IsOngoingActivity(string hookEventName)
+    {
+        return !TerminalActivityEvents.Contains(hookEventName);
     }
 
     /// <summary>
     /// Applies the teammate gate to an existing state file model.
-    /// Updates last_teammate_at timestamp. May also change lead status:
-    /// - Clears "permission" when a resolution event fires (PostToolUse, PermissionDenied, etc.)
-    /// - Promotes idle leads (start, idle) to "busy" when teammates are doing work
-    /// Returns the updated state file model ready for writing.
+    /// Refreshes <c>last_teammate_at</c> on ongoing activity so the tray can keep the icon lively
+    /// while subagents work, and clears a "permission" the subagent resolved. The lead's status is
+    /// otherwise untouched — a subagent must never move the session off "waiting for the user".
     /// </summary>
     public static StateFileModel ApplyTeammateEvent(StateFileModel existing, string hookEventName)
     {
         var now = DateTimeOffset.UtcNow;
         var updated = existing with
         {
-            LastTeammateAt = now,
+            LastTeammateAt = IsOngoingActivity(hookEventName) ? now : existing.LastTeammateAt,
             Timestamp = now,
         };
 
@@ -87,10 +104,6 @@ public static class TeammateGate
         {
             var clearedStatus = StatusDerivation.DeriveStatus(hookEventName);
             updated = updated with { Status = clearedStatus, NotificationType = "" };
-        }
-        else if (ShouldPromoteToBusy(existing.Status, hookEventName))
-        {
-            updated = updated with { Status = "busy" };
         }
 
         return updated;

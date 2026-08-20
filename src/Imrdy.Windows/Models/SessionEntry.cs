@@ -1,4 +1,5 @@
 using Imrdy.Core.State;
+using Imrdy.Core.Status;
 
 namespace Imrdy.Windows.Models;
 
@@ -44,9 +45,15 @@ internal sealed class SessionEntry : IDisposable
     /// Used by sweep to skip re-processing unchanged state files.</summary>
     public DateTimeOffset? LastProcessedTimestamp { get; set; }
 
-    /// <summary>True after consensus promotion has been triggered for the current "done" status.
-    /// Reset when status changes away from "done".</summary>
-    public bool ConsensusPromoted { get; set; }
+    /// <summary>Status to display: the lead status, except an idle lead with subagents still
+    /// running shows as "done" (teal). See <see cref="DisplayStatus"/>. Always resolved fresh —
+    /// the teal → green flip is driven by elapsed time, not by any hook event.</summary>
+    public string EffectiveStatus
+        => DisplayStatus.Resolve(State.Status, State.LastTeammateAt, DateTimeOffset.UtcNow);
+
+    /// <summary>Last <see cref="EffectiveStatus"/> the drain tick acted on. Used to detect the
+    /// teal → green transition, which no hook event announces.</summary>
+    public string? LastEffectiveStatus { get; set; }
 
     public void Dispose()
     {

@@ -15,7 +15,7 @@ You are an expert in the imrdy project — a Windows system tray monitor for Cla
 - [Field Preservation Catalog](field-preservation-catalog.md) — The 6 sticky fields, the merge pattern, and the symmetry contract every new tray-owned field must satisfy
 - [WT Desktop Routing](wt-desktop-routing.md) — SwitchToSessionDesktop 3-step routing with WT-aware target resolution, compare-desktops focus guard against ping-pong, and SessionStart-only auto-lock
 - [Hook Events](hook-events.md) — All 20 Claude Code hook events — what they send, status mapping, and real-world behavior
-- [Teammate Detection](teammate-detection.md) — 4-layer teammate-aware notification system — deterministic gate, state tracking, consensus promotion, idle_prompt suppression
+- [Teammate Detection](teammate-detection.md) — 3-layer lead-readiness gating — subagent events never move lead status (deterministic gate), only refresh last_teammate_at (liveness tracking), which DisplayStatus.Resolve uses to render idle-with-agents-running as teal (display resolution)
 - [Notification Dwell](notification-dwell.md) — Dwell timer system that gates toast/sound behind status settling — prevents notification storms
 - [Status Mapping](status-mapping.md) — Two-layer status mapping: hook event → base status → RGB color, with 9 base statuses
 - [Overlay Interactivity](overlay-interactivity.md) — DragCompleted event fires at end of drag-to-reposition in OnMouseUp; companion to SurfaceInteracted with separate contract; subscription lifecycle identical (P6 TrayApp owns wiring)

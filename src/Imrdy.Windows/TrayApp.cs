@@ -34,8 +34,6 @@ namespace Imrdy.Windows;
 internal sealed class TrayApp : ApplicationContext, ISessionInteractionRouter
 {
     private static readonly TimeSpan GracePeriod = TimeSpan.FromSeconds(5);
-    private static readonly TimeSpan TeammatePresenceTimeout = TimeSpan.FromMinutes(2);
-    private static readonly TimeSpan TeammateQuietThreshold = TimeSpan.FromSeconds(15);
 
     private readonly ILogger _logger;
     private readonly ILoggerFactory _loggerFactory;
@@ -390,8 +388,34 @@ internal sealed class TrayApp : ApplicationContext, ISessionInteractionRouter
                 }
             }
 
-            // Dwell notification dispatch
             var now = DateTimeOffset.UtcNow;
+
+            // Effective-status transitions. An idle lead with subagents still running displays as
+            // "done" (teal); it becomes "idle" (green) only once subagent activity ages out — a
+            // purely time-driven flip that no hook event announces, so it is detected here.
+            // This is also the sole dwell driver for status changes, which keeps teal silent and
+            // makes the toast/sound fire on the teal -> green edge.
+            foreach (var (sessionId, entry) in _sessions)
+            {
+                var effective = DisplayStatus.Resolve(entry.State.Status, entry.State.LastTeammateAt, now);
+                var previousEffective = entry.LastEffectiveStatus;
+                if (previousEffective == effective)
+                {
+                    continue;
+                }
+
+                entry.LastEffectiveStatus = effective;
+                UpdateSessionIcon(entry);
+
+                if (previousEffective is not null && !IsBootstrapping)
+                {
+                    _logger.LogDebug("Effective status for {SessionId}: {Previous} → {Effective} (lead={Lead})",
+                        sessionId, previousEffective, effective, entry.State.Status);
+                    _dwellState.OnStatusChanged(sessionId, effective, previousEffective, now);
+                }
+            }
+
+            // Dwell notification dispatch
             var fired = _dwellState.GetFiredSessions(now);
             foreach (var notification in fired)
             {
@@ -402,12 +426,10 @@ internal sealed class TrayApp : ApplicationContext, ISessionInteractionRouter
                         _logger.LogInformation("Dwell fired for {SessionId}: {PreviousStatus} → {Status} (type={NotificationType})",
                             notification.SessionId, notification.PreviousStatus, notification.Status, notification.NotificationType ?? "status-change");
 
-                        // Update icon to the settled status (consensus promotion defers icon to here)
-                        if (firedEntry.State.Status != notification.Status)
-                        {
-                            firedEntry.State = firedEntry.State with { Status = notification.Status };
-                            UpdateSessionIcon(firedEntry);
-                        }
+                        // No icon update and no write-back here. State.Status is the lead's
+                        // readiness and must stay that way — storing a display value ("done")
+                        // would make Resolve stop treating the session as idle, freezing it at
+                        // teal forever. Icons are driven by EffectiveStatus in the loop above.
 
                         // Toast: status-change entries + idle_prompt (the authoritative "genuinely idle" signal)
                         if (notification.NotificationType is null
@@ -431,30 +453,6 @@ internal sealed class TrayApp : ApplicationContext, ISessionInteractionRouter
                 }
             }
 
-            // Consensus promotion: if lead is "done" and all teammates are quiet (no activity
-            // for TeammateQuietThreshold), promote to idle (green) + toast/sound.
-            foreach (var (sessionId, entry) in _sessions)
-            {
-                if (entry.State.Status != "done")
-                    continue;
-
-                if (entry.ConsensusPromoted)
-                    continue; // Already promoted this "done" cycle
-
-                if (entry.State.LastTeammateAt is null)
-                    continue; // No teammates — normal dwell path handles this
-
-                if (now - entry.State.LastTeammateAt < TeammateQuietThreshold)
-                    continue; // Teammates still active
-
-                // All teammates quiet + lead done → promote to idle.
-                // Icon deferred to dwell fire (5s settle prevents green/red toggling during rapid tool calls).
-                entry.ConsensusPromoted = true;
-                _logger.LogInformation("Consensus promotion for {SessionId}: all teammates quiet for {Quiet}s",
-                    sessionId, (int)(now - entry.State.LastTeammateAt.Value).TotalSeconds);
-
-                _dwellState.OnStatusChanged(sessionId, "idle", "done", now);
-            }
         }
         catch (Exception ex)
         {
@@ -547,7 +545,7 @@ internal sealed class TrayApp : ApplicationContext, ISessionInteractionRouter
                 if (newTier != entry.LastAgingTier)
                 {
                     entry.LastAgingTier = newTier;
-                    entry.Icon.Icon = GetRendererForStyle(ResolveSessionIconStyle(entry)).GetIcon(entry.State.Status, newTier);
+                    entry.Icon.Icon = GetRendererForStyle(ResolveSessionIconStyle(entry)).GetIcon(entry.EffectiveStatus, newTier);
                 }
 
                 // Always update tooltip (status age changes every tick)
@@ -582,20 +580,6 @@ internal sealed class TrayApp : ApplicationContext, ISessionInteractionRouter
 
             entry.LastProcessedTimestamp = state.Timestamp;
 
-            // idle_prompt is a 60s backstop that fires even when subagents are still active.
-            // When teammates are present, keep the session at "done" — consensus handles promotion.
-            var hasActiveTeammates = state.LastTeammateAt is not null
-                && DateTimeOffset.UtcNow - state.LastTeammateAt < TeammatePresenceTimeout;
-
-            if (hasActiveTeammates
-                && state.Status == "idle"
-                && string.Equals(state.NotificationType, "idle_prompt", StringComparison.OrdinalIgnoreCase))
-            {
-                _logger.LogInformation("Suppressed idle_prompt for {SessionId}: teammates still active, keeping done",
-                    state.SessionId);
-                state = state with { Status = "done", NotificationType = "" };
-            }
-
             var previousStatus = entry.State.Status;
             var statusChanged = previousStatus != state.Status;
             var previousNotificationType = entry.State.NotificationType;
@@ -606,7 +590,6 @@ internal sealed class TrayApp : ApplicationContext, ISessionInteractionRouter
             if (statusChanged)
             {
                 entry.StatusSince = DateTimeOffset.UtcNow;
-                entry.ConsensusPromoted = false;
 
                 // Auto-restore dismissed sessions on attention-worthy status changes
                 if (entry.Dismissed && state.Status is "busy" or "attention" or "permission" or "error")
@@ -620,19 +603,8 @@ internal sealed class TrayApp : ApplicationContext, ISessionInteractionRouter
                         entry.SessionId, state.Status);
                 }
 
-                if (!IsBootstrapping)
-                {
-                    // Suppress dwell entry for "done" status when teammates are active.
-                    // The consensus check in OnDrainTimerTick handles promotion once all teammates are quiet.
-                    if (state.Status == "done" && hasActiveTeammates)
-                    {
-                        _logger.LogDebug("Suppressed dwell for {SessionId}: done with active teammates", entry.SessionId);
-                    }
-                    else
-                    {
-                        _dwellState.OnStatusChanged(entry.SessionId, state.Status, previousStatus, DateTimeOffset.UtcNow);
-                    }
-                }
+                // Dwell entry is driven by the effective-status loop in OnDrainTimerTick, so
+                // that a lead going idle while subagents run settles at teal instead of pinging.
             }
 
             // Notification-type sounds (only when notification type actually changes)
@@ -642,12 +614,14 @@ internal sealed class TrayApp : ApplicationContext, ISessionInteractionRouter
                 var mappedStatus = state.NotificationType switch
                 {
                     "permission_prompt" or "elicitation_dialog" => "permission",
-                    "idle_prompt" => "idle",
+                    // idle_prompt confirms the lead is waiting, but stays silent while subagents
+                    // run — Resolve returns "done" there, which is not a toast event.
+                    "idle_prompt" => DisplayStatus.Resolve("idle", state.LastTeammateAt, DateTimeOffset.UtcNow),
                     _ => (string?)null,
                 };
-                if (mappedStatus is not null)
+                if (mappedStatus is not null and not "done")
                 {
-                    _dwellState.OnStatusChanged(entry.SessionId, mappedStatus, entry.State.Status,
+                    _dwellState.OnStatusChanged(entry.SessionId, mappedStatus, entry.EffectiveStatus,
                         DateTimeOffset.UtcNow, notificationType: state.NotificationType);
                 }
             }
@@ -1148,7 +1122,7 @@ internal sealed class TrayApp : ApplicationContext, ISessionInteractionRouter
 
     private void CreateSessionIcon(SessionEntry entry)
     {
-        var icon = GetRendererForStyle(ResolveSessionIconStyle(entry)).GetIcon(entry.State.Status, 0);
+        var icon = GetRendererForStyle(ResolveSessionIconStyle(entry)).GetIcon(entry.EffectiveStatus, 0);
 
         entry.Icon = new NotifyIcon
         {
@@ -1540,7 +1514,7 @@ internal sealed class TrayApp : ApplicationContext, ISessionInteractionRouter
         var agingSince = DateTimeOffset.UtcNow - entry.LastSeenAt;
         var tier = StatusMap.GetAgingTier(agingSince);
         entry.LastAgingTier = tier;
-        entry.Icon.Icon = GetRendererForStyle(ResolveSessionIconStyle(entry)).GetIcon(entry.State.Status, tier);
+        entry.Icon.Icon = GetRendererForStyle(ResolveSessionIconStyle(entry)).GetIcon(entry.EffectiveStatus, tier);
         entry.Icon.Text = FormatSessionTooltip(entry);
         RefreshOverlay();
     }
@@ -1610,7 +1584,7 @@ internal sealed class TrayApp : ApplicationContext, ISessionInteractionRouter
         return TooltipFormatter.FormatSession(
             entry.State.Project,
             entry.State.SessionName,
-            entry.State.Status,
+            entry.EffectiveStatus,
             age,
             entry.DesktopIndex,
             entry.SoundPack);
@@ -1627,7 +1601,7 @@ internal sealed class TrayApp : ApplicationContext, ISessionInteractionRouter
             Sessions = _sessions.Values.Select(e => new SessionMenuState
             {
                 SessionId = e.SessionId,
-                Status = e.State.Status,
+                Status = e.EffectiveStatus,
                 Project = e.State.Project,
                 DesktopIndex = e.DesktopIndex,
             }).ToList(),
@@ -1970,7 +1944,7 @@ internal sealed class TrayApp : ApplicationContext, ISessionInteractionRouter
             var agingSince = DateTimeOffset.UtcNow - entry.LastSeenAt;
             var tier = StatusMap.GetAgingTier(agingSince);
             entry.LastAgingTier = tier;
-            entry.Icon.Icon = GetRendererForStyle(ResolveSessionIconStyle(entry)).GetIcon(entry.State.Status, tier);
+            entry.Icon.Icon = GetRendererForStyle(ResolveSessionIconStyle(entry)).GetIcon(entry.EffectiveStatus, tier);
         }
         foreach (var ws in _workspaces.Values)
         {
@@ -2010,7 +1984,7 @@ internal sealed class TrayApp : ApplicationContext, ISessionInteractionRouter
             inputs.Add(new DisplayItemInput(
                 Id: s.SessionId,
                 ItemType: DisplayItemType.Session,
-                Status: s.State.Status,
+                Status: s.EffectiveStatus,
                 DesktopIndex: s.DesktopIndex,
                 IconStyle: ResolveSessionIconStyle(s),
                 AgingTier: s.LastAgingTier,

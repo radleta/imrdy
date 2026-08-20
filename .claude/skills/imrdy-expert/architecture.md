@@ -48,14 +48,14 @@ TrayApp has multiple timers that interact:
 
 | Timer | Interval | Purpose |
 |-------|----------|---------|
-| Drain timer | 100ms | Process pending file changes, dwell dispatch, consensus check |
+| Drain timer | 100ms | Process pending file changes, effective-status resolution, dwell dispatch |
 | Sweep timer | 10s | Existence-check only via `CleanupGoneSessions`; removes in-memory entries whose state files are gone |
 | Stale timer | 60s | Remove sessions past grace period |
 
 The drain timer is the central coordination point:
 1. Process queued file change events
-2. Dispatch fired dwell notifications
-3. Run consensus promotion check (see [Teammate Detection](teammate-detection.md))
+2. Recompute `DisplayStatus.Resolve` per session and diff against `SessionEntry.LastEffectiveStatus` — this is the sole detector for the time-driven teal → green flip, and the sole dwell driver for status changes (see [Teammate Detection](teammate-detection.md), [Status Mapping](status-mapping.md))
+3. Dispatch fired dwell notifications
 
 The sweep timer is **existence-check only** since commit 4702e86 (`sweep-removal-busy-promotion`): it runs `CleanupGoneSessions`, which iterates the in-memory session entries and removes any whose state file no longer exists on disk. It does NOT re-read state file contents. FSW (FileSystemWatcher) is the sole real-time path for content changes — the drain timer drains queued FSW events on the 100ms tick. State file bootstrapping at startup is handled separately by `BootstrapSessions`, a one-time scan that runs before the timers start. `SessionEntry.LastProcessedTimestamp` still exists and is used in the FSW path (`HandleSessionFileChanged` returns early when the file's `Timestamp` matches `LastProcessedTimestamp`) — that early-return logic was preserved when the sweep re-read was removed.
 

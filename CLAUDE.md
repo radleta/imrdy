@@ -9,7 +9,7 @@ Managing multiple Claude Code sessions in parallel is an attention problem: know
 imrdy puts that information in the system tray where it stays glanceable in peripheral vision:
 
 - **Dots in the tray** — one icon per active session
-- **Color = state** — busy, idle, done (session stopped, teal), needs attention, permission requested, error (tool/stop failures)
+- **Color = state** — busy, idle (green: waiting for you, nothing running), idle-with-agents-running (teal), needs attention, permission requested, error (tool/stop failures)
 - **Aging = dimming** — icons fade as sessions go quiet
 - **Click = acknowledge and bring to focus** — switches to the session's virtual desktop and focuses its terminal in one gesture
 
@@ -120,13 +120,21 @@ Protocol: for any UI-bearing change (SessionDashboardForm, WorkspaceDashboardFor
 
 `NotificationDwellState` in `Imrdy.Core/Sound/` gates toast and sound notifications behind per-status dwell timers. Icon updates remain immediate; notifications only fire after a session's status has "settled" for its dwell duration (2-5s depending on status). Per-session 10s toast cooldown provides additional backstop. Dwell check piggybacks on the existing 100ms drain timer — no new timer object. `CooldownTracker` (5s per-session sound cooldown) remains as defense-in-depth. `FiredNotification` record carries `PreviousStatus` and `NotificationType` for correct dispatch.
 
-**Teammate-aware gating**: Hook events with `agent_id` (teammate/subagent activity) normally skip lead status updates — they only set `last_teammate_at` on the state file. Exception: when the lead status is "permission" and the teammate fires a permission-resolution event (PostToolUse, PostToolUseFailure, PermissionDenied), the permission is cleared to the derived status. `TeammateGate` in `Imrdy.Core/Hooks/` encapsulates this logic. Sessions with recent teammate activity (within 2 min) suppress `done→idle` dwell entry; instead, consensus promotion in the drain timer checks: when lead is `done` and no teammate activity for 15s (`TeammateQuietThreshold`), promotes to `idle` (green) + toast/sound. `idle_prompt` Notification (60s backstop) is also suppressed when teammates are active — keeps session at "done" (teal) and lets consensus handle promotion. Two speeds to green for teams: consensus (~15s) or wait for teammate presence to age out (2 min). Solo sessions: 5s dwell or 60s `idle_prompt` backstop. `ConsensusPromoted` flag on `SessionEntry` prevents duplicate promotions per done cycle. Sweep timer uses `LastProcessedTimestamp` on `SessionEntry` to skip re-processing unchanged state files.
+**Lead-readiness gating**: the stored status (`StateFileModel.Status`) answers exactly one question — *is the main session waiting for the user?* Only the lead's own hook events (those **without** `agent_id`) may answer it. `Stop` is the authoritative signal: a lead `Stop` means the main agent finished its turn and is waiting. Empirically (1341 hook events, Aug 2026) every lead `Stop` is followed by either `Notification/idle_prompt` or `UserPromptSubmit` — never by more lead work — so `Stop → idle`.
+
+Subagent events (`agent_id` present) **never** move the lead's status. They only refresh `last_teammate_at`, which drives icon aging so a session whose lead is blocked inside a long `Task` call does not dim. The one exception is `TeammateGate.ShouldClearPermission`: a subagent may clear a lead `permission` it resolved (PostToolUse, PostToolUseFailure, PermissionDenied). Subagent *lifecycle* events (SubagentStart/Stop, TaskCreated/Completed, TeammateIdle) can reach the lead stream without an `agent_id` because the parent spawns and reaps the subagent, so `TeammateGate.IsSubagentLifecycleEvent` filters them on the lead path too and carries the existing status forward.
+
+This replaced a teammate busy-promotion + consensus-promotion + idle_prompt-suppression system that assumed subagent activity implied the lead was working. Modern Claude Code runs background agents that keep working after the lead returns control, so that assumption produced permanently-`busy` sessions that were in fact waiting for input. Sweep timer uses `LastProcessedTimestamp` on `SessionEntry` to skip re-processing unchanged state files.
+
+**Display resolution (`DisplayStatus`, render-time only)**: the stored status answers "is the lead waiting?", which alone overloads green — a waiting lead with background agents may resume *itself*, since a completing background agent delivers a `<task-notification>` as a synthetic `UserPromptSubmit` (measured: 7 of 10 `UserPromptSubmit` events on one session were agent-driven). `DisplayStatus.Resolve(status, lastTeammateAt, now)` therefore renders an `idle` lead as `"done"` (teal) while subagent activity is within 2 minutes, so green means *nothing is running*. The 2-minute window is measured, not guessed: across 1085 inter-event gaps from 45 agents, p99 = 75s and only 0.09% exceed 120s, versus 19.6% exceeding 15s.
+
+This is **display-only** — writing teal back into `StateFileModel.Status` would make `Resolve` stop seeing an idle lead and freeze the session at teal, so the dwell-fired status write-back in `TrayApp` was removed. Icons/overlay/tooltip read `SessionEntry.EffectiveStatus`; `State.Status` stays the lead's truth. The teal → green flip is time-driven and announced by no hook, so `OnDrainTimerTick` recomputes `Resolve` every 100ms against `SessionEntry.LastEffectiveStatus` and drives both icon and dwell from that edge — making the drain tick the single dwell driver for status changes, which is what keeps teal silent (not in `DefaultToastEvents`) and fires the toast + `SoundEvent.Finished` on green.
 
 ## Build & Test
 
 ```bash
 dotnet build                                    # Debug build
-dotnet test --filter "Category!=Integration&Category!=Benchmark"  # Unit tests only (628 tests)
+dotnet test --filter "Category!=Integration&Category!=Benchmark"  # Unit tests only (763 tests: 750 Core + 13 Windows)
 ./build-dev.sh                                  # Publish → stop tray → deploy to ~/.local/bin/ → auto-respawn → touches ~/.imrdy/.dev-build (enables default-Debug dev logging)
 ```
 

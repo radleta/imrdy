@@ -175,11 +175,21 @@ internal static class HookCommand
             hookEvent.Message,
             existing?.LastMessage);
 
+        // Subagent lifecycle events (SubagentStart/Stop, TaskCreated/Completed, TeammateIdle) can
+        // reach the lead stream without an agent_id, because the parent spawns and reaps the
+        // subagent. They describe the subagent, not whether the lead is waiting for the user, so
+        // the lead's status carries forward untouched.
+        var leadStatus = status;
+        if (TeammateGate.IsSubagentLifecycleEvent(hookEvent.HookEventName) && existing is not null)
+        {
+            leadStatus = existing.Status;
+        }
+
         // Build new state
         var newState = new StateFileModel
         {
             SessionId = hookEvent.SessionId,
-            Status = status,
+            Status = leadStatus,
             Project = project,
             Cwd = normalizedCwd,
             HookEvent = hookEvent.HookEventName,

@@ -1,4 +1,5 @@
 using Imrdy.Core.Hooks;
+using Imrdy.Core.Status;
 using Imrdy.Core.State;
 using FluentAssertions;
 
@@ -128,76 +129,138 @@ public class TeammateGateTests
         result.NotificationType.Should().Be("permission_prompt");
     }
 
-    // --- ShouldPromoteToBusy ---
+    // --- Lead-status isolation: subagent activity must never move the lead ---
+    // Regression guard. Subagent PreToolUse used to promote an idle lead to "busy", which
+    // clobbered the lead's own "waiting for the user" signal within milliseconds. Background
+    // agents keep working after the lead has returned control, so subagent activity carries
+    // no information about lead readiness.
 
     [Theory]
     [InlineData("start", "PreToolUse")]
-    [InlineData("start", "PostToolUse")]
     [InlineData("idle", "PreToolUse")]
     [InlineData("idle", "PostToolUse")]
     [InlineData("idle", "SubagentStart")]
-    [InlineData("start", "UserPromptSubmit")]
-    public void ShouldPromoteToBusy_IdleLeadWithBusyEvent_ReturnsTrue(string status, string eventName)
-    {
-        TeammateGate.ShouldPromoteToBusy(status, eventName).Should().BeTrue();
-    }
-
-    [Theory]
+    [InlineData("idle", "SubagentStop")]
+    [InlineData("idle", "UserPromptSubmit")]
+    [InlineData("idle", "Stop")]
+    [InlineData("idle", "TaskCreated")]
+    [InlineData("idle", "TaskCompleted")]
+    [InlineData("idle", "TeammateIdle")]
     [InlineData("busy", "PreToolUse")]
     [InlineData("done", "PreToolUse")]
     [InlineData("error", "PreToolUse")]
-    [InlineData("permission", "PreToolUse")]
     [InlineData("compact", "PreToolUse")]
-    public void ShouldPromoteToBusy_NonIdleLead_ReturnsFalse(string status, string eventName)
+    public void ApplyTeammateEvent_NeverChangesLeadStatus(string status, string eventName)
     {
-        TeammateGate.ShouldPromoteToBusy(status, eventName).Should().BeFalse();
+        var existing = CreateState(status);
+
+        var result = TeammateGate.ApplyTeammateEvent(existing, eventName);
+
+        result.Status.Should().Be(status);
+    }
+
+    [Fact]
+    public void ApplyTeammateEvent_IdleLead_SubagentToolUse_StaysIdle()
+    {
+        var existing = CreateState("idle") with { NotificationType = "idle_prompt" };
+
+        var result = TeammateGate.ApplyTeammateEvent(existing, "PreToolUse");
+
+        result.Status.Should().Be("idle");
+        result.NotificationType.Should().Be("idle_prompt");
+    }
+
+    // --- Liveness window: only ongoing activity refreshes last_teammate_at ---
+    // A terminal event marks work ENDING. Refreshing on it holds the session teal for a further
+    // 2 minutes past the last agent's actual finish, and a stray SubagentStop (observed with an
+    // empty agent_type and no matching SubagentStart) would invent agent activity outright.
+
+    [Theory]
+    [InlineData("PreToolUse")]
+    [InlineData("PostToolUse")]
+    [InlineData("PostToolUseFailure")]
+    [InlineData("SubagentStart")]
+    [InlineData("UserPromptSubmit")]
+    [InlineData("TaskCreated")]
+    public void ApplyTeammateEvent_OngoingActivity_RefreshesLivenessWindow(string eventName)
+    {
+        var stale = DateTimeOffset.UtcNow.AddMinutes(-5);
+        var existing = CreateState("idle") with { LastTeammateAt = stale };
+
+        var result = TeammateGate.ApplyTeammateEvent(existing, eventName);
+
+        result.LastTeammateAt.Should().NotBeNull();
+        result.LastTeammateAt!.Value.Should().BeAfter(stale);
     }
 
     [Theory]
-    [InlineData("start", "Stop")]
-    [InlineData("idle", "Notification")]
-    [InlineData("start", "SessionEnd")]
-    public void ShouldPromoteToBusy_IdleLeadWithNonBusyEvent_ReturnsFalse(string status, string eventName)
+    [InlineData("SubagentStop")]
+    [InlineData("TaskCompleted")]
+    [InlineData("TeammateIdle")]
+    [InlineData("Stop")]
+    public void ApplyTeammateEvent_TerminalEvent_LeavesLivenessWindowUntouched(string eventName)
     {
-        TeammateGate.ShouldPromoteToBusy(status, eventName).Should().BeFalse();
+        var stale = DateTimeOffset.UtcNow.AddMinutes(-5);
+        var existing = CreateState("idle") with { LastTeammateAt = stale };
+
+        var result = TeammateGate.ApplyTeammateEvent(existing, eventName);
+
+        result.LastTeammateAt.Should().Be(stale);
+        result.Timestamp.Should().BeAfter(stale);   // the file still changed
     }
 
     [Fact]
-    public void ShouldPromoteToBusy_NullStatus_ReturnsFalse()
+    public void ApplyTeammateEvent_StraySubagentStop_DoesNotInventAgentActivity()
     {
-        TeammateGate.ShouldPromoteToBusy(null, "PreToolUse").Should().BeFalse();
+        // The observed phantom: SubagentStop with no prior subagent activity on the session.
+        // It must not make a genuinely free session look like it has agents running.
+        var existing = CreateState("idle") with { LastTeammateAt = null };
+
+        var result = TeammateGate.ApplyTeammateEvent(existing, "SubagentStop");
+
+        result.LastTeammateAt.Should().BeNull();
+        DisplayStatus.Resolve(result.Status, result.LastTeammateAt, DateTimeOffset.UtcNow)
+            .Should().Be("idle");
     }
 
-    // --- ApplyTeammateEvent: busy promotion ---
-
-    [Fact]
-    public void ApplyTeammateEvent_StartLead_TeammateToolUse_PromotesToBusy()
+    [Theory]
+    [InlineData("PreToolUse", true)]
+    [InlineData("PostToolUse", true)]
+    [InlineData("SubagentStart", true)]
+    [InlineData("SubagentStop", false)]
+    [InlineData("TaskCompleted", false)]
+    [InlineData("TeammateIdle", false)]
+    [InlineData("Stop", false)]
+    public void IsOngoingActivity_ClassifiesByWhetherWorkIsHappening(string eventName, bool ongoing)
     {
-        var existing = CreateState("start");
-
-        var result = TeammateGate.ApplyTeammateEvent(existing, "PreToolUse");
-
-        result.Status.Should().Be("busy");
+        TeammateGate.IsOngoingActivity(eventName).Should().Be(ongoing);
     }
 
-    [Fact]
-    public void ApplyTeammateEvent_IdleLead_TeammateToolUse_PromotesToBusy()
+    // --- IsSubagentLifecycleEvent ---
+
+    [Theory]
+    [InlineData("SubagentStart")]
+    [InlineData("SubagentStop")]
+    [InlineData("TaskCreated")]
+    [InlineData("TaskCompleted")]
+    [InlineData("TeammateIdle")]
+    [InlineData("subagentstop")]
+    public void IsSubagentLifecycleEvent_LifecycleEvents_ReturnsTrue(string eventName)
     {
-        var existing = CreateState("idle");
-
-        var result = TeammateGate.ApplyTeammateEvent(existing, "PostToolUse");
-
-        result.Status.Should().Be("busy");
+        TeammateGate.IsSubagentLifecycleEvent(eventName).Should().BeTrue();
     }
 
-    [Fact]
-    public void ApplyTeammateEvent_DoneLead_TeammateToolUse_PreservesDone()
+    [Theory]
+    [InlineData("Stop")]
+    [InlineData("PreToolUse")]
+    [InlineData("PostToolUse")]
+    [InlineData("UserPromptSubmit")]
+    [InlineData("Notification")]
+    [InlineData("SessionStart")]
+    [InlineData("SessionEnd")]
+    public void IsSubagentLifecycleEvent_LeadReadinessEvents_ReturnsFalse(string eventName)
     {
-        var existing = CreateState("done");
-
-        var result = TeammateGate.ApplyTeammateEvent(existing, "PreToolUse");
-
-        result.Status.Should().Be("done");
+        TeammateGate.IsSubagentLifecycleEvent(eventName).Should().BeFalse();
     }
 
     // --- ApplyTeammateEvent: timestamp updates ---

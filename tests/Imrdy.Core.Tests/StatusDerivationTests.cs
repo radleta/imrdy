@@ -10,7 +10,7 @@ public class StatusDerivationTests
     [InlineData("UserPromptSubmit", "busy")]
     [InlineData("PreToolUse", "busy")]
     [InlineData("PreCompact", "compact")]
-    [InlineData("Stop", "done")]
+    [InlineData("Stop", "idle")]   // lead Stop == main session is waiting for the user
     [InlineData("Notification", "attention")]
     [InlineData("PermissionRequest", "permission")]
     [InlineData("SessionEnd", "end")]

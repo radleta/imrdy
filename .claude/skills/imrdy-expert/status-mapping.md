@@ -30,7 +30,7 @@ Unknown events return "unknown".
 | Base Status | RGB | Visual | Meaning |
 |-------------|-----|--------|---------|
 | busy | (230, 40, 40) | Red | Claude is working |
-| done | (40, 180, 170) | Teal | Turn finished, may resume |
+| done | (40, 180, 170) | Teal | **Display-only** — lead is idle but subagents are still running |
 | idle | (40, 200, 40) | Green | Genuinely waiting for user |
 | attention | (255, 120, 0) | Orange | Notification needs attention |
 | error | (230, 200, 40) | Yellow | Tool or stop failure |
@@ -39,13 +39,43 @@ Unknown events return "unknown".
 | unknown | (128, 128, 128) | Gray | Unknown/terminated |
 | workspace | (255, 255, 255) | White | Controller tray icon |
 
-## The "done" Status
+## The "done" Status — idle, but not free
 
-"done" (teal) was introduced to solve false idle toasts during teams. Stop events fire between turns — they don't mean idle. "done" is a visible intermediate that means "turn finished" without implying "waiting for user."
+**No hook event derives "done".** It is produced entirely by `DisplayStatus.Resolve` at render time:
+an `idle` lead whose `last_teammate_at` is within 2 minutes displays as teal instead of green.
+
+The distinction it draws is between two things green used to conflate:
+
+| | Lead waiting? | Agents running? | Colour |
+|---|---|---|---|
+| Working | no | — | red / busy |
+| **Idle, agents running** | yes | yes | **teal / done** |
+| Free | yes | no | green / idle |
+
+Teal exists because an idle lead with background agents may **resume itself** without the user —
+a completing background agent delivers a `<task-notification>` as a synthetic `UserPromptSubmit`.
+Measured on one session: 7 of 10 `UserPromptSubmit` events were agent-driven, not human. Green
+should mean "nothing is running and this is yours", so that case gets its own colour.
 
 - Icon: teal (distinct from green/idle)
-- No toast fires on "done" (not in DefaultToastEvents)
-- Promotes to "idle" (green) via: dwell (5s, solo) or consensus (15s, teams). idle_prompt (60s) is the backstop for solo sessions; suppressed for teams when teammates are active (see [Teammate Detection](teammate-detection.md) Layer 4)
+- **Silent** — "done" is not in `DefaultToastEvents` and has no sound mapping
+- The toast + `SoundEvent.Finished` fire on the **teal → green** edge, via the existing
+  `(_, "idle") when previousStatus is "busy" or "done"` sound rule
+
+### Why it must stay display-only
+
+`StateFileModel.Status` records lead readiness and nothing else. If the teal value were ever
+written back into it, `Resolve` would stop seeing an `idle` lead and the session would be stuck at
+teal permanently. The dwell-fired handler in `TrayApp` used to write the settled status back into
+`entry.State`; that write-back was removed for exactly this reason. Icons read
+`SessionEntry.EffectiveStatus`; `State.Status` stays the lead's truth.
+
+### The teal → green flip is time-driven
+
+Nothing announces it — no hook fires when agents merely stop arriving. `OnDrainTimerTick` compares
+`DisplayStatus.Resolve(...)` against `SessionEntry.LastEffectiveStatus` every 100ms and drives both
+the icon and the dwell entry from that transition. This makes the drain tick the single dwell
+driver for status changes, which is what keeps teal silent and green audible.
 
 ## Aging
 

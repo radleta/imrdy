@@ -9,12 +9,19 @@ summary: "Dwell timer system that gates toast/sound behind status settling — p
 
 ## How It Works
 
-1. Status change fires → icon updates immediately
-2. `OnStatusChanged()` creates/replaces a pending dwell entry
+1. On each 100ms drain tick, `OnDrainTimerTick` recomputes `DisplayStatus.Resolve` per session and
+   diffs it against `SessionEntry.LastEffectiveStatus` — this **effective-status transition**, not
+   the raw hook-driven `StateFileModel.Status` write, is what feeds the dwell system. It is the sole
+   dwell driver for status changes; `HandleSessionFileChanged` no longer creates a dwell entry on
+   `statusChanged`. Icon updates track the same effective status and land within one 100ms tick.
+2. On a transition, `OnStatusChanged()` creates/replaces a pending dwell entry for the new effective
+   status (this happens for every status, including "done" — see below).
 3. On each 100ms drain timer tick, `GetFiredSessions()` checks:
-   - Has the dwell duration elapsed? (status-dependent)
+   - Has the dwell duration elapsed? (status-dependent; "done" has no explicit entry and falls back
+     to the 3s default)
    - Has the 10s per-session toast cooldown passed?
-4. If both pass → fire notification (toast + sound)
+4. If both pass → the entry fires and is dispatched to the toast/sound layer, which independently
+   decides whether "done" is worth surfacing (see below).
 
 ## Dwell Durations
 
@@ -39,12 +46,25 @@ Three layers prevent notification storms:
 
 When a new status change arrives before the dwell fires, it *replaces* the pending entry (latest wins). `LastNotifiedAt` is intentionally preserved across replacements to maintain the toast cooldown. This means rapid status cycling never triggers — only the final settled status fires.
 
-## Teammate-Aware Suppression
+## Teammate-Aware Behavior (rewritten Aug 2026)
 
-See [Teammate Detection](teammate-detection.md) for the full 4-layer system. Key interactions with dwell:
+See [Teammate Detection](teammate-detection.md) for the full lead-readiness/liveness/display-resolution
+system this replaced. Dwell no longer suppresses anything based on teammate activity — it dwells
+every effective-status transition, including "done", and lets the toast/sound layer decide what's
+worth surfacing:
 
-- **Dwell suppression**: When status is "done" and teammates are active, no dwell entry is created. Consensus handles promotion instead.
-- **idle_prompt suppression**: The 60s `idle_prompt` backstop is rewritten from "idle" back to "done" when teammates are active, preventing it from bypassing the consensus gate.
+- **"done" dwells silently by construction, not by suppression.** A busy→done (or idle→done)
+  transition creates and fires a dwell entry like any other, but `BalloonTipManager.DefaultToastEvents`
+  doesn't include "done" (no toast) and `TriggerStatusChangeSound`'s switch has no `(_, "done")` arm
+  (no sound). Only the **teal → green edge** (done→idle) is audible, via
+  `(_, "idle") when previousStatus is "busy" or "done"` → `SoundEvent.Finished`.
+- **`idle_prompt` has its own, separate dwell entry**, keyed by `NotificationType` rather than by the
+  effective-status loop. `HandleSessionFileChanged` maps it through
+  `DisplayStatus.Resolve("idle", state.LastTeammateAt, now)`: if that resolves to "done" (subagents
+  still fresh), **no dwell entry is created for the notification at all** — the 60s idle_prompt
+  backstop stays silent while agents run, without touching `StateFileModel.Status`. If it resolves to
+  "idle", it dwells and, on firing, toasts (idle_prompt is exempted from the "notification-type
+  required" check) and plays `SoundEvent.Forgotten`.
 
 ## Sound Triggers
 
@@ -54,4 +74,4 @@ Sound dispatch uses the `FiredNotification` record which carries `PreviousStatus
 
 ## Toast Events
 
-`BalloonTipManager.DefaultToastEvents`: idle, attention, permission, error. "done" is intentionally NOT in the set — no toast on done (it's an intermediate status). Toast fires when done settles to idle via dwell or consensus.
+`BalloonTipManager.DefaultToastEvents`: idle, attention, permission, error. "done" is intentionally NOT in the set — no toast on done (it's an intermediate status). Toast fires on the done→idle edge, once the effective-status loop detects it and dwell settles.

@@ -6,6 +6,11 @@ namespace Imrdy.Core.Status;
 /// </summary>
 public static class StatusDerivation
 {
+    /// <summary>
+    /// Lead-readiness map. Only events that carry information about whether the MAIN session is
+    /// waiting for the user may appear here — subagent lifecycle events are handled by
+    /// <see cref="Imrdy.Core.Hooks.TeammateGate"/> and never mutate lead status.
+    /// </summary>
     private static readonly Dictionary<string, string> EventToStatus = new(StringComparer.OrdinalIgnoreCase)
     {
         ["SessionStart"] = "start",
@@ -13,7 +18,7 @@ public static class StatusDerivation
         ["PreToolUse"] = "busy",
         ["PreCompact"] = "compact",
         ["PostCompact"] = "idle",
-        ["Stop"] = "done",
+        ["Stop"] = "idle",
         ["StopFailure"] = "error",
         ["Notification"] = "attention",
         ["PermissionRequest"] = "permission",
