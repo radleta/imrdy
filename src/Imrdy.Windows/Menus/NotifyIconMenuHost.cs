@@ -1,6 +1,6 @@
 using System.Reflection;
-using System.Runtime.InteropServices;
 using System.Windows.Forms;
+using Imrdy.Windows.Desktop;
 
 namespace Imrdy.Windows.Menus;
 
@@ -23,6 +23,12 @@ namespace Imrdy.Windows.Menus;
 ///      temporarily lets SetForegroundWindow succeed; we detach immediately after.
 ///      Without this, the FIRST right-click on an unfocused overlay silently
 ///      gives focus without showing a menu.
+///
+/// The AttachThreadInput dance itself (idiom 2) is NOT reimplemented here — it lives in
+/// <see cref="PInvokeWindow.InvokeWithForegroundAttached"/>, shared with the overlay's own
+/// ContextMenuStrip path (<c>TrayApp.ShowContextMenuAt</c>'s AtControl branch), which needs
+/// the identical mechanics wrapped around a plain <c>menu.Show</c> call instead of a
+/// reflected <c>ShowContextMenu</c> call.
 /// </summary>
 internal static class NotifyIconMenuHost
 {
@@ -38,22 +44,12 @@ internal static class NotifyIconMenuHost
 
     /// <summary>
     /// Diagnostic record of the most recent Show invocation: fg HWND, threads, and whether
-    /// AttachThreadInput succeeded. Read by TrayApp logging after each Show call.
+    /// AttachThreadInput succeeded. Populated via
+    /// <see cref="PInvokeWindow.InvokeWithForegroundAttached"/> on every <see cref="Show"/>
+    /// call, available for inspection (e.g. debugger, future logging) — no current caller
+    /// reads it.
     /// </summary>
-    public static (IntPtr Fg, uint FgThread, uint MyThread, bool Attached) LastInvoke { get; private set; }
-
-    [DllImport("user32.dll")]
-    private static extern IntPtr GetForegroundWindow();
-
-    [DllImport("user32.dll")]
-    private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
-
-    [DllImport("kernel32.dll")]
-    private static extern uint GetCurrentThreadId();
-
-    [DllImport("user32.dll")]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, bool fAttach);
+    public static PInvokeWindow.ForegroundAttachOutcome LastInvoke { get; private set; }
 
     /// <summary>
     /// Shows <paramref name="icon"/>'s ContextMenuStrip anchored next to the tray icon.
@@ -64,35 +60,11 @@ internal static class NotifyIconMenuHost
     {
         if (s_showContextMenu is not null)
         {
-            InvokeWithForegroundAttached(() => s_showContextMenu.Invoke(icon, null));
+            LastInvoke = PInvokeWindow.InvokeWithForegroundAttached(() => s_showContextMenu.Invoke(icon, null));
             return;
         }
 
         // Fallback: less reliable but keeps the app functional if reflection breaks.
         icon.ContextMenuStrip?.Show(Cursor.Position);
-    }
-
-    /// <summary>
-    /// Invokes <paramref name="show"/> with this thread temporarily attached to the
-    /// current foreground window's input queue, so any SetForegroundWindow call inside
-    /// <paramref name="show"/> succeeds.
-    /// </summary>
-    private static void InvokeWithForegroundAttached(Action show)
-    {
-        var fg = GetForegroundWindow();
-        var fgThread = fg == IntPtr.Zero ? 0u : GetWindowThreadProcessId(fg, out _);
-        var myThread = GetCurrentThreadId();
-        var attached = false;
-        if (fgThread != 0 && fgThread != myThread)
-            attached = AttachThreadInput(fgThread, myThread, true);
-        LastInvoke = (fg, fgThread, myThread, attached);
-        try
-        {
-            show();
-        }
-        finally
-        {
-            if (attached) AttachThreadInput(fgThread, myThread, false);
-        }
     }
 }

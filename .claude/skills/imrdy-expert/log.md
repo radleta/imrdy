@@ -73,3 +73,4 @@
 2026-08-20T00:10:00Z updated overlay-placement-taskbar-reserve
 2026-08-20T00:15:00Z renamed overlay-drag-ux -> render-output-dir-flat-layout (filename/content mismatch)
 2026-08-20T00:20:00Z updated overlay-placement-taskbar-reserve (tag prefix imrdy -> imrdy-expert)
+2026-08-20T00:30:00Z updated overlay-interactivity (corrected superseded "right-click never fires SurfaceInteracted" claim after the overlay-menu-dismiss-fix run; cross-linked to hover-dashboard-state-machine.md)

@@ -58,11 +58,11 @@ A hover-preview controller that uses a grace corridor for cursor continuity betw
 
 ## Solution: SurfaceInteracted Event
 
-Add an event that fires after successful **surface action** (left-click dispatch). The controller listens and dismisses immediately, bypassing the grace corridor timer.
+Add an event the controller listens to and dismisses immediately, bypassing the grace corridor timer. The event fires **only on left-click** (surface action). Right-click deliberately does NOT fire it — see "Right-Click Does NOT Fire It (and Why That's a Constraint, Not a Gap)" below; a fix attempt that made it fire on right-click too was tried, caused a live regression, and was reverted.
 
 ### Implementation Pattern
 
-**1. Overlay fires event after successful dispatch:**
+**1. Overlay fires event after successful left-click dispatch:**
 
 ```csharp
 // In OverlayPanel
@@ -95,8 +95,33 @@ public event EventHandler? SurfaceInteracted;
 ```
 
 **Key details:**
-- Event fires **inside the try block, after router call** — router exceptions don't trigger spurious dismissal
-- Right-click does NOT fire the event (right-click shows a menu; WinForms handles menu dismissal naturally)
+- Left-click: event fires **inside the try block, after router call** — router exceptions don't trigger spurious dismissal.
+- Right-click: never fires this event, in either the chip-hit or gutter sub-branch. See below for why, and for the exception handling those branches do carry (independent of `SurfaceInteracted`).
+
+### Right-Click Does NOT Fire It (and Why That's a Constraint, Not a Gap)
+
+This page has now stated both "right-click does NOT fire the event" (original) and, briefly, "right-click DOES fire it" (an intermediate fix attempt). The intermediate attempt was tried in response to a real bug, caused a *different*, worse regression in live testing, and was reverted. Both the original problem and the failed fix are worth understanding so nobody re-derives the same failed fix from first principles.
+
+**The original problem this was chasing:** `HoverDashboardFormBase` did not override `ShowWithoutActivation`, so `Form.Show()` genuinely activated the dashboard window (default `ShowWithoutActivation == false`). While a right-click `ContextMenuStrip` was open over the overlay, the hover state machine's drain tick could still fire `HideForm()` → `DisposeForm()` on the activated dashboard once the cursor left the corridor. Destroying an activated top-level window changes the OS active window, which trips `ToolStripManager.ModalMenuFilter` and force-closes the open menu.
+
+**The two-part fix that was attempted:**
+1. `HoverDashboardFormBase` now overrides `protected override bool ShowWithoutActivation => true;` so `Show()` never activates the form, and disposing it never changes the active window. **This part is correct and stays.**
+2. `OverlayPanel.OnMouseUp`'s right-click branch was changed to also fire `SurfaceInteracted`, in both the chip-hit and gutter sub-branches, *before* the `_router.OpenSessionMenu`/`OpenWorkspaceMenu`/`OpenOverlayMenu` call. **This part was reverted — see below.**
+
+**Why part 2 failed in live testing:** `SurfaceInteracted` → `HandleSurfaceInteraction()` → `ForceHideForm()` → `DisposeForm()` destroys a window (`_form.Close(); _form.Dispose();`). Destroying a window is not instantaneous from the perspective of the rest of the message queue: the activation/z-order fallout from destroying a window is delivered via **posted** messages, which only arrive after the *current* message handler (`OnMouseUp`) returns and the pump processes its next message. So firing `SurfaceInteracted` synchronously inside `OnMouseUp` — no matter whether before or after the router's menu-open call — produces this actual sequence when a menu is also being opened in the same handler:
+
+1. `OnMouseUp` fires; `SurfaceInteracted` destroys the dashboard form (synchronous, no fade).
+2. `_router.OpenSessionMenu`/etc. calls `menu.Show(...)`, which opens the `ContextMenuStrip`.
+3. `OnMouseUp` returns; the message pump now delivers the *posted* activation/z-order fallout from step 1's window destruction.
+4. `ToolStripManager.ModalMenuFilter` observes that fallout as an activation change and force-closes the menu that just opened in step 2.
+
+The menu opens and dies within the same frame — indistinguishable, to a human clicking, from "the menu never opened." Confirmed live: a right-click made the dashboard vanish but no menu appeared; a *second* right-click (form already disposed, `ForceHideForm` a no-op, nothing destroyed) opened the menu correctly and it survived. That two-click signature is the fingerprint of this exact mechanism.
+
+**The ordering ("before the router call") was never the fix.** Ordering only controls what happens within the synchronous handler; it cannot delay or cancel a *posted* message that arrives after the handler returns. Any future attempt to make right-click fire `SurfaceInteracted` — before, after, or in a `finally` — will reproduce this bug, because the destroy-then-posted-fallout mechanism is unaffected by where in the synchronous handler the destroy happens. Any real fix needs to change *when the destroy happens relative to the message pump*, e.g. deferring the dismissal via `BeginInvoke` (posts to the back of the queue, after the menu's own show completes and settles) — not deferring it within the same synchronous call. That kind of fix was deliberately out of scope for the revert step that restored this page's accuracy; see the log for what was actually tried.
+
+**Current state:** right-click does not fire `SurfaceInteracted` in either sub-branch. Both sub-branches keep their own try/catch around the router call (the gutter sub-branch's try/catch was added independently as a genuine pre-existing gap fix — it never had exception handling before — and is unrelated to this event-firing question).
+
+Do NOT reintroduce `_openTrayMenuCount` or `overlay.Visible = false` to solve this — that paper-over solved a different problem (suppressing ghost dashboard *re-shows* while a menu covers the overlay) and was deliberately deleted; see [Z-Order Gate Obsoletes Overlay-Hide-on-Menu](z-order-gate-obsoletes-menu-paper-over.md).
 
 **2. Controller listens and dismisses:**
 
@@ -223,7 +248,7 @@ public void Drain(DateTime now)
 |---|---|---|
 | "Dismissing on dwell expiry is good enough" | Doesn't handle immediate click-to-different-icon | Add SurfaceInteracted event for commit path |
 | "Subscribing in the controller" | Couples controller to overlay implementation | Subscribe in TrayApp; controller only knows about form visibility state |
-| "Right-click fires SurfaceInteracted" | Right-click shows menu; WinForms dismissal is automatic | Right-click must NOT fire the event |
+| "Make right-click fire SurfaceInteracted too, ordered before the router's menu-open call" | Tried and reverted — ordering within one synchronous handler cannot delay a *posted* message; the destroyed dashboard's activation fallout still arrives after `OnMouseUp` returns and kills the just-opened menu (see "Right-Click Does NOT Fire It" above) | Leave right-click NOT firing SurfaceInteracted; a real fix must change *when* the destroy happens relative to the message pump (e.g. `BeginInvoke`), not just its position in the synchronous handler |
 | "Grace corridor resets dwell to 0" | Dwell should be frozen (showing), not reset | When in corridor, dwell stays at DwellThreshold (show); when leaving, it increments toward expiry |
 
 ## Post-Interaction Cooldown

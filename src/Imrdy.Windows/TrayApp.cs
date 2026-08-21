@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Runtime.CompilerServices;
 using Imrdy.Core;
 using Imrdy.Core.Desktop;
 using Imrdy.Core.Diagnostics;
@@ -53,6 +54,49 @@ internal sealed class TrayApp : ApplicationContext, ISessionInteractionRouter
     private OverlayConfig _overlayConfig = new();
     private bool _overlayReloadDeferred;
     private readonly ContextMenuStrip _overlayMenu;
+
+    // Guards against re-subscribing ContextMenuStrip.Closed on every ShowContextMenuAt call.
+    // Session/workspace menus are built once per entry (CreateSessionIcon/CreateWorkspaceIcon)
+    // and _overlayMenu is a single ctor-built instance, but ShowContextMenuAt runs on every
+    // right-click over that same long-lived instance — a plain subscribe-on-every-call would
+    // leak handlers and produce duplicate log lines that grow unboundedly across a session's
+    // lifetime. ConditionalWeakTable ties the "already wired" marker to the ContextMenuStrip's
+    // own GC lifetime, so a session/workspace ending and its Menu being disposed needs no
+    // explicit removal bookkeeping here — the table entry is collected along with the menu.
+    private readonly ConditionalWeakTable<ContextMenuStrip, object> _menuLifecycleWired = new();
+
+    // Foreground HWND to restore once an AtControl-anchored menu closes (overlay right-click).
+    // Showing that menu requires granting the overlay real foreground for the menu's lifetime
+    // (see ShowContextMenuAt), which steals it from whatever the user was working in
+    // (typically their terminal). Captured by CaptureForegroundForRestore() immediately before
+    // that grant happens — the last point GetForegroundWindow() still reports the window about
+    // to be replaced, NOT read from OverlayPanel (which carries no activation exception; see
+    // OverlayPanel.WndProc). This field is read by the single Closed handler wired per menu
+    // instance in ShowContextMenuAt to restore it once the menu closes, then cleared to
+    // IntPtr.Zero so a later Closed firing (a different anchor mode, or no capture at all)
+    // can't resurrect a stale HWND. Deliberately a single instance field, not per-menu state —
+    // only one ContextMenuStrip is ever open at a time in this app.
+    private IntPtr _pendingForegroundRestore = IntPtr.Zero;
+
+    // Last-known-good foreground-restore candidate, persisted ACROSS menu opens (unlike
+    // _pendingForegroundRestore above, which is per-invocation and cleared on every read).
+    // Kept fresh two ways, both gated by PInvokeWindow.IsAcceptableForegroundCandidate:
+    //   1. SampleForegroundForRestoreTracking(), piggybacked on the existing 100ms drain
+    //      tick (OnDrainTimerTick) — samples GetForegroundWindow() every tick regardless of
+    //      menu activity. This is the primary source in practice: by the time a user
+    //      actually right-clicks the overlay, some other imrdy-owned window (a dashboard,
+    //      a previous menu's transient popup) has very often already stolen foreground, so
+    //      a click-time-only capture sees ownProcess=true and has nothing legitimate to
+    //      fall back to. Continuous sampling means this field almost always holds a window
+    //      that was genuinely foreground within the last ~100ms.
+    //   2. CaptureForegroundForRestore(), called immediately before an AtControl menu grants
+    //      the overlay foreground — the freshest possible signal for the (less common) case
+    //      where the click itself is the first legitimate foreground change since the last
+    //      tick.
+    // A rejected capture from either source falls back to reading this field instead of
+    // overwriting it with garbage — see both methods below.
+    private IntPtr _lastGoodForegroundWindow = IntPtr.Zero;
+
     private bool _trayEnabled = true;
     private readonly BalloonTipManager _balloonTipManager;
     private readonly WorkspaceVisibility _workspaceVisibility = new();
@@ -348,6 +392,11 @@ internal sealed class TrayApp : ApplicationContext, ISessionInteractionRouter
     {
         try
         {
+            // Piggyback the continuous foreground-restore-candidate sampler on this existing
+            // 100ms tick rather than adding a dedicated timer (same reuse pattern as
+            // NotificationDwellState's dwell check). Runs first, unconditionally, every tick.
+            SampleForegroundForRestoreTracking();
+
             if (_overlayReloadDeferred && _overlayPanel?.IsDragging != true)
             {
                 _pendingChanges.Enqueue("CONFIG_RELOAD");
@@ -1481,14 +1530,252 @@ internal sealed class TrayApp : ApplicationContext, ISessionInteractionRouter
     //   - Control owner (overlay form click): vanilla menu.Show(owner, location).
     // Callers always use MenuAnchor.AtTrayIcon / MenuAnchor.AtControl, so exactly one
     // branch fires.
-    private static void ShowContextMenuAt(ContextMenuStrip? menu, MenuAnchor anchor)
+    //
+    // Instance method (not static) so it can use the shared _logger — the smaller-diff
+    // choice over threading an ILogger parameter through every call site, and consistent
+    // with the rest of this file, where every other private method reads _logger directly
+    // rather than accepting it as a parameter.
+    //
+    // Menu lifecycle diagnostic (permanent, Debug-level, prod-silent via the same log-level
+    // gating as every other LogDebug call in this file): logs which anchor mode is used, the
+    // owner/location for AtControl, whether the menu was actually left visible after the
+    // Show call returns, and — via a Closed subscription wired at most once per menu instance
+    // — the ToolStripDropDownCloseReason when it eventually closes. This exists to answer,
+    // from the next live test, whether an overlay right-click menu opens-then-immediately-
+    // closes (see hover-dashboard-state-machine.md's SurfaceInteracted right-click history)
+    // or never opens at all — those two failure modes look identical to a user but have very
+    // different CloseReason signatures.
+    //
+    // Step 07 addendum: the foreground-refusal hypothesis above is now the WELL-TESTED half of
+    // the picture — this method also now logs menu.Items.Count and the menu's GetHashCode()
+    // identity immediately before and after the AtControl Show() call, and wires a once-per-
+    // instance Closing subscription (same _menuLifecycleWired guard as Closed) alongside it.
+    // This discriminates the untested hypothesis: ToolStripDropDown.Show() silently refuses to
+    // become visible when Items.Count is 0, when the menu builders' Opening handler (which
+    // rebuilds Items from scratch every time — see SessionMenuBuilder/OverlayMenuBuilder/
+    // WorkspaceMenuBuilder/ControllerMenuBuilder) sets e.Cancel = true, or when that handler
+    // throws (previously swallowed by its own try/catch with no item-count evidence). Read
+    // together with the builders' new "Opening: start"/"Opening: end" log lines (same MenuId),
+    // the ordering answers: did Opening fire at all between before/after? Did it produce zero
+    // items? Did it cancel? Was a prior Closing still in flight? None of those require any
+    // further Win32 investigation to rule in or out.
+    //
+    // Foreground grant + restore: the AtControl branch (overlay right-click) no longer relies
+    // on any OverlayPanel activation exception — OverlayPanel.WndProc returns MA_NOACTIVATE
+    // unconditionally (see its docs). Instead this method captures the real prior-foreground
+    // window via CaptureForegroundForRestore() immediately before granting the overlay
+    // foreground explicitly (PInvokeWindow.SetForegroundWindow wrapped in
+    // PInvokeWindow.InvokeWithForegroundAttached — the same AttachThreadInput dance
+    // NotifyIconMenuHost uses for the tray-icon path). The same Closed subscription that logs
+    // the diagnostic above also restores whatever held foreground before this Show call, via
+    // RestorePendingForeground, so the focus theft lasts only for the menu's lifetime.
+    private void ShowContextMenuAt(ContextMenuStrip? menu, MenuAnchor anchor)
     {
         if (menu is null) return;
+
+        if (!_menuLifecycleWired.TryGetValue(menu, out _))
+        {
+            _menuLifecycleWired.Add(menu, s_menuWiredMarker);
+            menu.Closed += (_, closedArgs) =>
+            {
+                _logger.LogDebug("ShowContextMenuAt: menu closed, reason={CloseReason}", closedArgs.CloseReason);
+                RestorePendingForeground();
+            };
+
+            // Diagnostic-only (Step 07): Closing fires BEFORE Closed, while the drop-down is
+            // still tearing down. If a Closing from a PRIOR show is still in flight when the
+            // next right-click calls Show() again on this same instance, that overlap is the
+            // leading hypothesis for why a rebuild inside Opening could hand back an empty or
+            // refused menu — this line makes that overlap visible in the log by timestamp
+            // ordering against the "before menu.Show"/"after menu.Show" lines below.
+            menu.Closing += (_, closingArgs) =>
+            {
+                _logger.LogDebug(
+                    "ShowContextMenuAt: menu closing, menu={MenuId}, reason={CloseReason}, cancel={Cancel}",
+                    menu.GetHashCode(), closingArgs.CloseReason, closingArgs.Cancel);
+            };
+        }
+
         if (anchor.TrayIcon is { } icon)
+        {
+            _logger.LogDebug("ShowContextMenuAt: showing via AtTrayIcon anchor (NotifyIconMenuHost)");
             NotifyIconMenuHost.Show(icon);
+            _logger.LogDebug("ShowContextMenuAt: NotifyIconMenuHost.Show returned, menu.Visible={Visible}", menu.Visible);
+        }
         else if (anchor.Owner is { } owner)
-            menu.Show(owner, anchor.Location);
+        {
+            // Capture BEFORE granting foreground below — the last point GetForegroundWindow()
+            // still reports the window genuinely about to be replaced (typically the user's
+            // terminal), not the overlay's own (about-to-be-activated) handle.
+            CaptureForegroundForRestore();
+
+            _logger.LogDebug(
+                "ShowContextMenuAt: showing via AtControl anchor (owner={OwnerType}, location={Location})",
+                owner.GetType().Name, anchor.Location);
+
+            var attach = PInvokeWindow.InvokeWithForegroundAttached(() =>
+            {
+                PInvokeWindow.SetForegroundWindow(owner.Handle);
+
+                // Diagnostic-only (Step 07): bracket the Show() call itself with item-count
+                // snapshots. If Show() returns Visible=false and item count went from N>0
+                // before to N>0 after with NO "Opening: start/end" line in between (see the
+                // menu builders' Opening handler logs), that is decisive evidence WinForms
+                // refused to display the menu for a reason unrelated to content — i.e. a
+                // Win32-level refusal, not the zero-items/cancelled-Opening hypothesis this
+                // step exists to rule in or out.
+                _logger.LogDebug(
+                    "ShowContextMenuAt: before menu.Show, menu={MenuId}, items={ItemCount}",
+                    menu.GetHashCode(), menu.Items.Count);
+
+                menu.Show(owner, anchor.Location);
+
+                _logger.LogDebug(
+                    "ShowContextMenuAt: after menu.Show, menu={MenuId}, items={ItemCount}, visible={Visible}",
+                    menu.GetHashCode(), menu.Items.Count, menu.Visible);
+
+                // KB135788 (Microsoft, documented notify-icon/ContextMenuStrip foreground
+                // bug — see https://learn.microsoft.com/en-us/answers/questions/1125620/resolved-maui-trayicon-with-contextmenustrip-not-c):
+                // "if the window is already in the foreground, the menu appears and
+                // immediately disappears on the second display." That precondition is
+                // exactly our steady state here — the overlay is very often ALREADY
+                // foreground by this point (SetForegroundWindow above is then a no-op),
+                // which is why this bug presented as "roughly every other right-click opens
+                // nothing." PostMessage(WM_NULL) is Microsoft's fix: it "forces a task
+                // switch by posting a benign message, preventing the menu from immediately
+                // disappearing on subsequent displays." Required sequence per the KB is
+                // SetForegroundWindow → show-the-menu → PostMessage(WM_NULL), all three
+                // together — kept inside this same InvokeWithForegroundAttached lambda
+                // rather than after it returns, so the whole sequence runs while our
+                // thread's input is still attached to the (possibly-about-to-be-replaced)
+                // foreground thread, exactly mirroring the KB's un-interrupted ordering.
+                // THIS CALL WAS REMOVED ONCE ALREADY (see MenuAnchor.AtControl's doc
+                // comment) by a reader who didn't know the KB existed — do not remove it
+                // again without re-reading that KB.
+                PInvokeWindow.PostMessage(owner.Handle, PInvokeWindow.WM_NULL, IntPtr.Zero, IntPtr.Zero);
+            });
+
+            _logger.LogDebug(
+                "ShowContextMenuAt: menu.Show returned, menu={MenuId}, items={ItemCount}, menu.Visible={Visible}, attached={Attached}",
+                menu.GetHashCode(), menu.Items.Count, menu.Visible, attach.Attached);
+        }
     }
+
+    // Samples the current foreground window every 100ms drain tick and records it as
+    // _lastGoodForegroundWindow when it passes PInvokeWindow.IsAcceptableForegroundCandidate
+    // (valid window, another process, has WS_CAPTION — a "real" top-level app window, not a
+    // borderless popup). This is what actually fixes stale focus restore: capturing only at
+    // menu-show time (CaptureForegroundForRestore below) is too late once some other
+    // imrdy-owned window has already taken foreground between clicks, which is the common
+    // case in practice (every observed live capture logged ownProcess=true). A rejected
+    // sample is simply skipped — it never overwrites a previously-captured good value, same
+    // contract as CaptureForegroundForRestore's own fallback.
+    private void SampleForegroundForRestoreTracking()
+    {
+        var candidate = PInvokeWindow.GetForegroundWindow();
+        if (candidate == IntPtr.Zero || !PInvokeWindow.IsWindow(candidate))
+            return;
+
+        PInvokeWindow.GetWindowThreadProcessId(candidate, out var pid);
+        var isOwnProcess = pid == (uint)Environment.ProcessId;
+        var hasCaption = PInvokeWindow.HasCaptionStyle(candidate);
+
+        if (PInvokeWindow.IsAcceptableForegroundCandidate(isValidWindow: true, isOwnProcess, hasCaption))
+        {
+            _lastGoodForegroundWindow = candidate;
+        }
+    }
+
+    // Captures the current foreground window as this menu invocation's restore target,
+    // validating it at capture time rather than trusting it blindly until restore. Rejects a
+    // candidate that is not a window, belongs to imrdy's own process (every transient
+    // ToolStripDropDown/ContextMenuStrip popup this app itself creates — the observed failure
+    // mode where right-clicking while a previous menu is still closing captures that dying
+    // popup instead of the user's real window), or lacks WS_CAPTION (a borderless popup even
+    // from another process). A rejected capture falls back to _lastGoodForegroundWindow — the
+    // most recent capture that DID pass validation — rather than overwriting it with garbage,
+    // so RestorePendingForeground still restores the user's actual prior window.
+    private void CaptureForegroundForRestore()
+    {
+        var candidate = PInvokeWindow.GetForegroundWindow();
+        var isValidWindow = candidate != IntPtr.Zero && PInvokeWindow.IsWindow(candidate);
+        var isOwnProcess = false;
+        var hasCaption = false;
+        if (isValidWindow)
+        {
+            PInvokeWindow.GetWindowThreadProcessId(candidate, out var pid);
+            isOwnProcess = pid == (uint)Environment.ProcessId;
+            hasCaption = PInvokeWindow.HasCaptionStyle(candidate);
+        }
+
+        if (PInvokeWindow.IsAcceptableForegroundCandidate(isValidWindow, isOwnProcess, hasCaption))
+        {
+            _lastGoodForegroundWindow = candidate;
+            _pendingForegroundRestore = candidate;
+            _logger.LogDebug("CaptureForegroundForRestore: captured {Candidate} as restore target", candidate);
+        }
+        else
+        {
+            _pendingForegroundRestore = _lastGoodForegroundWindow;
+            _logger.LogDebug(
+                "CaptureForegroundForRestore: rejected {Candidate} (validWindow={ValidWindow}, " +
+                "ownProcess={OwnProcess}, hasCaption={HasCaption}); falling back to {Previous}",
+                candidate, isValidWindow, isOwnProcess, hasCaption, _lastGoodForegroundWindow);
+        }
+    }
+
+    // Restores the foreground window captured just before an AtControl-anchored menu was
+    // shown (see ShowContextMenuAt and _pendingForegroundRestore). Always clears the field
+    // first so a later Closed firing — a different anchor mode, or no capture at all — can't
+    // resurrect a stale HWND. Guards against three no-op/invalid cases, each logged so the
+    // live log can distinguish them:
+    //   - IntPtr.Zero: no capture happened (e.g. this Closed belongs to an AtTrayIcon show).
+    //   - the overlay's own handle: nothing to restore — the overlay already held foreground
+    //     before this menu opened (the common case for an overlay right-click).
+    //   - no longer a valid window (IsWindow false): the captured target was closed/destroyed
+    //     while the menu was open.
+    // A false SetForegroundWindow result is expected under some conditions (e.g. the restore
+    // target's process doesn't currently hold input-focus rights) and is logged, not thrown.
+    private void RestorePendingForeground()
+    {
+        var target = _pendingForegroundRestore;
+        _pendingForegroundRestore = IntPtr.Zero;
+
+        if (target == IntPtr.Zero)
+        {
+            _logger.LogDebug("RestorePendingForeground: skipped, no captured target");
+            return;
+        }
+
+        if (_overlayPanel is { IsHandleCreated: true } overlay && target == overlay.Handle)
+        {
+            _logger.LogDebug("RestorePendingForeground: skipped, captured target is the overlay's own handle");
+            return;
+        }
+
+        if (!PInvokeWindow.IsWindow(target))
+        {
+            _logger.LogDebug(
+                "RestorePendingForeground: skipped, captured target {Target} is no longer a valid window", target);
+            return;
+        }
+
+        // SetForegroundWindow needs the same AttachThreadInput dance as the initial grant in
+        // ShowContextMenuAt — the calling thread doesn't natively own foreground input here
+        // either, since by this point the menu (not this thread) has been holding it.
+        var restored = false;
+        var attach = PInvokeWindow.InvokeWithForegroundAttached(() =>
+        {
+            restored = PInvokeWindow.SetForegroundWindow(target);
+        });
+        _logger.LogDebug(
+            "RestorePendingForeground: attempted restore of {Target}, SetForegroundWindow returned {Restored}, attached={Attached}",
+            target, restored, attach.Attached);
+    }
+
+    // Sentinel value for _menuLifecycleWired — ConditionalWeakTable only needs presence of
+    // the key, but the value type must be a reference type; this is never inspected.
+    private static readonly object s_menuWiredMarker = new();
 
     // Resets interaction age and refreshes icon/tooltip/overlay to brightest tier.
     // Shared by every ActivateSession / OpenSessionMenu path.
@@ -1595,6 +1882,7 @@ internal sealed class TrayApp : ApplicationContext, ISessionInteractionRouter
     private ControllerMenuState GetControllerState()
     {
         var config = ConfigReader.Read();
+        var devBuild = BuildDevState();
 
         return new ControllerMenuState
         {
@@ -1617,7 +1905,7 @@ internal sealed class TrayApp : ApplicationContext, ISessionInteractionRouter
             Monitors = Screen.AllScreens.Select((s, i) => $"Monitor {i + 1} ({s.Bounds.Width}×{s.Bounds.Height})").ToList(),
             Config = config,
             LogPath = ImrdyPaths.MonitorLog,
-            DevBuild = BuildDevState(),
+            DevBuild = devBuild,
             OverlayWorkingArea = ResolveScreenForMonitor(config.Overlay.Monitor).WorkingArea,
             OverlayPanelSize = _overlayPanel?.Size ?? EstimateOverlayPanelSize(config.Overlay),
         };

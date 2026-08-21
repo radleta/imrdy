@@ -403,8 +403,8 @@ internal sealed class SessionDashboardForm : HoverDashboardFormBase
 
     /// <summary>
     /// In preview mode, activate the form on first show so Esc works without a prior click.
-    /// FormBorderStyle.None + ShowInTaskbar=false means the form does not steal focus on
-    /// Application.Run — Activate() here transfers keyboard focus to the form.
+    /// The base class overrides ShowWithoutActivation => true, so Show() does not implicitly
+    /// activate the form — Activate() here is what transfers keyboard focus in preview mode.
     /// </summary>
     protected override void OnShown(EventArgs e)
     {

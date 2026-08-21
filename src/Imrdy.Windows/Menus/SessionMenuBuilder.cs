@@ -30,8 +30,17 @@ internal static class SessionMenuBuilder
         ILogger? logger = null)
     {
         var menu = new ContextMenuStrip();
-        menu.Opening += (_, _) =>
+        // Diagnostic-only (Step 07): log start/end of every Opening rebuild alongside the item
+        // count produced and e.Cancel on exit, correlated by menu.GetHashCode() with the
+        // before/after Show() logs in TrayApp.ShowContextMenuAt. If Show() reports
+        // Visible=false with no "Opening: start" line between the two Show logs, Opening never
+        // fired — a Win32-level refusal. If it fired but "end" reports items=0 or cancel=true,
+        // that is the empty/cancelled-menu hypothesis this step exists to test.
+        menu.Opening += (_, e) =>
         {
+            logger?.LogDebug(
+                "SessionMenuBuilder.Opening: start, menu={MenuId}, sessionId={SessionId}",
+                menu.GetHashCode(), entry.SessionId);
             try
             {
                 var state = new SessionMenuState
@@ -50,11 +59,29 @@ internal static class SessionMenuBuilder
                 };
                 var items = SessionMenuModel.Build(state);
                 MenuRenderer.Apply(menu, items, tag => OnClick(tag, callbacks), logger);
+
+                // The fix (Step 08): ContextMenuStrip.OnOpening pre-sets e.Cancel = true
+                // whenever Items.Count == 0 — which is always true on the FIRST show of this
+                // freshly-constructed menu, since items are built here, not at Create() time.
+                // Left uncleared, WinForms refuses to display the menu no matter how many
+                // items were just added. Only reached when the rebuild above completed
+                // without throwing — see MenuOpeningPolicy's remarks for why an exception
+                // must skip this line rather than clear Cancel on a partial/stale collection.
+                if (MenuOpeningPolicy.ShouldClearCancel(menu.Items.Count))
+                {
+                    e.Cancel = false;
+                }
             }
             catch (Exception ex)
             {
-                logger?.LogWarning(ex, "Error rebuilding session menu for {SessionId}", entry.SessionId);
+                logger?.LogWarning(
+                    ex,
+                    "SessionMenuBuilder.Opening: exception rebuilding menu for {SessionId} — menu.Items left stale/empty, Show() will likely refuse to display",
+                    entry.SessionId);
             }
+            logger?.LogDebug(
+                "SessionMenuBuilder.Opening: end, menu={MenuId}, items={ItemCount}, cancel={Cancel}",
+                menu.GetHashCode(), menu.Items.Count, e.Cancel);
         };
         return menu;
     }

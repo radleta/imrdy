@@ -49,6 +49,22 @@ internal abstract class HoverDashboardFormBase : Form
     public bool IsPinned => _isPinned;
 
     /// <summary>
+    /// Suppresses implicit activation on <c>Show()</c>. This is not obvious from the other
+    /// shell settings, so two reasons, both required:
+    /// (1) the dashboard must never steal foreground from the user's terminal — the existing
+    ///     <see cref="WM_MOUSEACTIVATE"/> guard in <see cref="WndProc"/> only covers *click*
+    ///     activation and does nothing for a programmatic <c>Show()</c> call, which by default
+    ///     (<c>ShowWithoutActivation == false</c>) genuinely activates the window via SW_SHOW;
+    /// (2) a form that was never activated does not change the OS active window when it is
+    ///     closed/disposed. Without this override, tearing down a visible-but-activated
+    ///     dashboard (e.g. via the ordinary drain-tick <c>HideForm()</c> → <c>DisposeForm()</c>
+    ///     fade-dismiss path firing while a right-click <see cref="ContextMenuStrip"/> happens
+    ///     to be open over the overlay) flips the active window, which trips
+    ///     <c>ToolStripManager.ModalMenuFilter</c> and force-closes the open menu.
+    /// </summary>
+    protected override bool ShowWithoutActivation => true;
+
+    /// <summary>
     /// Initializes the shared shell: FormBorderStyle.None, TopMost, ShowInTaskbar=false,
     /// Manual StartPosition, MinimumSize, AutoSize/GrowAndShrink, KeyPreview.
     /// Opacity is left at 0.0 — the live path expects the controller to step it up via

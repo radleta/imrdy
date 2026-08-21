@@ -190,10 +190,15 @@ internal abstract class HoverDashboardControllerBase : IDisposable
     }
 
     /// <summary>
-    /// Called by TrayApp (via <c>SurfaceInteracted +=</c>) after a left-click activates a
-    /// session or workspace. Dismisses the form immediately and sets the post-interaction
-    /// cooldown so a phantom re-show is suppressed while the cursor stays on the overlay.
-    /// Idempotent — safe even when no form is currently shown.
+    /// Called by TrayApp via two subscriptions: <c>OverlayPanel.SurfaceInteracted +=</c>
+    /// after a left-click activates a session or workspace, and
+    /// <c>OverlayPanel.DragCompleted +=</c> (through <c>HandleOverlayDragCompleted</c>) after
+    /// a grip-drag completes. Right-click does NOT invoke this method — see the rationale on
+    /// <see cref="OverlayPanel.SurfaceInteracted"/> for why firing it from the right-click
+    /// branch would kill the ContextMenuStrip it is meant to coexist with. Dismisses the form
+    /// immediately and sets the post-interaction cooldown so a phantom re-show is suppressed
+    /// while the cursor stays on the overlay. Idempotent — safe even when no form is
+    /// currently shown.
     /// </summary>
     public void HandleSurfaceInteraction()
     {

@@ -22,8 +22,15 @@ internal static class ControllerMenuBuilder
         ILogger? logger = null)
     {
         var menu = new ContextMenuStrip();
-        menu.Opening += (_, _) =>
+        // Diagnostic-only (Step 07): see SessionMenuBuilder's Opening comment for the full
+        // rationale — same start/end + item-count + e.Cancel logging, correlated by
+        // menu.GetHashCode() with TrayApp.ShowContextMenuAt's before/after Show() logs. The
+        // controller (tray icon) menu goes through NotifyIconMenuHost, not the AtControl path
+        // under live investigation, but it shares MenuRenderer/Opening plumbing so the same
+        // instrumentation is cheap and gives a healthy-case baseline to compare against.
+        menu.Opening += (_, e) =>
         {
+            logger?.LogDebug("ControllerMenuBuilder.Opening: start, menu={MenuId}", menu.GetHashCode());
             try
             {
                 var state = stateProvider();
@@ -32,11 +39,31 @@ internal static class ControllerMenuBuilder
                     tag => OnClick(tag, state, onConfigChanged, onSwitchSession, onSwitchWorkspace, onExit,
                         onLaunchPreview, onCloseAllPreviews, logger),
                     logger);
+
+                // The fix (Step 08): ContextMenuStrip.OnOpening pre-sets e.Cancel = true
+                // whenever Items.Count == 0 — always true on the FIRST show of this
+                // freshly-constructed menu, since items are built here, not at Create() time.
+                // Left uncleared, WinForms refuses to display the menu no matter how many
+                // items were just added. Only reached when the rebuild above completed
+                // without throwing — see MenuOpeningPolicy's remarks for why an exception
+                // must skip this line rather than clear Cancel on a partial/stale collection.
+                // This menu goes through NotifyIconMenuHost (not the AtControl path where the
+                // defect was originally observed), but shares the same Opening/MenuRenderer
+                // plumbing and was equally susceptible.
+                if (MenuOpeningPolicy.ShouldClearCancel(menu.Items.Count))
+                {
+                    e.Cancel = false;
+                }
             }
             catch (Exception ex)
             {
-                logger?.LogWarning(ex, "Error rebuilding controller menu");
+                logger?.LogWarning(
+                    ex,
+                    "ControllerMenuBuilder.Opening: exception rebuilding controller menu — menu.Items left stale/empty, Show() will likely refuse to display");
             }
+            logger?.LogDebug(
+                "ControllerMenuBuilder.Opening: end, menu={MenuId}, items={ItemCount}, cancel={Cancel}",
+                menu.GetHashCode(), menu.Items.Count, e.Cancel);
         };
         return menu;
     }

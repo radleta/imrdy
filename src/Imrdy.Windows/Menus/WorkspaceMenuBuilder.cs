@@ -24,8 +24,14 @@ internal static class WorkspaceMenuBuilder
         ILogger? logger = null)
     {
         var menu = new ContextMenuStrip();
-        menu.Opening += (_, _) =>
+        // Diagnostic-only (Step 07): see SessionMenuBuilder's Opening comment for the full
+        // rationale — same start/end + item-count + e.Cancel logging, correlated by
+        // menu.GetHashCode() with TrayApp.ShowContextMenuAt's before/after Show() logs.
+        menu.Opening += (_, e) =>
         {
+            logger?.LogDebug(
+                "WorkspaceMenuBuilder.Opening: start, menu={MenuId}, name={Name}",
+                menu.GetHashCode(), entry.Workspace.Name);
             try
             {
                 var state = new WorkspaceMenuState
@@ -40,11 +46,29 @@ internal static class WorkspaceMenuBuilder
                 };
                 var items = WorkspaceMenuModel.Build(state);
                 MenuRenderer.Apply(menu, items, tag => OnClick(tag, onUnpin, onAssignDesktop, onSetDesktop, onSetIconStyle), logger);
+
+                // The fix (Step 08): ContextMenuStrip.OnOpening pre-sets e.Cancel = true
+                // whenever Items.Count == 0 — always true on the FIRST show of this
+                // freshly-constructed menu, since items are built here, not at Create() time.
+                // Left uncleared, WinForms refuses to display the menu no matter how many
+                // items were just added. Only reached when the rebuild above completed
+                // without throwing — see MenuOpeningPolicy's remarks for why an exception
+                // must skip this line rather than clear Cancel on a partial/stale collection.
+                if (MenuOpeningPolicy.ShouldClearCancel(menu.Items.Count))
+                {
+                    e.Cancel = false;
+                }
             }
             catch (Exception ex)
             {
-                logger?.LogWarning(ex, "Error rebuilding workspace menu for {Name}", entry.Workspace.Name);
+                logger?.LogWarning(
+                    ex,
+                    "WorkspaceMenuBuilder.Opening: exception rebuilding menu for {Name} — menu.Items left stale/empty, Show() will likely refuse to display",
+                    entry.Workspace.Name);
             }
+            logger?.LogDebug(
+                "WorkspaceMenuBuilder.Opening: end, menu={MenuId}, items={ItemCount}, cancel={Cancel}",
+                menu.GetHashCode(), menu.Items.Count, e.Cancel);
         };
         return menu;
     }

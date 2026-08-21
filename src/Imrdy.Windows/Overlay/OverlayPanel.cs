@@ -25,8 +25,13 @@ namespace Imrdy.Windows.Overlay;
 /// Edge-docked, top-most WinForms Form that renders status chips via OnPaint.
 /// Pinned to all virtual desktops; re-pins on TaskbarCreated (Explorer restart)
 /// via the registered window message (Decision 9).
-/// The panel has no layered or click-through extended styles — it must stay activatable
-/// so right-click transfers foreground for context-menu hover hot-track (Decision 3, 11).
+/// The panel has no layered or click-through extended styles, but WndProc's WM_MOUSEACTIVATE
+/// handler unconditionally declines activation (MA_NOACTIVATE) for every interaction,
+/// right-click included — the overlay never becomes the OS foreground window on its own. The
+/// context menu's hover hot-track pipeline (Decision 3, 11) still works because
+/// TrayApp.ShowContextMenuAt grants the overlay foreground explicitly (SetForegroundWindow +
+/// AttachThreadInput) immediately before showing the menu, then restores the prior foreground
+/// window once it closes — see CreateParams and MenuAnchor.AtControl for the full mechanism.
 /// </summary>
 internal sealed class OverlayPanel : Form
 {
@@ -124,9 +129,24 @@ internal sealed class OverlayPanel : Form
     // ── Events ────────────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Raised after a left-click dispatches a session/workspace activation.
-    /// Hover dashboard controllers subscribe to dismiss their forms after navigation.
-    /// Right-click does not raise this event — menu dismissal is handled by WinForms.
+    /// Raised on every left-click activation dispatch — AFTER a successful router call
+    /// (inside the try, so a failed dispatch does not trigger a spurious dismissal). Hover
+    /// dashboard controllers subscribe to dismiss their forms immediately, bypassing the
+    /// grace-corridor timer.
+    ///
+    /// Right-click does NOT raise this event. This is deliberate, not an oversight: the
+    /// dismissal path (<c>HandleSurfaceInteraction</c> → <c>ForceHideForm</c> →
+    /// <c>DisposeForm</c>) destroys a window synchronously, but the activation/z-order
+    /// fallout from destroying a window is delivered via POSTED messages that only arrive
+    /// after the current message handler returns. Firing this event from the right-click
+    /// branch — before or after the router's menu-open call, either ordering — destroys the
+    /// dashboard form inside the same synchronous `OnMouseUp` call that opens the
+    /// ContextMenuStrip; the posted activation fallout from that destruction then arrives
+    /// one message-pump turn later and is seen by `ToolStripManager.ModalMenuFilter` as an
+    /// activation change, which force-closes the menu that just opened. The menu appears to
+    /// "never open" because it opens and dies within the same frame. Do not "fix" this by
+    /// re-adding the invoke to the right-click branch — the two-part rationale above is a
+    /// load-bearing constraint, confirmed against a live regression, not a gap to close.
     /// </summary>
     public event Action? SurfaceInteracted;
 
@@ -194,9 +214,16 @@ internal sealed class OverlayPanel : Form
     // ── CreateParams ──────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Adds WS_EX_TOOLWINDOW only — no layered, transparent, or non-activatable styles.
-    /// The panel must remain activatable so right-click transfers foreground for the
-    /// context-menu's hover hot-track pipeline (Decision 3, 11).
+    /// Adds WS_EX_TOOLWINDOW only — no layered, transparent, or WS_EX_NOACTIVATE style. The
+    /// window is natively activatable, but WndProc's WM_MOUSEACTIVATE handler unconditionally
+    /// declines every activation attempt (MA_NOACTIVATE) — left-click, hover, drag, and
+    /// right-click alike — so the overlay never steals foreground through ordinary user
+    /// interaction and the terminal keeps focus. The one surface that legitimately needs the
+    /// overlay's owner window to briefly hold real foreground — the AtControl-anchored
+    /// ContextMenuStrip opened by a right-click (see
+    /// <see cref="Imrdy.Windows.Interaction.MenuAnchor.AtControl"/>) — gets it explicitly via
+    /// TrayApp.ShowContextMenuAt's SetForegroundWindow/AttachThreadInput dance, not through
+    /// this window's own activation policy. See WndProc for the full rationale.
     /// MUST start from base.CreateParams — omitting it discards ShowInTaskbar=false
     /// and other styles WinForms bakes into the base ExStyle.
     /// </summary>
@@ -454,8 +481,23 @@ internal sealed class OverlayPanel : Form
     protected override void WndProc(ref Message m)
     {
         // Focus preservation: always return MA_NOACTIVATE — no base call (Raymond Chen).
-        // The overlay never steals foreground; the terminal keeps focus through every drag
-        // and click. Unlike HoverDashboardFormBase there is no pin concept — always NoActivate.
+        // The overlay never steals foreground; the terminal keeps focus through every drag,
+        // click, and right-click. Unlike HoverDashboardFormBase there is no pin concept —
+        // always NoActivate.
+        //
+        // An earlier attempt returned MA_ACTIVATE for a right-button-down here instead, to
+        // give the AtControl-anchored ContextMenuStrip (see MenuAnchor.AtControl) a real
+        // foreground owner — ToolStripManager's modal menu filter force-closes a menu whose
+        // owner never took foreground the instant any unrelated activation change happens
+        // elsewhere on the desktop. That did not work: WM_MOUSEACTIVATE activation is not the
+        // same thing as owning foreground *input*, which is what SetForegroundWindow and
+        // ContextMenuStrip.Show actually need — right-clicks still silently no-op'd, and
+        // SetForegroundWindow-based foreground restore still failed most of the time. The fix
+        // now lives entirely in TrayApp.ShowContextMenuAt, which grants the overlay real
+        // foreground via PInvokeWindow.SetForegroundWindow wrapped in
+        // PInvokeWindow.InvokeWithForegroundAttached (the AttachThreadInput dance) immediately
+        // before menu.Show, and restores whatever held foreground before the menu opened once
+        // it closes — none of which requires this window to ever actually activate.
         if (m.Msg == WM_MOUSEACTIVATE) { m.Result = (IntPtr)MA_NOACTIVATE; return; }
 
         // Drag cancel: foreground stolen (app-switch, ALT+TAB, etc.) → release capture.
@@ -819,7 +861,17 @@ internal sealed class OverlayPanel : Form
                 // Gutter/padding right-click: open the overlay settings menu.
                 // Invariant: OverlayPanel never builds a menu directly — all routing goes through
                 // ISessionInteractionRouter so call sites are uniform and auditable.
-                _router.OpenOverlayMenu(MenuAnchor.AtControl(this, e.Location));
+                // try/catch added here to match the chip-hit branch above — this branch never had
+                // exception handling before, which was a pre-existing gap independent of the
+                // SurfaceInteracted ordering bug this file's other comments discuss.
+                try
+                {
+                    _router.OpenOverlayMenu(MenuAnchor.AtControl(this, e.Location));
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "OverlayPanel: gutter right-click menu failed");
+                }
             }
         }
 
