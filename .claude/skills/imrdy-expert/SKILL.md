@@ -8,12 +8,12 @@ You are an expert in the imrdy project — a Windows system tray monitor for Cla
 ## Pages
 
 - [Architecture](architecture.md) — Seven entry points, timer interactions, field preservation, and state file lifecycle
-- [State File Write Path](state-file-write-path.md) — Session state files use direct File.WriteAllBytes (not AtomicFileWriter) because delete-then-move suppresses FSW Changed events
-- [Config Live Reload](config-live-reload.md) — config.json FSW routes through OnConfigChanged for full live reload (sound + icon style + tray god toggle + overlay); overlay structural-delta: Position/Monitor/Locked apply in-place, Enabled/Size/Spacing recreate; startup uses LoadSoundConfig separately
+- [State File Write Path](state-file-write-path.md) — Session state files use direct File.WriteAllBytes — not AtomicFileWriter — because delete-then-move suppresses FSW Changed events
+- [Config Live Reload](config-live-reload.md) — config.json FSW routes through OnConfigChanged for full live reload (sound + icon style + tray god toggle + overlay); overlay structural-delta: Position/Monitor/Locked/OffsetX/OffsetY apply in-place, Enabled/Size/Spacing recreate; startup uses LoadSoundConfig separately
 - [Tray vs Hook Write Race](tray-hook-write-race.md) — Hook and tray both RMW session state files with no coordination — tray-side field changes are silently dropped if the field isn't on the FieldPreservation list
-- [Tray Persistence Verbs](tray-persistence-verbs.md) — Catalog of every place the tray process writes JSON state to disk — debugging checklist for persistence loss
-- [Field Preservation Catalog](field-preservation-catalog.md) — The 6 sticky fields, the merge pattern, and the symmetry contract every new tray-owned field must satisfy
-- [WT Desktop Routing](wt-desktop-routing.md) — SwitchToSessionDesktop 3-step routing with WT-aware target resolution, compare-desktops focus guard against ping-pong, and SessionStart-only auto-lock
+- [Tray Persistence Verbs](tray-persistence-verbs.md) — Catalog of every place the tray process writes JSON state to disk — a debugging checklist for persistence loss
+- [Field Preservation Catalog](field-preservation-catalog.md) — The 6 sticky fields in FieldPreservation.PreserveFields, the merge pattern, and the symmetry contract every new tray-owned field must satisfy
+- [WT Desktop Routing](wt-desktop-routing.md) — SwitchToSessionDesktop 3-step routing: resolve target → switch desktop → guarded focus. WT skipped from dynamic lookup; ForceForeground guarded against ping-pong; auto-lock on SessionStart only
 - [Hook Events](hook-events.md) — All 20 Claude Code hook events — what they send, status mapping, and real-world behavior
 - [Teammate Detection](teammate-detection.md) — 3-layer lead-readiness gating — subagent events never move lead status (deterministic gate), only refresh last_teammate_at (liveness tracking), which DisplayStatus.Resolve uses to render idle-with-agents-running as teal (display resolution)
 - [Notification Dwell](notification-dwell.md) — Dwell timer system that gates toast/sound behind status settling — prevents notification storms
@@ -21,9 +21,9 @@ You are an expert in the imrdy project — a Windows system tray monitor for Cla
 - [Overlay Interactivity](overlay-interactivity.md) — DragCompleted event fires at end of drag-to-reposition in OnMouseUp; companion to SurfaceInteracted with separate contract; subscription lifecycle identical (P6 TrayApp owns wiring)
 - [Hover Dashboard Form Lifecycle](hover-dashboard-form-lifecycle.md) — HoverDashboardFormBase owns the shared shell (DWM, focus guard, pin/unpin, anchor placement); derived forms (SessionDashboardForm, WorkspaceDashboardForm) own their content panels — field-promote all dynamic controls for Update(vm) access
 - [Hover Dashboard State Machine](hover-dashboard-state-machine.md) — HoverDashboardControllerBase owns the dwell/grace state machine; derived controllers plug in domain-specific dispatch (TryHitTestForOurDomain → BuildViewModel → CreateForm → ShowForm → ApplyViewModelUpdate); cross-controller hide protocol via FormShown event wired in TrayApp
-- [Workspace Dashboard Architecture](workspace-dashboard-architecture.md) — WorkspaceDashboardForm + WorkspaceHoverDashboardController: BuildViewModel hit-index flow, VM-as-render-contract, live "ago" refresh, Update-refresh-all-fields pattern, GitInfo Ahead/Behind, cross-controller hide via FormShown
-- [VM-as-Complete-Render-Contract](vm-as-complete-render-contract.md) — VM is the complete snapshot; builders take explicit "now" parameter; forms have zero clock reads; visual seal detected the clock-leak when workspace ActivityText diverged hours after baseline capture
-- [WinForms Update Field-Promote](winforms-update-field-promote.md) — Field-promote all dynamic controls for Update(vm) access; BuildLayout/Update split; SetRowVisible for conditional rows; workspace→workspace stale-fields bug was caused by missing field promotion
+- [Workspace Dashboard Architecture](workspace-dashboard-architecture.md) — WorkspaceDashboardForm + WorkspaceHoverDashboardController: BuildViewModel hit-index flow, VM-as-render-contract, live 'ago' refresh, Update-refresh-all-fields pattern, GitInfo Ahead/Behind, cross-controller hide via FormShown
+- [VM-as-Complete-Render-Contract](vm-as-complete-render-contract.md) — VM-as-complete-render-contract: builders take explicit 'now' parameter; forms/renderers have zero clock reads; visual seal detected the clock-leak pattern when workspace ActivityText diverged hours after baseline capture
+- [WinForms Update Field-Promote](winforms-update-field-promote.md) — Field-promote all dynamic WinForms controls for Update(vm) access; BuildLayout/Update split; SetRowVisible for conditional rows; chip list clear+rebuild — workspace→workspace stale-fields bug was caused by missing field promotion
 - [Dev Build Marker & Logging](dev-build-marker-logging.md) — Touch ~/.imrdy/.dev-build marker after dev deploys to enable Debug logging on all imrdy processes; enables diagnostic traces without env var friction
 - [Sparkline Reference Time](sparkline-reference-time.md) — SparklineControl requires a reference time anchor for correct rendering in live and fixture-preview paths
 - [WinForms Custom Property Serialization](winforms-custom-property-serialization.md) — UserControl public properties of non-serializable types require DesignerSerializationVisibility attribute to avoid WFO1000 build error
@@ -32,7 +32,7 @@ You are an expert in the imrdy project — a Windows system tray monitor for Cla
 - [TableLayoutPanel Row Toggle](tablelayoutpanel-row-toggle.md) — TableLayoutPanel row toggling via Absolute height 0; MinimumSize (not Width) pins fixed width with AutoSize=GrowAndShrink
 - [Persona Chip Horizontal Budget](persona-chip-horizontal-budget.md) — WinForms Anchor-based layouts: invisible-but-present sibling controls reduce available width for Anchor=Left|Right peers
 - [DrawToBitmap Alpha Compositing](drawtobitmap-alpha-compositing.md) — DrawToBitmap requires higher alpha for decorative lines than runtime DWM compositing
-- [DisplayItem vs SessionEntry Identity](display-item-vs-session-identity.md) — DisplayItem uses Id + ItemType; SessionEntry has SessionId. Choose based on context.
+- [DisplayItem vs SessionEntry Identity](display-item-vs-session-identity.md) — DisplayItem uses Id + ItemType; SessionEntry has SessionId. Choose based on context. Full DisplayItem field reference included.
 - [HookAccumulationStore Apply from FSW](hookaccumulationstore-apply-from-fsw.md) — Construct HookEventModel from StateFileModel when calling Apply from FSW path.
 - [Hover-Preview Live-Switch Detection](hover-switch-live-update.md) — Detect session change via TryGetSessionIdAtScreenPoint while form is visible; apply live-update pattern
 - [Z-Order Gate Obsoletes Overlay-Hide-on-Menu](z-order-gate-obsoletes-menu-paper-over.md) — WindowFromPoint z-order gating makes overlay-hide-on-menu paper-overs redundant; pure geometric containment is insufficient
@@ -48,6 +48,9 @@ You are an expert in the imrdy project — a Windows system tray monitor for Cla
 - [internals-visible-to-mechanism](internals-visible-to-mechanism.md) — Imrdy.Core grants InternalsVisibleTo to assembly named 'imrdy' (the Imrdy.Windows project) — not 'Imrdy.Windows'. Internal Core classes (e.g. ControllerMenuModel) are accessible from Windows code without making them public. Use 'imrdy' (lowercase) as the assembly-name key in any future InternalsVisibleTo grant from Core.
 - [overlay-placement-taskbar-reserve](overlay-placement-taskbar-reserve.md) — OverlayPlacement applies bottom taskbar reserve unconditionally, unlike the original CalculatePosition
 - [render-output-dir-flat-layout](render-output-dir-flat-layout.md) — `imrdy render --all --output-dir` writes files flat despite grouped console output — all PNGs land directly in output-dir, not in component subdirectories
+- [overlay-context-menu-foreground-dance](overlay-context-menu-foreground-dance.md) — AtControl context menus get foreground from an explicit SetForegroundWindow + InvokeWithForegroundAttached dance, not a WM_MOUSEACTIVATE exception — WndProc still returns MA_NOACTIVATE unconditionally
+- [overlay/mouseactivate-foreground-capture-timing](overlay/mouseactivate-foreground-capture-timing.md) — WM_MOUSEACTIVATE completes the foreground switch before the triggering button-down is delivered, so OnMouseDown/OnMouseUp run after activation — the reason a self-activating window cannot observe the user's prior foreground window
+- [testing/winforms-menu-tests-need-real-message-loop](testing/winforms-menu-tests-need-real-message-loop.md) — MenuRenderer.Apply asserts Application.MessageLoop, which a bare STA thread does not satisfy — ContextMenuStrip.Opening tests need a real Application.Run pump or the assert is swallowed as a misleading zero-items failure
 
 ## Meta
 

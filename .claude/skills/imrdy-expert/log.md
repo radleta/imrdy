@@ -74,3 +74,7 @@
 2026-08-20T00:15:00Z renamed overlay-drag-ux -> render-output-dir-flat-layout (filename/content mismatch)
 2026-08-20T00:20:00Z updated overlay-placement-taskbar-reserve (tag prefix imrdy -> imrdy-expert)
 2026-08-20T00:30:00Z updated overlay-interactivity (corrected superseded "right-click never fires SurfaceInteracted" claim after the overlay-menu-dismiss-fix run; cross-linked to hover-dashboard-state-machine.md)
+2026-08-21T21:35:42Z created overlay-context-menu-foreground-dance
+2026-08-21T21:35:43Z appended overlay-context-menu-foreground-dance
+2026-08-21T21:36:09Z created overlay/mouseactivate-foreground-capture-timing
+2026-08-21T21:36:11Z created testing/winforms-menu-tests-need-real-message-loop

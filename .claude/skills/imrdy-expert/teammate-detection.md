@@ -1,6 +1,6 @@
 ---
 tags: [imrdy-expert/teammates]
-summary: "Lead-readiness gating — only the main session's own hook events decide whether it is waiting for the user; subagent activity is liveness-only"
+summary: "3-layer lead-readiness gating — subagent events never move lead status (deterministic gate), only refresh last_teammate_at (liveness tracking), which DisplayStatus.Resolve uses to render idle-with-agents-running as teal (display resolution)"
 ---
 
 # Teammate Detection
