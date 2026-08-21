@@ -734,7 +734,7 @@ internal sealed class TrayApp : ApplicationContext, ISessionInteractionRouter
             // click time. The user's active desktop at launch is the most reliable proxy.
             // See scratch/wt-desktop-routing/decisions.md (D2, D3) for rationale.
             // Residual race: a concurrent hook write that read DesktopIndex==null before this write
-            // lands can clobber the auto-locked value; see ~/.wiki-memory/imrdy-expert/tray-hook-write-race.md (D4).
+            // lands can clobber the auto-locked value; see .claude/skills/imrdy-expert/tray-hook-write-race.md (D4).
             if (string.Equals(state.HookEvent, "SessionStart", StringComparison.OrdinalIgnoreCase)
                 && entry.DesktopIndex is null
                 && IsWindowsTerminal(entry))

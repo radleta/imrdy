@@ -116,7 +116,7 @@ A single `OverlayPanel` class in `src/Imrdy.Windows/Overlay/` renders session ic
 
 Pure contracts (`IRenderableSurface`, `RenderContext`, `RenderResult`) live in `Imrdy.Core/Rendering/`; concrete renderers and the `RenderRegistry` live in `Imrdy.Windows/Rendering/` (WinForms-dependent). The `"render"` branch in `Program.cs` sits between `preview-dashboard` and the tray fallback, bypasses `Global\ImrdyMonitor` (same as preview-dashboard), and initialises WinForms before dispatching.
 
-Protocol: for any UI-bearing change (SessionDashboardForm, WorkspaceDashboardForm, overlay, tray icons, menus) run `imrdy render --all` after a successful build and inspect every PNG before declaring work complete. A passing verifier wave is not a substitute for visual verification (see `~/.wiki-memory/verify-fix-loop-expert/platform-boundary-three-seal-gate.md`).
+Protocol: for any UI-bearing change (SessionDashboardForm, WorkspaceDashboardForm, overlay, tray icons, menus) run `imrdy render --all` after a successful build and inspect every PNG before declaring work complete. A passing verifier wave is not a substitute for visual verification (see `~/.claude/skills/verify-fix-loop-expert/visual-seal-fourth-gate.md`).
 
 ### Notification Dwell
 
