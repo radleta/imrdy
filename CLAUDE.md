@@ -172,3 +172,8 @@ Target: `net10.0-windows10.0.17763.0` | PublishSingleFile + SelfContained | No I
 - **main**: releases, PR target
 - **develop**: active development
 - Tags: `v*` for binary releases, `pack-*` for sound pack releases
+- **Reconcile a diverged branch by merge, never rebase.** This holds even though `develop`'s
+  history is almost entirely linear — that shape is not evidence for rebasing, and reading it
+  as such is how the rule got broken once. Preview with `git merge-tree --write-tree <upstream> HEAD`
+  before touching the working tree; a clean text merge in `TrayApp.cs` still needs a semantic
+  read, since independent changes land in the same 100ms drain tick.
