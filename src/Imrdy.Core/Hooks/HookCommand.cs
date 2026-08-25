@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.Json;
 using Imrdy.Core.State;
 using Imrdy.Core.Status;
@@ -85,6 +86,23 @@ internal static class HookCommand
             parts.Add($"source={hookEvent.Source}");
         if (!string.IsNullOrEmpty(hookEvent.Message))
             parts.Add($"msg={StateFileModel.TruncateMessage(hookEvent.Message, 80)}");
+        // background_tasks is a typed property rather than extension data, so it has to be
+        // logged explicitly or the diagnostic line silently loses the field (D10). This reads
+        // the raw payload value, NOT the degraded roster local built below: an absent field
+        // prints no token at all while a present-but-empty one prints tasks=0[], and those are
+        // different facts — collapsing them would destroy the distinction on exactly the event
+        // where it matters most (an absent field on a Stop). Each entry emits its status because
+        // nothing else reads that field post-ship; a token whose entries are not "running" is
+        // the only signal that the "every entry is live work" assumption has drifted (D21, RK5).
+        // Each field is escaped first: because this token IS the trip-wire, a roster field
+        // carrying a line break could split the one-line-per-event record and forge a second
+        // line that reads as a real hook record, silently degrading the control (CWE-117).
+        if (hookEvent.BackgroundTasks is { } payloadTasks)
+        {
+            var taskTriples = string.Join(",", payloadTasks.Select(
+                t => $"{EscapeLogField(t.Type)}:{EscapeLogField(t.Id)}:{EscapeLogField(t.Status)}"));
+            parts.Add($"tasks={payloadTasks.Count}[{taskTriples}]");
+        }
         if (hookEvent.ExtensionData is { Count: > 0 })
         {
             foreach (var kv in hookEvent.ExtensionData)
@@ -105,13 +123,25 @@ internal static class HookCommand
         var statePath = Path.Combine(ImrdyPaths.Sessions, $"{hookEvent.SessionId}.json");
         var existing = reader.ReadStateFile(statePath);
 
-        // Teammate events (agent_id present): update last_teammate_at timestamp.
-        // Preserves lead status except when clearing a resolved "permission" state.
+        // Extracted once, before the branch: SubagentStop normally carries agent_id and takes the
+        // teammate path, but subagent lifecycle events can also reach the lead path without one
+        // (the parent spawns and reaps the subagent), so a roster applied on only one branch would
+        // be dropped on the other. Declared as the interface both shapes satisfy — inferring the
+        // type would fix it to List<T>? and the Array.Empty<T>() reassignment would not compile.
+        IReadOnlyList<BackgroundTaskModel>? roster = hookEvent.BackgroundTasks;
+        if (roster is null && ClearsRoster(hookEvent.HookEventName, hookEvent.Source))
+        {
+            roster = Array.Empty<BackgroundTaskModel>();
+        }
+
+        // Teammate events (agent_id present): supply the running-task roster. No liveness
+        // timestamp is touched. Preserves lead status except when clearing a resolved
+        // "permission" state.
         if (!string.IsNullOrEmpty(hookEvent.AgentId))
         {
             if (existing is not null)
             {
-                var updated = TeammateGate.ApplyTeammateEvent(existing, hookEvent.HookEventName);
+                var updated = TeammateGate.ApplyTeammateEvent(existing, hookEvent.HookEventName, roster);
 
                 if (updated.Status != existing.Status)
                 {
@@ -200,6 +230,7 @@ internal static class HookCommand
             SessionName = hookEvent.SessionName,
             ToolName = hookEvent.ToolName,
             WslDistro = hookEvent.WslDistro ?? hookEnvironment.GetWslDistro(),
+            RunningTasks = roster,
         };
 
         // Populate StartedAt on the first SessionStart — persisted via FieldPreservation on all
@@ -244,6 +275,110 @@ internal static class HookCommand
         }
 
         return 0;
+    }
+
+    /// <summary>
+    /// True when an event carrying no roster must nonetheless overwrite the stored one with an
+    /// empty list, instead of letting <see cref="FieldPreservation.PreserveFields"/> carry the
+    /// previous roster forward. Two events qualify, for two different reasons:
+    /// <para>
+    /// <c>Stop</c> — the lead finished its turn and reported no running work. Degrading to empty
+    /// returns imrdy to lead-readiness-only behaviour should a Claude Code build ever drop the
+    /// field, rather than stranding the session at teal forever (D6, spec §8 E7).
+    /// </para>
+    /// <para>
+    /// <c>SessionStart</c> with source <c>startup</c> or <c>resume</c> — a process boundary.
+    /// Background tasks are owned by the Claude Code process that spawned them, so a roster
+    /// written by a previous process describes work that is already dead (D25, spec §8 E11).
+    /// </para>
+    /// <para>
+    /// <b>Every test is an exact equality, never a substring match.</b> Both event names are
+    /// proper substrings of an event that must NOT match: <c>SubagentStop</c>, where an absent
+    /// field leaves the stored roster untouched (spec §8 E8), and <c>SubagentStart</c>, which
+    /// fires when an agent <i>begins</i> work (spec §8 E12). A substring test compiles, reads
+    /// fine, and silently wipes a live roster on every subagent event — the exact false-green
+    /// regression this whole mechanism exists to remove. That is also why the helper is named
+    /// for what it does rather than for a family of event names.
+    /// </para>
+    /// <para>
+    /// <b>The source filter is an allowlist, deliberately.</b> <c>clear</c> and <c>compact</c>
+    /// are intra-session — the owning process is alive and its work keeps running — so they
+    /// preserve, and so does any unknown future source value. An unrecognised source therefore
+    /// fails toward stale teal, which is silent, rather than false green, which fires a toast at
+    /// the user on work that is still running (D25, spec §8 E11b).
+    /// </para>
+    /// </summary>
+    private static bool ClearsRoster(string eventName, string? source) =>
+        string.Equals(eventName, "Stop", StringComparison.OrdinalIgnoreCase)
+        || (string.Equals(eventName, "SessionStart", StringComparison.OrdinalIgnoreCase)
+            && (string.Equals(source, "startup", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(source, "resume", StringComparison.OrdinalIgnoreCase)));
+
+    /// <summary>
+    /// Renders a payload-derived value safe to interpolate into the single-line hook log by
+    /// replacing every control character with a visible escape (<c>\r</c>, <c>\n</c>, otherwise
+    /// <c>\xNN</c>).
+    /// <para>
+    /// The log is one line per hook event and is read with grep, so a field carrying CR or LF
+    /// would end the record early and let the remainder forge a second line that parses as a
+    /// genuine hook record. That matters more here than readability: the <c>tasks=</c> token is
+    /// the post-ship trip-wire for roster drift (D21, RK5), and a detection control that can be
+    /// spoofed by its own input fails silently — no exception, no test failure (CWE-117).
+    /// </para>
+    /// <para>
+    /// Escaped rather than stripped, deliberately. Stripping produces a clean-looking line and
+    /// destroys the only evidence that something tried to inject one; the escaped form keeps the
+    /// attempt greppable while making it inert.
+    /// </para>
+    /// </summary>
+    private static string EscapeLogField(string? value)
+    {
+        if (string.IsNullOrEmpty(value))
+        {
+            return "";
+        }
+
+        var needsEscape = false;
+        foreach (var c in value)
+        {
+            if (char.IsControl(c))
+            {
+                needsEscape = true;
+                break;
+            }
+        }
+
+        if (!needsEscape)
+        {
+            return value;
+        }
+
+        var sb = new StringBuilder(value.Length + 8);
+        foreach (var c in value)
+        {
+            switch (c)
+            {
+                case '\r':
+                    sb.Append("\\r");
+                    break;
+                case '\n':
+                    sb.Append("\\n");
+                    break;
+                default:
+                    if (char.IsControl(c))
+                    {
+                        sb.Append("\\x").Append(((int)c).ToString("x2"));
+                    }
+                    else
+                    {
+                        sb.Append(c);
+                    }
+
+                    break;
+            }
+        }
+
+        return sb.ToString();
     }
 
     /// <summary>

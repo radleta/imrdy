@@ -9,8 +9,8 @@ namespace Imrdy.Core.Hooks;
 /// Core invariant: <b>only the lead's own event stream determines whether the session is waiting
 /// for the user.</b> Subagent activity says nothing about lead readiness — modern Claude Code runs
 /// background agents that keep working after the lead has already returned control to the user.
-/// Subagent events therefore only refresh <c>last_teammate_at</c> (liveness, used for icon aging),
-/// with one exception: they clear a lead "permission" that the subagent itself resolved.
+/// Subagent events therefore only supply the running-task roster and, as the one exception, clear
+/// a lead "permission" that the subagent itself resolved. They never move the lead status.
 /// </para>
 /// </summary>
 public static class TeammateGate
@@ -23,22 +23,6 @@ public static class TeammateGate
         "PostToolUse",
         "PostToolUseFailure",
         "PermissionDenied",
-    };
-
-    /// <summary>
-    /// Subagent events that mark work <b>ending</b> rather than work happening. They must not
-    /// refresh <c>last_teammate_at</c>: that field answers "when was a subagent last doing work",
-    /// and a stop is the moment work ceased. Refreshing on a terminal event holds the session teal
-    /// for a further 2 minutes after the last agent has already finished, and a stray one — an
-    /// observed <c>SubagentStop</c> with an empty <c>agent_type</c> and no matching
-    /// <c>SubagentStart</c> — invents agent activity for a session that never had any.
-    /// </summary>
-    private static readonly HashSet<string> TerminalActivityEvents = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "SubagentStop",
-        "TaskCompleted",
-        "TeammateIdle",
-        "Stop",
     };
 
     /// <summary>
@@ -77,27 +61,28 @@ public static class TeammateGate
     }
 
     /// <summary>
-    /// True when the event means a subagent is actively working, as opposed to reporting that it
-    /// has stopped. Only ongoing activity refreshes the liveness window.
-    /// </summary>
-    public static bool IsOngoingActivity(string hookEventName)
-    {
-        return !TerminalActivityEvents.Contains(hookEventName);
-    }
-
-    /// <summary>
     /// Applies the teammate gate to an existing state file model.
-    /// Refreshes <c>last_teammate_at</c> on ongoing activity so the tray can keep the icon lively
-    /// while subagents work, and clears a "permission" the subagent resolved. The lead's status is
-    /// otherwise untouched — a subagent must never move the session off "waiting for the user".
+    /// Clears a "permission" the subagent resolved. The lead's status is otherwise untouched — a
+    /// subagent must never move the session off "waiting for the user".
+    /// <para>
+    /// <paramref name="roster"/> is orthogonal to that behavior. A non-null roster
+    /// (including an empty one) overwrites <c>RunningTasks</c> outright — an empty list means
+    /// "measured: nothing is running", which is a fact, not the absence of one. A <c>null</c>
+    /// roster means the event said nothing about what is running, so the existing roster is left
+    /// untouched. Permission-clearing behavior does not vary with any value of <paramref
+    /// name="roster"/>.
+    /// </para>
     /// </summary>
-    public static StateFileModel ApplyTeammateEvent(StateFileModel existing, string hookEventName)
+    public static StateFileModel ApplyTeammateEvent(
+        StateFileModel existing,
+        string hookEventName,
+        IReadOnlyList<BackgroundTaskModel>? roster)
     {
         var now = DateTimeOffset.UtcNow;
         var updated = existing with
         {
-            LastTeammateAt = IsOngoingActivity(hookEventName) ? now : existing.LastTeammateAt,
             Timestamp = now,
+            RunningTasks = roster ?? existing.RunningTasks,
         };
 
         if (ShouldClearPermission(existing.Status, hookEventName))

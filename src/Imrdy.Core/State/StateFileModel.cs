@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using Imrdy.Core.Hooks;
 
 namespace Imrdy.Core.State;
 
@@ -52,8 +53,14 @@ public sealed record StateFileModel
     [JsonPropertyName("session_name")]
     public string? SessionName { get; init; }
 
-    [JsonPropertyName("last_teammate_at")]
-    public DateTimeOffset? LastTeammateAt { get; init; }
+    /// <summary>
+    /// The roster of work still running, as measured by the most recent `Stop` /
+    /// `SubagentStop` hook event. `null` means unknown (no measurement carried by this
+    /// write); `[]` means measured-empty (everything finished). The two are never
+    /// normalised into each other — see <see cref="Imrdy.Core.Hooks.FieldPreservation"/>.
+    /// </summary>
+    [JsonPropertyName("running_tasks")]
+    public IReadOnlyList<BackgroundTaskModel>? RunningTasks { get; init; }
 
     [JsonPropertyName("started_at")]
     public DateTimeOffset? StartedAt { get; init; }

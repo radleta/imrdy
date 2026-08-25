@@ -1,5 +1,4 @@
 using Imrdy.Core.Hooks;
-using Imrdy.Core.Status;
 using Imrdy.Core.State;
 using FluentAssertions;
 
@@ -74,11 +73,10 @@ public class TeammateGateTests
     {
         var existing = CreateState("permission", "permission_prompt");
 
-        var result = TeammateGate.ApplyTeammateEvent(existing, "PostToolUse");
+        var result = TeammateGate.ApplyTeammateEvent(existing, "PostToolUse", null);
 
         result.Status.Should().Be("busy");
         result.NotificationType.Should().BeEmpty();
-        result.LastTeammateAt.Should().NotBeNull();
     }
 
     [Fact]
@@ -86,7 +84,7 @@ public class TeammateGateTests
     {
         var existing = CreateState("permission", "permission_prompt");
 
-        var result = TeammateGate.ApplyTeammateEvent(existing, "PostToolUseFailure");
+        var result = TeammateGate.ApplyTeammateEvent(existing, "PostToolUseFailure", null);
 
         result.Status.Should().Be("error");
         result.NotificationType.Should().BeEmpty();
@@ -97,7 +95,7 @@ public class TeammateGateTests
     {
         var existing = CreateState("permission", "permission_prompt");
 
-        var result = TeammateGate.ApplyTeammateEvent(existing, "PermissionDenied");
+        var result = TeammateGate.ApplyTeammateEvent(existing, "PermissionDenied", null);
 
         result.Status.Should().Be("idle");
         result.NotificationType.Should().BeEmpty();
@@ -113,7 +111,7 @@ public class TeammateGateTests
     {
         var existing = CreateState(existingStatus);
 
-        var result = TeammateGate.ApplyTeammateEvent(existing, "PostToolUse");
+        var result = TeammateGate.ApplyTeammateEvent(existing, "PostToolUse", null);
 
         result.Status.Should().Be(existingStatus);
     }
@@ -123,7 +121,7 @@ public class TeammateGateTests
     {
         var existing = CreateState("permission", "permission_prompt");
 
-        var result = TeammateGate.ApplyTeammateEvent(existing, "PreToolUse");
+        var result = TeammateGate.ApplyTeammateEvent(existing, "PreToolUse", null);
 
         result.Status.Should().Be("permission");
         result.NotificationType.Should().Be("permission_prompt");
@@ -154,7 +152,7 @@ public class TeammateGateTests
     {
         var existing = CreateState(status);
 
-        var result = TeammateGate.ApplyTeammateEvent(existing, eventName);
+        var result = TeammateGate.ApplyTeammateEvent(existing, eventName, null);
 
         result.Status.Should().Be(status);
     }
@@ -164,76 +162,10 @@ public class TeammateGateTests
     {
         var existing = CreateState("idle") with { NotificationType = "idle_prompt" };
 
-        var result = TeammateGate.ApplyTeammateEvent(existing, "PreToolUse");
+        var result = TeammateGate.ApplyTeammateEvent(existing, "PreToolUse", null);
 
         result.Status.Should().Be("idle");
         result.NotificationType.Should().Be("idle_prompt");
-    }
-
-    // --- Liveness window: only ongoing activity refreshes last_teammate_at ---
-    // A terminal event marks work ENDING. Refreshing on it holds the session teal for a further
-    // 2 minutes past the last agent's actual finish, and a stray SubagentStop (observed with an
-    // empty agent_type and no matching SubagentStart) would invent agent activity outright.
-
-    [Theory]
-    [InlineData("PreToolUse")]
-    [InlineData("PostToolUse")]
-    [InlineData("PostToolUseFailure")]
-    [InlineData("SubagentStart")]
-    [InlineData("UserPromptSubmit")]
-    [InlineData("TaskCreated")]
-    public void ApplyTeammateEvent_OngoingActivity_RefreshesLivenessWindow(string eventName)
-    {
-        var stale = DateTimeOffset.UtcNow.AddMinutes(-5);
-        var existing = CreateState("idle") with { LastTeammateAt = stale };
-
-        var result = TeammateGate.ApplyTeammateEvent(existing, eventName);
-
-        result.LastTeammateAt.Should().NotBeNull();
-        result.LastTeammateAt!.Value.Should().BeAfter(stale);
-    }
-
-    [Theory]
-    [InlineData("SubagentStop")]
-    [InlineData("TaskCompleted")]
-    [InlineData("TeammateIdle")]
-    [InlineData("Stop")]
-    public void ApplyTeammateEvent_TerminalEvent_LeavesLivenessWindowUntouched(string eventName)
-    {
-        var stale = DateTimeOffset.UtcNow.AddMinutes(-5);
-        var existing = CreateState("idle") with { LastTeammateAt = stale };
-
-        var result = TeammateGate.ApplyTeammateEvent(existing, eventName);
-
-        result.LastTeammateAt.Should().Be(stale);
-        result.Timestamp.Should().BeAfter(stale);   // the file still changed
-    }
-
-    [Fact]
-    public void ApplyTeammateEvent_StraySubagentStop_DoesNotInventAgentActivity()
-    {
-        // The observed phantom: SubagentStop with no prior subagent activity on the session.
-        // It must not make a genuinely free session look like it has agents running.
-        var existing = CreateState("idle") with { LastTeammateAt = null };
-
-        var result = TeammateGate.ApplyTeammateEvent(existing, "SubagentStop");
-
-        result.LastTeammateAt.Should().BeNull();
-        DisplayStatus.Resolve(result.Status, result.LastTeammateAt, DateTimeOffset.UtcNow)
-            .Should().Be("idle");
-    }
-
-    [Theory]
-    [InlineData("PreToolUse", true)]
-    [InlineData("PostToolUse", true)]
-    [InlineData("SubagentStart", true)]
-    [InlineData("SubagentStop", false)]
-    [InlineData("TaskCompleted", false)]
-    [InlineData("TeammateIdle", false)]
-    [InlineData("Stop", false)]
-    public void IsOngoingActivity_ClassifiesByWhetherWorkIsHappening(string eventName, bool ongoing)
-    {
-        TeammateGate.IsOngoingActivity(eventName).Should().Be(ongoing);
     }
 
     // --- IsSubagentLifecycleEvent ---
@@ -272,14 +204,11 @@ public class TeammateGateTests
         var existing = CreateState("busy") with
         {
             Timestamp = oldTime,
-            LastTeammateAt = oldTime,
         };
 
-        var result = TeammateGate.ApplyTeammateEvent(existing, "PreToolUse");
+        var result = TeammateGate.ApplyTeammateEvent(existing, "PreToolUse", null);
 
         result.Timestamp.Should().BeAfter(oldTime);
-        result.LastTeammateAt.Should().NotBeNull();
-        result.LastTeammateAt!.Value.Should().BeAfter(oldTime);
     }
 
     [Fact]
@@ -293,12 +222,113 @@ public class TeammateGateTests
             LastMessage = "hello",
         };
 
-        var result = TeammateGate.ApplyTeammateEvent(existing, "PreToolUse");
+        var result = TeammateGate.ApplyTeammateEvent(existing, "PreToolUse", null);
 
         result.SoundPack.Should().Be("Portal Turret");
         result.IconStyle.Should().Be("hexagons");
         result.DesktopIndex.Should().Be(2);
         result.LastMessage.Should().Be("hello");
         result.SessionId.Should().Be("test-session");
+    }
+
+    // --- ApplyTeammateEvent: running-task roster ---
+
+    [Fact]
+    public void ApplyTeammateEvent_NonEmptyRoster_StoresIt()
+    {
+        // Payloads drawn verbatim from scratch/agent-liveness-roster/evidence/capture.log
+        // (2026-08-20 13:20:38.976 SubagentStop entry). `command` is intentionally
+        // unmodelled on BackgroundTaskModel per spec §4.1.
+        var existing = CreateState("busy") with { RunningTasks = null };
+        var roster = new List<BackgroundTaskModel>
+        {
+            new()
+            {
+                Id = "bk44y8t1j",
+                Type = "shell",
+                Status = "running",
+                Description = "find / -ipath \"*Microsoft.AspNetCore.Antiforgery*\" -iname \"*.dll\" 2>/dev/null | head -20",
+            },
+            new()
+            {
+                Id = "a10105756c8021221",
+                Type = "subagent",
+                Status = "running",
+                Description = "Extend antiforgery fix in spec.md",
+                AgentType = "general-purpose",
+            },
+        };
+
+        var result = TeammateGate.ApplyTeammateEvent(existing, "SubagentStop", roster);
+
+        result.RunningTasks.Should().HaveCount(2);
+        result.RunningTasks![0].Id.Should().Be("bk44y8t1j");
+        result.RunningTasks[0].Type.Should().Be("shell");
+        result.RunningTasks[0].Status.Should().Be("running");
+        result.RunningTasks[0].Description.Should().Be("find / -ipath \"*Microsoft.AspNetCore.Antiforgery*\" -iname \"*.dll\" 2>/dev/null | head -20");
+        result.RunningTasks[0].AgentType.Should().BeNull();
+        result.RunningTasks[1].Id.Should().Be("a10105756c8021221");
+        result.RunningTasks[1].Type.Should().Be("subagent");
+        result.RunningTasks[1].Status.Should().Be("running");
+        result.RunningTasks[1].Description.Should().Be("Extend antiforgery fix in spec.md");
+        result.RunningTasks[1].AgentType.Should().Be("general-purpose");
+    }
+
+    [Fact]
+    public void ApplyTeammateEvent_EmptyRoster_OverwritesExisting()
+    {
+        // Gate-level twin of PreserveFields_RunningTasks_EmptyListOverwritesExisting (Step 3):
+        // an empty roster means "measured: nothing is running" and must overwrite a prior
+        // non-empty roster, not be normalised to null and fall back to `existing` via `??`.
+        var existingTasks = new List<BackgroundTaskModel>
+        {
+            new() { Id = "ac49354784c62a78e", Type = "subagent", Status = "running", Description = "Backfill three scope exclusions to idea.md", AgentType = "general-purpose" },
+        };
+        var existing = CreateState("busy") with { RunningTasks = existingTasks };
+
+        var result = TeammateGate.ApplyTeammateEvent(existing, "SubagentStop", []);
+
+        result.RunningTasks.Should().NotBeNull();
+        result.RunningTasks.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void ApplyTeammateEvent_NullRoster_LeavesExistingUntouched()
+    {
+        // Unit-level half of spec §8 E8 (background_tasks absent on SubagentStop preserves the
+        // roster). The end-to-end owner of E8 is Step 5's
+        // Run_SubagentStop_WithAbsentRoster_PreservesPriorRoster.
+        var existingTasks = new List<BackgroundTaskModel>
+        {
+            new() { Id = "a81d9ab9277c7fdbb", Type = "subagent", Status = "running", Description = "Iteration-8 plan fix pass", AgentType = "general-purpose" },
+        };
+        var existing = CreateState("busy") with { RunningTasks = existingTasks };
+
+        var result = TeammateGate.ApplyTeammateEvent(existing, "SubagentStop", null);
+
+        result.RunningTasks.Should().BeSameAs(existingTasks);
+    }
+
+    [Fact]
+    public void ApplyTeammateEvent_RosterDoesNotAffectPermissionClearing()
+    {
+        // Regression guard: the roster is orthogonal to lead-status gating. A PostToolUse on a
+        // permission lead must still clear to "busy" regardless of what the roster carries —
+        // asserted across a non-empty roster, an empty roster, and null.
+        var nonEmptyRoster = new List<BackgroundTaskModel>
+        {
+            new() { Id = "ac49354784c62a78e", Type = "subagent", Status = "running", Description = "Backfill three scope exclusions to idea.md", AgentType = "general-purpose" },
+        };
+
+        var nonEmptyResult = TeammateGate.ApplyTeammateEvent(CreateState("permission", "permission_prompt"), "PostToolUse", nonEmptyRoster);
+        var emptyResult = TeammateGate.ApplyTeammateEvent(CreateState("permission", "permission_prompt"), "PostToolUse", []);
+        var nullResult = TeammateGate.ApplyTeammateEvent(CreateState("permission", "permission_prompt"), "PostToolUse", null);
+
+        nonEmptyResult.Status.Should().Be("busy");
+        nonEmptyResult.NotificationType.Should().BeEmpty();
+        emptyResult.Status.Should().Be("busy");
+        emptyResult.NotificationType.Should().BeEmpty();
+        nullResult.Status.Should().Be("busy");
+        nullResult.NotificationType.Should().BeEmpty();
     }
 }

@@ -126,28 +126,72 @@ public class FieldPreservationTests
     }
 
     [Fact]
-    public void PreserveFields_LastTeammateAt_PreservesFromExisting()
+    public void PreserveFields_RunningTasks_PreservesFromExisting()
     {
-        var ts = new DateTimeOffset(2026, 4, 14, 12, 0, 0, TimeSpan.Zero);
-        var existing = CreateModel() with { LastTeammateAt = ts };
+        // Payload drawn verbatim from scratch/agent-liveness-roster/evidence/capture.log.
+        var runningTasks = new List<BackgroundTaskModel>
+        {
+            new()
+            {
+                Id = "a10105756c8021221",
+                Type = "subagent",
+                Status = "running",
+                Description = "Extend antiforgery fix in spec.md",
+                AgentType = "general-purpose",
+            },
+        };
+        var existing = CreateModel() with { RunningTasks = runningTasks };
         var newState = CreateModel();
 
         var result = FieldPreservation.PreserveFields(newState, existing);
 
-        result.LastTeammateAt.Should().Be(ts);
+        result.RunningTasks.Should().BeSameAs(runningTasks);
     }
 
     [Fact]
-    public void PreserveFields_LastTeammateAt_NewValueTakesPrecedence()
+    public void PreserveFields_RunningTasks_NewValueTakesPrecedence()
     {
-        var old = new DateTimeOffset(2026, 4, 14, 12, 0, 0, TimeSpan.Zero);
-        var newer = new DateTimeOffset(2026, 4, 14, 13, 0, 0, TimeSpan.Zero);
-        var existing = CreateModel() with { LastTeammateAt = old };
-        var newState = CreateModel() with { LastTeammateAt = newer };
+        // spec §8 E10 (parallel agents finishing one by one): the roster is never
+        // mutated in place — each Stop delivers a whole replacement — so this
+        // overwrite, repeated across successive Stops, IS the "decrements
+        // monotonically" behavior E10 describes.
+        var existingTasks = new List<BackgroundTaskModel>
+        {
+            new() { Id = "ab1a03f4c04d0844b", Type = "subagent", Status = "running", Description = "Timing probe 150s silent", AgentType = "general-purpose" },
+            new() { Id = "a81d9ab9277c7fdbb", Type = "subagent", Status = "running", Description = "Iteration-8 plan fix pass", AgentType = "general-purpose" },
+        };
+        var newTasks = new List<BackgroundTaskModel>
+        {
+            new() { Id = "a81d9ab9277c7fdbb", Type = "subagent", Status = "running", Description = "Iteration-8 plan fix pass", AgentType = "general-purpose" },
+        };
+        var existing = CreateModel() with { RunningTasks = existingTasks };
+        var newState = CreateModel() with { RunningTasks = newTasks };
 
         var result = FieldPreservation.PreserveFields(newState, existing);
 
-        result.LastTeammateAt.Should().Be(newer);
+        result.RunningTasks.Should().BeSameAs(newTasks);
+    }
+
+    [Fact]
+    public void PreserveFields_RunningTasks_EmptyListOverwritesExisting()
+    {
+        // The empty roster ([]) means "measured: everything finished" and must
+        // overwrite a prior non-empty roster rather than being normalised to null
+        // and falling back to `existing` via `??`. If a future change "helpfully"
+        // normalises [] to null on the write side, this test starts asserting the
+        // stale non-empty roster survived instead of the fresh empty measurement —
+        // that failure IS the regression this test exists to catch.
+        var existingTasks = new List<BackgroundTaskModel>
+        {
+            new() { Id = "ac49354784c62a78e", Type = "subagent", Status = "running", Description = "Backfill three scope exclusions to idea.md", AgentType = "general-purpose" },
+        };
+        var existing = CreateModel() with { RunningTasks = existingTasks };
+        var newState = CreateModel() with { RunningTasks = [] };
+
+        var result = FieldPreservation.PreserveFields(newState, existing);
+
+        result.RunningTasks.Should().NotBeNull();
+        result.RunningTasks.Should().BeEmpty();
     }
 
     [Fact]

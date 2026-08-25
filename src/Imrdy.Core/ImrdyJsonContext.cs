@@ -14,6 +14,8 @@ namespace Imrdy.Core;
 
 [JsonSerializable(typeof(StateFileModel))]
 [JsonSerializable(typeof(HookEventModel))]
+[JsonSerializable(typeof(BackgroundTaskModel))]
+[JsonSerializable(typeof(List<BackgroundTaskModel>))]
 [JsonSerializable(typeof(PackJson))]
 [JsonSerializable(typeof(GraphicsPackJson))]
 [JsonSerializable(typeof(GraphicsPackStateJson))]

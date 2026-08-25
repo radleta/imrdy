@@ -9,8 +9,9 @@ namespace Imrdy.Core.Hooks;
 public static class FieldPreservation
 {
     /// <summary>
-    /// Preserves sound_pack, desktop_index, and icon_style from an existing state file
-    /// when writing a new state. New values take precedence over existing ones.
+    /// Preserves sound_pack, desktop_index, icon_style, started_at, wsl_distro, and
+    /// running_tasks from an existing state file when writing a new state. New values
+    /// take precedence over existing ones.
     /// </summary>
     public static StateFileModel PreserveFields(StateFileModel newState, StateFileModel? existing)
     {
@@ -24,9 +25,9 @@ public static class FieldPreservation
             SoundPack = newState.SoundPack ?? existing.SoundPack,
             DesktopIndex = newState.DesktopIndex ?? existing.DesktopIndex,
             IconStyle = newState.IconStyle ?? existing.IconStyle,
-            LastTeammateAt = newState.LastTeammateAt ?? existing.LastTeammateAt,
             StartedAt = newState.StartedAt ?? existing.StartedAt,
             WslDistro = newState.WslDistro ?? existing.WslDistro,
+            RunningTasks = newState.RunningTasks ?? existing.RunningTasks,
         };
     }
 

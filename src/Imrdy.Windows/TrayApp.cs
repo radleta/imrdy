@@ -439,14 +439,15 @@ internal sealed class TrayApp : ApplicationContext, ISessionInteractionRouter
 
             var now = DateTimeOffset.UtcNow;
 
-            // Effective-status transitions. An idle lead with subagents still running displays as
-            // "done" (teal); it becomes "idle" (green) only once subagent activity ages out — a
-            // purely time-driven flip that no hook event announces, so it is detected here.
-            // This is also the sole dwell driver for status changes, which keeps teal silent and
-            // makes the toast/sound fire on the teal -> green edge.
+            // Effective-status transitions. An idle lead whose stored roster still lists running
+            // work displays as "done" (teal); it becomes "idle" (green) once a hook writes an empty
+            // roster. Resolve is pure now, so this loop fires only on genuine state changes rather
+            // than polling a clock — but it stays, because it is the sole dwell driver for status
+            // changes, which keeps teal silent and makes the toast/sound fire on the teal -> green
+            // edge.
             foreach (var (sessionId, entry) in _sessions)
             {
-                var effective = DisplayStatus.Resolve(entry.State.Status, entry.State.LastTeammateAt, now);
+                var effective = DisplayStatus.Resolve(entry.State.Status, entry.State.RunningTasks);
                 var previousEffective = entry.LastEffectiveStatus;
                 if (previousEffective == effective)
                 {
@@ -663,9 +664,11 @@ internal sealed class TrayApp : ApplicationContext, ISessionInteractionRouter
                 var mappedStatus = state.NotificationType switch
                 {
                     "permission_prompt" or "elicitation_dialog" => "permission",
-                    // idle_prompt confirms the lead is waiting, but stays silent while subagents
-                    // run — Resolve returns "done" there, which is not a toast event.
-                    "idle_prompt" => DisplayStatus.Resolve("idle", state.LastTeammateAt, DateTimeOffset.UtcNow),
+                    // idle_prompt confirms the lead is waiting, but stays silent while the stored
+                    // roster still lists running work — Resolve returns "done" there, which is not
+                    // a toast event. idle_prompt carries no roster of its own; the preserved one is
+                    // the roster the Stop seconds earlier wrote, in the same turn boundary.
+                    "idle_prompt" => DisplayStatus.Resolve("idle", state.RunningTasks),
                     _ => (string?)null,
                 };
                 if (mappedStatus is not null and not "done")

@@ -45,14 +45,17 @@ internal sealed class SessionEntry : IDisposable
     /// Used by sweep to skip re-processing unchanged state files.</summary>
     public DateTimeOffset? LastProcessedTimestamp { get; set; }
 
-    /// <summary>Status to display: the lead status, except an idle lead with subagents still
-    /// running shows as "done" (teal). See <see cref="DisplayStatus"/>. Always resolved fresh —
-    /// the teal → green flip is driven by elapsed time, not by any hook event.</summary>
+    /// <summary>Status to display: the lead status, except an idle lead whose stored roster still
+    /// lists running work shows as "done" (teal). See <see cref="DisplayStatus"/>. Resolved from
+    /// <see cref="StateFileModel.RunningTasks"/> alone, so it changes only when a hook writes a new
+    /// roster.</summary>
     public string EffectiveStatus
-        => DisplayStatus.Resolve(State.Status, State.LastTeammateAt, DateTimeOffset.UtcNow);
+        => DisplayStatus.Resolve(State.Status, State.RunningTasks);
 
     /// <summary>Last <see cref="EffectiveStatus"/> the drain tick acted on. Used to detect the
-    /// teal → green transition, which no hook event announces.</summary>
+    /// teal → green transition, which the state file now announces via the <c>Stop</c> that carries
+    /// an empty roster; the drain tick still owns the edge because it is the sole dwell driver for
+    /// status changes.</summary>
     public string? LastEffectiveStatus { get; set; }
 
     public void Dispose()
