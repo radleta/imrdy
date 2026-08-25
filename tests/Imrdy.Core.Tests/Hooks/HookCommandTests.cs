@@ -501,4 +501,62 @@ public class HookCommandTests : IDisposable
         ReadState(sid).RunningTasks.Should().ContainSingle()
             .Which.Id.Should().Be("bk44\r\nHook: forged \u0007 idle (Stop tasks=1[subagent:zz:running])");
     }
+
+    /// <summary>
+    /// The same forge-a-second-line attempt as <see cref="RosterInjectedNewline"/>, but arriving
+    /// through the fields the roster work left unescaped: <c>tool_name</c>, <c>message</c>,
+    /// <c>agent_id</c>, and an undeclared key that lands in <c>[JsonExtensionData]</c>.
+    /// <para>
+    /// The extension-data path is the one observed in the wild rather than reasoned about. Step 09
+    /// watched a session's own grep output reach the hook log through <c>tool_input</c>, and a
+    /// later RK5 census read that echo back as a roster reading — the injection class occurring by
+    /// accident, with no attacker (<c>live-run/RESULTS.md</c>). The payload below reproduces that
+    /// shape: text that both breaks the line and looks like a <c>tasks=</c> reading.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void Run_PayloadFieldsWithControlCharacters_HookLineStaysOnOneLine()
+    {
+        const string sid = "test-log-injection-fields-01";
+        var loggerFactory = new CapturingLoggerFactory();
+
+        var sc = new ServiceCollection();
+        sc.AddSingleton<StateFileReader>();
+        sc.AddSingleton<ILoggerFactory>(loggerFactory);
+        using var services = sc.BuildServiceProvider();
+
+        // Authored, not drawn from capture.log: no observed payload carries a control character.
+        // Raw string literal, so C# leaves the escape sequences alone and they reach the JSON
+        // parser intact, becoming real control characters in the deserialized values.
+        var json =
+            $$"""
+            {"hook_event_name":"PostToolUse","session_id":"{{sid}}","cwd":"/home/user/project",
+             "agent_id":"ag01\r\nHook: forged agent","tool_name":"Grep\r\nHook: forged tool",
+             "message":"m\u0007\r\nHook: forged msg",
+             "tool_input":"28: tasks=1[shell:zz:stopped]\r\nHook: forged idle (Stop)"}
+            """;
+
+        HookCommand.Run(services, new StringReader(json), new RecordingEnv()).Should().Be(0);
+
+        var hookLine = loggerFactory.Lines.Should().ContainSingle(l => l.Contains("tool=")).Subject;
+
+        hookLine.Should().NotContain("\r",
+            "the hook log is one line per event and is read with grep — a raw carriage return in " +
+            "any payload field ends the record early and lets the remainder forge a second line");
+        hookLine.Should().NotContain("\n",
+            "the hook log is one line per event and is read with grep — a raw line feed in any " +
+            "payload field ends the record early and lets the remainder forge a second line");
+
+        hookLine.Should().Contain("tool=Grep\\r\\nHook: forged tool",
+            "tool_name is payload-derived and must be escaped, not stripped, so an injection " +
+            "attempt stays greppable in the log rather than being laundered into a clean line");
+        hookLine.Should().Contain("msg=m\\x07\\r\\nHook: forged msg",
+            "message reaches the line through TruncateMessage, which shortens but does not " +
+            "sanitise, so the raw line break it carried survives into the log as an escape");
+        hookLine.Should().Contain("agent=ag01\\r\\nHook: forged agent",
+            "agent_id rides the same line as a structured argument and is equally payload-derived");
+        hookLine.Should().Contain("forged idle (Stop)",
+            "tool_input arrives via [JsonExtensionData] — the widest opening on this line, and " +
+            "the one step 09 observed carrying a session's own grep output back into the log");
+    }
 }

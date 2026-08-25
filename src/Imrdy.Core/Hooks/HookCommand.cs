@@ -73,19 +73,24 @@ internal static class HookCommand
             hookEvent.Source,
             hookEvent.NotificationType);
 
-        // Single-line hook log with all payload fields for grep-friendly diagnostics
+        // Single-line hook log with all payload fields for grep-friendly diagnostics.
+        // Every payload-derived value on this line goes through EscapeLogField. The log is one
+        // line per event and is read with grep, so any field carrying CR or LF ends the record
+        // early and lets its remainder forge a second line that parses as a genuine hook record
+        // (CWE-117). session_id is the one value not escaped here, and only because
+        // IsValidSessionId already rejected everything outside [A-Za-z0-9_-] above.
         var parts = new List<string>(8)
         {
-            $"{hookEvent.HookEventName}"
+            EscapeLogField(hookEvent.HookEventName)
         };
         if (!string.IsNullOrEmpty(hookEvent.NotificationType))
-            parts.Add($"type={hookEvent.NotificationType}");
+            parts.Add($"type={EscapeLogField(hookEvent.NotificationType)}");
         if (!string.IsNullOrEmpty(hookEvent.ToolName))
-            parts.Add($"tool={hookEvent.ToolName}");
+            parts.Add($"tool={EscapeLogField(hookEvent.ToolName)}");
         if (!string.IsNullOrEmpty(hookEvent.Source))
-            parts.Add($"source={hookEvent.Source}");
+            parts.Add($"source={EscapeLogField(hookEvent.Source)}");
         if (!string.IsNullOrEmpty(hookEvent.Message))
-            parts.Add($"msg={StateFileModel.TruncateMessage(hookEvent.Message, 80)}");
+            parts.Add($"msg={EscapeLogField(StateFileModel.TruncateMessage(hookEvent.Message, 80))}");
         // background_tasks is a typed property rather than extension data, so it has to be
         // logged explicitly or the diagnostic line silently loses the field (D10). This reads
         // the raw payload value, NOT the degraded roster local built below: an absent field
@@ -94,24 +99,29 @@ internal static class HookCommand
         // where it matters most (an absent field on a Stop). Each entry emits its status because
         // nothing else reads that field post-ship; a token whose entries are not "running" is
         // the only signal that the "every entry is live work" assumption has drifted (D21, RK5).
-        // Each field is escaped first: because this token IS the trip-wire, a roster field
-        // carrying a line break could split the one-line-per-event record and forge a second
-        // line that reads as a real hook record, silently degrading the control (CWE-117).
+        // Each field is escaped like every other token on this line, and the stakes are highest
+        // here: this token IS the trip-wire, so a roster field able to forge a log line would
+        // leave the control reporting readings it never took (D27, CWE-117).
         if (hookEvent.BackgroundTasks is { } payloadTasks)
         {
             var taskTriples = string.Join(",", payloadTasks.Select(
                 t => $"{EscapeLogField(t.Type)}:{EscapeLogField(t.Id)}:{EscapeLogField(t.Status)}"));
             parts.Add($"tasks={payloadTasks.Count}[{taskTriples}]");
         }
+        // Extension data is the widest opening on this line: it carries whatever undeclared keys
+        // a payload holds, tool_input among them, so its values routinely contain text no
+        // operator wrote. Step 09 watched a session's own grep output arrive through here and a
+        // later census parse it back as a roster reading — this injection class happening by
+        // accident, with no attacker (live-run/RESULTS.md). Key and value are both escaped.
         if (hookEvent.ExtensionData is { Count: > 0 })
         {
             foreach (var kv in hookEvent.ExtensionData)
-                parts.Add($"{kv.Key}={kv.Value}");
+                parts.Add($"{EscapeLogField(kv.Key)}={EscapeLogField(kv.Value.ToString())}");
         }
         var detailStr = string.Join(" ", parts);
         if (!string.IsNullOrEmpty(hookEvent.AgentId))
             logger.LogInformation("Hook: {SessionId} → {Status} ({Details}) [teammate agent={AgentId}]",
-                hookEvent.SessionId, status, detailStr, hookEvent.AgentId);
+                hookEvent.SessionId, status, detailStr, EscapeLogField(hookEvent.AgentId));
         else
             logger.LogInformation("Hook: {SessionId} → {Status} ({Details})",
                 hookEvent.SessionId, status, detailStr);
@@ -162,7 +172,7 @@ internal static class HookCommand
             else
             {
                 logger.LogWarning("Teammate hook fired before lead session exists: {SessionId} agent={AgentId}",
-                    hookEvent.SessionId, hookEvent.AgentId);
+                    hookEvent.SessionId, EscapeLogField(hookEvent.AgentId));
             }
 
             // Auto-spawn tray if not running (same as lead path).
@@ -321,9 +331,10 @@ internal static class HookCommand
     /// <para>
     /// The log is one line per hook event and is read with grep, so a field carrying CR or LF
     /// would end the record early and let the remainder forge a second line that parses as a
-    /// genuine hook record. That matters more here than readability: the <c>tasks=</c> token is
-    /// the post-ship trip-wire for roster drift (D21, RK5), and a detection control that can be
-    /// spoofed by its own input fails silently — no exception, no test failure (CWE-117).
+    /// genuine hook record. Every payload-derived token on the line goes through this, and the
+    /// stakes are highest on <c>tasks=</c>: that token is the post-ship trip-wire for roster
+    /// drift (D21, RK5), and a detection control that can be spoofed by its own input fails
+    /// silently — no exception, no test failure (CWE-117).
     /// </para>
     /// <para>
     /// Escaped rather than stripped, deliberately. Stripping produces a clean-looking line and
