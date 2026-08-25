@@ -42,6 +42,19 @@ The word `Code` does not appear in the anchor in any form, encoded or otherwise.
 
 Note the third case: the code span was the *leading* token, so the anchor starts at the first surviving word.
 
+**Two of those three headings no longer read that way, and that is the real lesson.** Satisfying
+`mdite lint` by hand-writing the stripped anchor on the *link* side produces an anchor that
+resolves here and dies on GitHub, which renders the code span and keeps its text in the slug. The
+durable fix is to take the code span out of the *heading*: `## The roster-clearing rule (D25)` and
+`## The running-work roster` slugify identically under both renderers — and because mdite had
+already been dropping the span, the three existing links needed no edit at all.
+
+``## Display resolution (`DisplayStatus`, render-time only)`` is deliberately left as written.
+Nothing links to it, so it has no anchor to break and stays here as a live specimen.
+
+Prefer the heading-side fix whenever a heading is a link target. Hand-write a stripped anchor only
+when the heading has to keep its code span.
+
 ## Matching tolerance
 
 mdite is **lenient about hyphen shape** — `#x--y` and `#x-y-` both resolve to `#x-y`. Collapsed hyphen runs and leading/trailing hyphens are forgiven.

@@ -1,6 +1,6 @@
 ---
 tags: [imrdy-expert/hooks]
-summary: "All 20 Claude Code hook events — what they send, status mapping, the background_tasks roster on Stop/SubagentStop and its type-dependent entry shape, and real-world behavior"
+summary: "All 20 Claude Code hook events — what they send, status mapping, the background_tasks roster on Stop/SubagentStop and its type-dependent entry shape, how to grep the tasks= token without reading your own echo, and real-world behavior"
 ---
 
 # Hook Events
@@ -130,7 +130,7 @@ code that reads them without a decision to do so.
 
 Undocumented fields land in `[JsonExtensionData]` on `HookEventModel` and are logged in the single-line hook log format.
 
-## `background_tasks` — the running-work roster
+## The running-work roster
 
 `Stop` and `SubagentStop` payloads carry a top-level `background_tasks` array listing everything
 still running for the session. **Only those two events carry it**, and both carry it always:
@@ -190,3 +190,34 @@ Every observed entry is `status: "running"` — **277/277 across `evidence/captu
 imrdy counts entries without inspecting that field, since filtering on a one-member vocabulary
 would fail silently the day the vocabulary changed. Each entry's `status` is emitted on the
 `tasks=` token of the hook log line so drift shows up in the logs rather than being guessed at.
+
+### Reading the `tasks=` token safely
+
+The obvious `grep -o "tasks=[0-9]*\[[^]]*\]"` **reports readings it never took.** That is not a
+hypothetical: the first RK5 census returned one non-`running` entry and appeared to trip the
+wire. The "entry" was the observing session's own grep output, echoed back into the hook log
+inside a `PostToolUse tool=Grep` payload — a log-injection false positive arriving by accident,
+with no attacker involved.
+
+Two ways the naive form goes wrong:
+
+- It matches inside `tool_input=` and `tool_response` values, which carry arbitrary echoed text.
+- `tasks=` is a substring of `background_tasks=`, so it matches that too, with an empty count.
+
+Every payload-derived field on the hook line is control-character escaped, so no field can forge
+a *second* log line. That closes the line-splitting half of the problem and **not** the substring
+half — an echoed `tasks=...[...]` still sits on the same line as a genuine record. Read the token
+like this:
+
+```bash
+grep " INF] Hook: " ~/.imrdy/logs/hook__*.log \
+  | sed 's/tool_input=.*//; s/tool_response.*//' \
+  | grep -o " tasks=[0-9]\+\[[^]]*\]" \
+  | grep -v ":running"        # any hit here is real drift
+```
+
+`[0-9]\+` rather than `[0-9]*`, because an empty count means it matched `background_tasks=`; the
+leading space excludes that substring directly.
+
+A census must also exclude the observing session — your own analysis commands land in the same
+shared log. Filtering to the subject's session id is correctness, not tidiness.

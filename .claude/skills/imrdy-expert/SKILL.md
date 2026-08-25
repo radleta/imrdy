@@ -14,7 +14,7 @@ You are an expert in the imrdy project — a Windows system tray monitor for Cla
 - [Tray Persistence Verbs](tray-persistence-verbs.md) — Catalog of every place the tray process writes JSON state to disk — a debugging checklist for persistence loss
 - [Field Preservation Catalog](field-preservation-catalog.md) — The 6 sticky fields in FieldPreservation.PreserveFields, the merge pattern, and the symmetry contract every new tray-owned field must satisfy
 - [WT Desktop Routing](wt-desktop-routing.md) — SwitchToSessionDesktop 3-step routing: resolve target → switch desktop → guarded focus. WT skipped from dynamic lookup; ForceForeground guarded against ping-pong; auto-lock on SessionStart only
-- [Hook Events](hook-events.md) — All 20 Claude Code hook events — what they send, status mapping, the background_tasks roster on Stop/SubagentStop and its type-dependent entry shape, and real-world behavior
+- [Hook Events](hook-events.md) — All 20 Claude Code hook events — what they send, status mapping, the background_tasks roster on Stop/SubagentStop and its type-dependent entry shape, how to grep the tasks= token without reading your own echo, and real-world behavior
 - [Teammate Detection](teammate-detection.md) — How imrdy reads the background_tasks roster Claude Code sends: the agent_id gate keeps subagents from moving lead status, Stop/SubagentStop supply running_tasks, and DisplayStatus.Resolve renders an idle lead with a non-empty roster as teal
 - [Notification Dwell](notification-dwell.md) — Dwell timer system that gates toast/sound behind status settling — prevents notification storms
 - [Status Mapping](status-mapping.md) — Two-layer status mapping: hook event → base status → RGB color, with 9 base statuses

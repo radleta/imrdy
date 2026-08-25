@@ -98,7 +98,7 @@ one event. See
 before concluding that a non-empty roster on a `SubagentStop` *is* self-inclusion — usually it is
 a stopping agent correctly reporting a different agent that is still running.
 
-## The roster-clearing rule (`ClearsRoster`, D25)
+## The roster-clearing rule (D25)
 
 Preserving the previous roster is the default, and it is correct almost everywhere. Two events are
 the exception and clear the stored roster to `[]` instead — **for different reasons**:

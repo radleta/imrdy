@@ -163,7 +163,7 @@ Target: `net10.0-windows10.0.17763.0` | PublishSingleFile + SelfContained | No I
 
 **Stop Signal**: Named `EventWaitHandle` (`Local\ImrdyStop`). `imrdy stop` signals it; tray listens on background thread, posts `ExitThread` to UI thread.
 
-**Hook Logging**: `~/.imrdy/logs/hook_.log` with same rotation as monitor log (1MB, 5 retained files). Info-level: one line per hook event (`SessionId → Status (HookEvent)`). Debug-level raw payloads via `IMRDY_LOG=1`. Uses `shared: true` for concurrent hook process writes.
+**Hook Logging**: `~/.imrdy/logs/hook_.log` with same rotation as monitor log (1MB, 5 retained files). Info-level: one line per hook event (`SessionId → Status (HookEvent)`). Debug-level raw payloads via `IMRDY_LOG=1`. Uses `shared: true` for concurrent hook process writes. Every payload-derived value on that line goes through `HookCommand.EscapeLogField` — the log is one line per event and is read with grep, so an unescaped CR/LF ends the record early and lets the remainder forge a second line that parses as a genuine record (CWE-117). `session_id` is the one exception, and only because `IsValidSessionId` already rejected everything outside `[A-Za-z0-9_-]`. Escaping does not make the `tasks=` token safe to grep naively — see "Reading the `tasks=` token safely" in `.claude/skills/imrdy-expert/hook-events.md`.
 
 **IPC Dev/Prod Gating**: `DiagnosticsConfig.IpcEnabled` is `bool?` — three-state. Resolution rule: `IpcEnabled ?? File.Exists(ImrdyPaths.DevBuildMarker)`. Null → dev-default-on, off-in-prod (no `.dev-build` file in production). Do NOT flatten null to `false` in `EnsureDefaults` — the three-state semantics are intentional. Explicitly setting `diagnostics.ipcEnabled: true` in `config.json` enables IPC in production.
 
