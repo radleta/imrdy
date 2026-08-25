@@ -48,11 +48,13 @@ return newState with
     SoundPack       = newState.SoundPack       ?? existing.SoundPack,
     DesktopIndex    = newState.DesktopIndex    ?? existing.DesktopIndex,
     IconStyle       = newState.IconStyle       ?? existing.IconStyle,
-    LastTeammateAt  = newState.LastTeammateAt  ?? existing.LastTeammateAt,
     StartedAt       = newState.StartedAt       ?? existing.StartedAt,
     WslDistro       = newState.WslDistro       ?? existing.WslDistro,
+    RunningTasks    = newState.RunningTasks    ?? existing.RunningTasks,
 };
 ```
+
+Note the last entry: `RunningTasks` serialises as `running_tasks` on disk and is populated from the `background_tasks` roster the hook payload carries. It is the one preserved field where an *empty* value is meaningful — `[]` means "measured: nothing is running" and must overwrite the previous roster. The `??` already does the right thing (an empty list is non-null), but it means this field is racy in one extra direction the others are not: a stale `existing` snapshot can resurrect a roster a later event had already emptied — and on the tray side, a tray RMW begun before an emptying hook write lands resurrects the prior roster the same way.
 
 If a future tray feature adds a new persisted field — say `entry.PreferredVoice` — and writes it via `PersistSessionField` **without** also adding `PreferredVoice` to the `PreserveFields` list, every hook event will silently overwrite it with `null`. This is the **drift hazard**.
 

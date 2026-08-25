@@ -69,9 +69,9 @@ Both files have **one writer** (the tray process). Atomic writes are race-immune
 |---|---|---|---|
 | `ConfigReader.cs:46` | config.json | Yes | RMW, last-writer-wins |
 | `WorkspaceStore.cs:53` | workspaces.json | Yes | RMW, last-writer-wins |
-| `HookCommand.cs:124` | session state (teammate path) | No | Updates `LastTeammateAt` only |
-| `HookCommand.cs:210` | session state (lead path) | No | Full state file rewrite per hook event |
-| `TrayApp.cs:845` | session state (`PersistSessionField`) | No | Updates one tray-owned field |
+| `HookCommand.cs:154` | session state (teammate path) | No | Not a full rewrite — an `existing with { … }` merge. Writes `Timestamp` and the `background_tasks` roster into `RunningTasks` (an empty roster overwrites: it means *measured, nothing is running*), and may clear a lead `permission` the subagent itself resolved — `TeammateGate.ApplyTeammateEvent` also blanks `NotificationType` in that case. The lead's status is otherwise carried forward untouched |
+| `HookCommand.cs:251` | session state (lead path) | No | Full state file rewrite per hook event |
+| `TrayApp.cs:953` | session state (`PersistSessionField`) | No | Updates one tray-owned field |
 | `StateFileReader.cs:51` | session state (the primitive) | No | `File.WriteAllBytes` |
 
 The single non-atomic file (session state) is also the **single file with two concurrent writers** — the hook process and the tray process. That combination is the source of the persistence-loss class of bugs documented in [Tray vs Hook Write Race](tray-hook-write-race.md).

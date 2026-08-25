@@ -14,8 +14,8 @@ You are an expert in the imrdy project — a Windows system tray monitor for Cla
 - [Tray Persistence Verbs](tray-persistence-verbs.md) — Catalog of every place the tray process writes JSON state to disk — a debugging checklist for persistence loss
 - [Field Preservation Catalog](field-preservation-catalog.md) — The 6 sticky fields in FieldPreservation.PreserveFields, the merge pattern, and the symmetry contract every new tray-owned field must satisfy
 - [WT Desktop Routing](wt-desktop-routing.md) — SwitchToSessionDesktop 3-step routing: resolve target → switch desktop → guarded focus. WT skipped from dynamic lookup; ForceForeground guarded against ping-pong; auto-lock on SessionStart only
-- [Hook Events](hook-events.md) — All 20 Claude Code hook events — what they send, status mapping, and real-world behavior
-- [Teammate Detection](teammate-detection.md) — 3-layer lead-readiness gating — subagent events never move lead status (deterministic gate), only refresh last_teammate_at (liveness tracking), which DisplayStatus.Resolve uses to render idle-with-agents-running as teal (display resolution)
+- [Hook Events](hook-events.md) — All 20 Claude Code hook events — what they send, status mapping, the background_tasks roster on Stop/SubagentStop and its type-dependent entry shape, and real-world behavior
+- [Teammate Detection](teammate-detection.md) — How imrdy reads the background_tasks roster Claude Code sends: the agent_id gate keeps subagents from moving lead status, Stop/SubagentStop supply running_tasks, and DisplayStatus.Resolve renders an idle lead with a non-empty roster as teal
 - [Notification Dwell](notification-dwell.md) — Dwell timer system that gates toast/sound behind status settling — prevents notification storms
 - [Status Mapping](status-mapping.md) — Two-layer status mapping: hook event → base status → RGB color, with 9 base statuses
 - [Overlay Interactivity](overlay-interactivity.md) — DragCompleted event fires at end of drag-to-reposition in OnMouseUp; companion to SurfaceInteracted with separate contract; subscription lifecycle identical (P6 TrayApp owns wiring)
@@ -51,6 +51,12 @@ You are an expert in the imrdy project — a Windows system tray monitor for Cla
 - [overlay-context-menu-foreground-dance](overlay-context-menu-foreground-dance.md) — AtControl context menus get foreground from an explicit SetForegroundWindow + InvokeWithForegroundAttached dance, not a WM_MOUSEACTIVATE exception — WndProc still returns MA_NOACTIVATE unconditionally
 - [overlay/mouseactivate-foreground-capture-timing](overlay/mouseactivate-foreground-capture-timing.md) — WM_MOUSEACTIVATE completes the foreground switch before the triggering button-down is delivered, so OnMouseDown/OnMouseUp run after activation — the reason a self-activating window cannot observe the user's prior foreground window
 - [testing/winforms-menu-tests-need-real-message-loop](testing/winforms-menu-tests-need-real-message-loop.md) — MenuRenderer.Apply asserts Application.MessageLoop, which a bare STA thread does not satisfy — ContextMenuStrip.Opening tests need a real Application.Run pump or the assert is swallowed as a misleading zero-items failure
+- [subagentstop-roster-usually-names-a-sibling](subagentstop-roster-usually-names-a-sibling.md) — SubagentStop rosters typically name sibling agents, not self-inclusion — compare agent_id carefully
+- [overlay-empty-fixture-renders-a-placeholder-chip](overlay-empty-fixture-renders-a-placeholder-chip.md) — The overlay empty fixture renders a visible placeholder chip — intended by Decision 6
+- [verbatim-capture-examples-leak-into-committed-docs](verbatim-capture-examples-leak-into-committed-docs.md) — Copying examples verbatim out of evidence captures can move real third-party content into committed pages
+- [scoped-rederivation-leaves-stale-neighbours](scoped-rederivation-leaves-stale-neighbours.md) — Scoping artifact corrections to one source file leaves stale neighbor citations untouched
+- [claude-local-md-is-gitignored-local-memory](claude-local-md-is-gitignored-local-memory.md) — CLAUDE.local.md is gitignored local working memory — it may or may not exist on any given machine, and git status --short will never list it, so any acceptance criterion asserting otherwise is unsatisfiable
+- [mdite-heading-anchor-slugs-drop-inline-code](mdite-heading-anchor-slugs-drop-inline-code.md) — mdite strips inline-code spans (backticks and their contents) from heading text before slugifying, so its anchors diverge from GitHub's — a heading with inline code cannot satisfy both renderers
 
 ## Meta
 

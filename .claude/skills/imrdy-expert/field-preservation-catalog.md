@@ -17,9 +17,9 @@ return newState with
     SoundPack       = newState.SoundPack       ?? existing.SoundPack,
     DesktopIndex    = newState.DesktopIndex    ?? existing.DesktopIndex,
     IconStyle       = newState.IconStyle       ?? existing.IconStyle,
-    LastTeammateAt  = newState.LastTeammateAt  ?? existing.LastTeammateAt,
     StartedAt       = newState.StartedAt       ?? existing.StartedAt,
     WslDistro       = newState.WslDistro       ?? existing.WslDistro,
+    RunningTasks    = newState.RunningTasks    ?? existing.RunningTasks,
 };
 ```
 
@@ -28,11 +28,20 @@ return newState with
 | `SoundPack` | Tray (per-session override) | Hook never sets it; without preservation, every hook event would `null` it out |
 | `DesktopIndex` | Tray (assigned when session first seen) | Hook never sets it; tracks which virtual desktop the session lives on |
 | `IconStyle` | Tray (per-session override) | Hook never sets it; resolution chain: session → workspace → global |
-| `LastTeammateAt` | Hook (teammate events) | Set on teammate hook events only; preserved across lead hook events |
 | `StartedAt` | Hook (first SessionStart only) | Set once; never overwritten on subsequent SessionStart (reconnect / tray restart) |
 | `WslDistro` | Hook (from env var, falls back to existing) | Stable per session; falls back to preserved value when env var not available |
+| `RunningTasks` | Hook (the `background_tasks` roster on the events that carry one) | Preserved across events that say nothing about what is running — except `Stop` and `SessionStart` (`startup`/`resume`), which also say nothing but still clear it to `[]` via `ClearsRoster` (see [Teammate Detection](teammate-detection.md#the-roster-clearing-rule-d25)) |
 
 > **Authoritative source:** when in doubt, `FieldPreservation.PreserveFields` is the canonical list. Doc pages mirror it; the code wins on disagreements.
+
+### `RunningTasks` is the one field where an empty value is meaningful
+
+For the other five, "absent" and "empty" collapse into the same thing — a `null` `SoundPack` just means the hook did not set it. `RunningTasks` distinguishes them:
+
+- **`null`** — this event said nothing about what is running. Fall through to `existing`.
+- **`[]`** — *measured*: nothing is running. This is a fact, not the absence of one, and it must overwrite whatever roster was there before. A session whose last agent just finished has to be able to go back to an empty roster.
+
+The existing `?? existing.` idiom already gets this right without a special case, because an empty list is non-null and therefore wins the `??`. The trap is writing a defensive `is { Count: > 0 }` guard somewhere upstream — that would swallow the "nothing is running" measurement and freeze the roster at its last non-empty value.
 
 ## The merge pattern
 
@@ -43,7 +52,7 @@ newField ?? existingField
 - **New value wins if it is non-null.** A hook event that explicitly sets a preserved field overwrites the existing value.
 - **Existing value wins if the new value is null.** This is the common case for tray-owned fields — the hook never sets them, so they always fall through to `existing`.
 
-This is **not a deep merge**. Nested object fields like `Hook` accumulator data are not selectively preserved — they're replaced wholesale by the hook's `newState`. Only the six scalar fields above survive.
+This is **not a deep merge**. Nested object fields like `Hook` accumulator data are not selectively preserved — they're replaced wholesale by the hook's `newState`. Only the six fields above survive, and each survives *whole*: `RunningTasks` is a list, but the `??` swaps the entire list reference. Roster entries are never merged element-wise, so a non-null roster replaces the previous one outright rather than being unioned with it.
 
 ## The symmetry contract
 

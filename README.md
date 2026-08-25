@@ -10,7 +10,7 @@ Managing multiple Claude Code sessions in parallel is an attention problem: know
 
 Each active Claude Code session gets a colored circle icon in the system tray:
 - **Red** = busy (working)
-- **Teal** = idle, but background agents are still running (waiting for you; silent, no toast — may resume itself)
+- **Teal** = idle, but the session's `background_tasks` roster still lists running work — agents or backgrounded shells (waiting for you; silent, no toast — may resume itself)
 - **Green** = idle, nothing running (genuinely waiting for your input)
 - **Orange** = needs attention
 - **Purple** = permission requested (elicitation dialog)

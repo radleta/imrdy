@@ -34,11 +34,22 @@ The hook runs hundreds of times per session. It must be fast (~50ms). No COM, no
 - `SoundPack` — assigned by tray, not hooks
 - `DesktopIndex` — assigned by tray
 - `IconStyle` — assigned by tray or workspace
-- `LastTeammateAt` — updated by teammate hooks, preserved by lead hooks
 - `StartedAt` — set once on first SessionStart, preserved across reconnects
 - `WslDistro` — stable per session, falls back to existing when env var unavailable
+- `RunningTasks` (`running_tasks`) — the running-work roster, written by whichever hook carried a
+  `background_tasks` array; preserved by every write that carried none
 
 Pattern: `newState.Field ?? existing.Field` — new value wins if set, otherwise keep existing.
+
+`RunningTasks` is the one entry whose `null` is load-bearing: `null` means "this write said nothing
+about running work" (preserve), while `[]` means "measured, nothing is running" (a real value that
+wins the merge). The two must never be normalised into each other — collapsing `[]` to `null` would
+make a `Stop` reporting no running work silently preserve a stale roster instead of clearing it.
+`HookCommand.ClearsRoster` is the counterpart on the write side: it substitutes `[]` for an absent
+roster on `Stop` and on `SessionStart` with `source` `startup`/`resume`, so those two events reach
+`PreserveFields` with a real value rather than a `null` that would preserve. See
+[Teammate Detection](teammate-detection.md) for that rule and why its `source` filter is an
+allowlist.
 
 This list is also the **symmetry contract** between hook writes and tray writes — any tray-owned field NOT on this list is silently dropped by the next hook event. See [Field Preservation Catalog](field-preservation-catalog.md) for the audit procedure, [Tray vs Hook Write Race](tray-hook-write-race.md) for the race window, [State File Write Path](state-file-write-path.md) for why the file is non-atomic, and [Tray Persistence Verbs](tray-persistence-verbs.md) for the full tray-side write surface.
 
@@ -54,7 +65,7 @@ TrayApp has multiple timers that interact:
 
 The drain timer is the central coordination point:
 1. Process queued file change events
-2. Recompute `DisplayStatus.Resolve` per session and diff against `SessionEntry.LastEffectiveStatus` — this is the sole detector for the time-driven teal → green flip, and the sole dwell driver for status changes (see [Teammate Detection](teammate-detection.md), [Status Mapping](status-mapping.md))
+2. Recompute `DisplayStatus.Resolve` per session and diff against `SessionEntry.LastEffectiveStatus` — the sole dwell driver for status changes, including the teal → green flip. `Resolve` is time-independent: it reads the stored roster, so this loop fires on genuine state changes rather than on the passage of time (see [Teammate Detection](teammate-detection.md), [Status Mapping](status-mapping.md))
 3. Dispatch fired dwell notifications
 
 The sweep timer is **existence-check only** since commit 4702e86 (`sweep-removal-busy-promotion`): it runs `CleanupGoneSessions`, which iterates the in-memory session entries and removes any whose state file no longer exists on disk. It does NOT re-read state file contents. FSW (FileSystemWatcher) is the sole real-time path for content changes — the drain timer drains queued FSW events on the 100ms tick. State file bootstrapping at startup is handled separately by `BootstrapSessions`, a one-time scan that runs before the timers start. `SessionEntry.LastProcessedTimestamp` still exists and is used in the FSW path (`HandleSessionFileChanged` returns early when the file's `Timestamp` matches `LastProcessedTimestamp`) — that early-return logic was preserved when the sweep re-read was removed.

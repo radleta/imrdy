@@ -46,12 +46,12 @@ Three layers prevent notification storms:
 
 When a new status change arrives before the dwell fires, it *replaces* the pending entry (latest wins). `LastNotifiedAt` is intentionally preserved across replacements to maintain the toast cooldown. This means rapid status cycling never triggers — only the final settled status fires.
 
-## Teammate-Aware Behavior (rewritten Aug 2026)
+## Roster-Aware Behavior (rewritten Aug 2026)
 
-See [Teammate Detection](teammate-detection.md) for the full lead-readiness/liveness/display-resolution
-system this replaced. Dwell no longer suppresses anything based on teammate activity — it dwells
-every effective-status transition, including "done", and lets the toast/sound layer decide what's
-worth surfacing:
+See [Teammate Detection](teammate-detection.md) for the full lead-readiness / roster /
+display-resolution system this replaced. Dwell no longer suppresses anything based on teammate
+activity — it dwells every effective-status transition, including "done", and lets the toast/sound
+layer decide what's worth surfacing:
 
 - **"done" dwells silently by construction, not by suppression.** A busy→done (or idle→done)
   transition creates and fires a dwell entry like any other, but `BalloonTipManager.DefaultToastEvents`
@@ -60,11 +60,36 @@ worth surfacing:
   `(_, "idle") when previousStatus is "busy" or "done"` → `SoundEvent.Finished`.
 - **`idle_prompt` has its own, separate dwell entry**, keyed by `NotificationType` rather than by the
   effective-status loop. `HandleSessionFileChanged` maps it through
-  `DisplayStatus.Resolve("idle", state.LastTeammateAt, now)`: if that resolves to "done" (subagents
-  still fresh), **no dwell entry is created for the notification at all** — the 60s idle_prompt
-  backstop stays silent while agents run, without touching `StateFileModel.Status`. If it resolves to
-  "idle", it dwells and, on firing, toasts (idle_prompt is exempted from the "notification-type
-  required" check) and plays `SoundEvent.Forgotten`.
+  `DisplayStatus.Resolve("idle", state.RunningTasks)`: if that resolves to "done" (the stored roster
+  still lists running work), **no dwell entry is created for the notification at all** — the 60s
+  idle_prompt backstop stays silent while work runs, without touching `StateFileModel.Status`. If it
+  resolves to "idle", it dwells and, on firing, toasts (idle_prompt is exempted from the
+  "notification-type required" check) and plays `SoundEvent.Forgotten`.
+
+  This is correct precisely because `idle_prompt` is **intra-session**: it fires seconds after the
+  lead `Stop` that wrote the roster, inside the same process, so the preserved roster is still
+  true. It carries no roster of its own and must not clear one.
+
+## The teal → green edge is hook-announced, not time-detected
+
+This is the part that changed. The edge used to be a *timeout*: nothing announced it, so the drain
+tick watched a clock and declared the session free once activity had been absent long enough. Dwell
+was therefore gating a notification whose trigger was the passage of time.
+
+Now the edge is announced by a hook event. A `Stop` arrives carrying an empty `background_tasks`
+roster, that roster lands in the state file on the same atomic write as `Status = "idle"`,
+`DisplayStatus.Resolve` stops returning "done", and the transition is a genuine state change with a
+payload behind it. Nothing infers it from silence.
+
+**The drain-tick loop is unchanged and remains the single dwell driver (D7).** `OnDrainTimerTick`
+still recomputes `Resolve` per session every 100ms and diffs against
+`SessionEntry.LastEffectiveStatus`; that diff is still what creates the dwell entry. The difference
+is only in what makes the diff non-empty — a hook write rather than an elapsed interval — so the
+loop now fires on genuine state changes only. Removing it is a separate, independently verifiable
+change and was deliberately not bundled here.
+
+Teal stays silent throughout (not in `DefaultToastEvents`, no sound arm) and the toast plus
+`SoundEvent.Finished` fire on the resulting done→idle edge, exactly as before.
 
 ## Sound Triggers
 

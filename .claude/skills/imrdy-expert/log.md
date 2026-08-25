@@ -78,3 +78,13 @@
 2026-08-21T21:35:43Z appended overlay-context-menu-foreground-dance
 2026-08-21T21:36:09Z created overlay/mouseactivate-foreground-capture-timing
 2026-08-21T21:36:11Z created testing/winforms-menu-tests-need-real-message-loop
+2026-08-24T23:12:35Z created subagentstop-roster-usually-names-a-sibling
+2026-08-24T23:32:31Z created overlay-empty-fixture-renders-a-placeholder-chip
+
+## [2026-08-24] lint | Tier-1 sweep (post-step-10)
+2026-08-24T23:46:06Z created claude-local-md-does-not-exist
+2026-08-25T00:19:59Z created verbatim-capture-examples-leak-into-committed-docs
+2026-08-25T00:47:39Z created scoped-rederivation-leaves-stale-neighbours
+2026-08-25T01:38:48Z created claude-local-md-is-gitignored-local-memory
+2026-08-25T01:38:59Z renamed claude-local-md-does-not-exist -> claude-local-md-is-gitignored-local-memory (page was stale: the file now exists)
+2026-08-25T01:43:49Z created mdite-heading-anchor-slugs-drop-inline-code
