@@ -36,9 +36,9 @@ public static class RemoteSessionMerge
         string originMachine)
     {
         // Incoming desktop_index is discarded outright, not merged: the publisher's desktop
-        // number means nothing on this machine, and D18's per-publisher mapping is the only
-        // source of a remote session's desktop. Preserving the receiver's own value keeps
-        // TrayApp's desktop_index write-back paths harmless rather than a race.
+        // number means nothing on this machine. The receiver's own value is preserved because it
+        // is the session's local desktop (auto-assigned on arrival or set from the session menu),
+        // which TrayApp prefers over D18's per-publisher mapping.
         return incoming with
         {
             OriginMachine = originMachine,

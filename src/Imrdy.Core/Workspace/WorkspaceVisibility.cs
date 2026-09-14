@@ -40,7 +40,9 @@ public sealed class WorkspaceVisibility
 
             foreach (var session in activeSessions)
             {
-                if (PathNormalizer.AreEqual(session.Cwd, normalizedPath))
+                // A workspace is a folder on this machine. A remote session in a folder with the
+                // same path is another checkout, so it neither hides the chip nor moves its desktop.
+                if (session.OriginMachine is null && PathNormalizer.AreEqual(session.Cwd, normalizedPath))
                 {
                     matchingSessions.Add(session);
                 }

@@ -970,6 +970,29 @@ internal sealed class TrayApp : ApplicationContext, ISessionInteractionRouter, I
                 }
             }
 
+            // A remote session has no local window to locate, so it defaults to the desktop its
+            // machine's other sessions were last on, else the one the user is on now. A
+            // publisher-wide mapping takes precedence, so skip it then. The value sticks because
+            // RemoteSessionMerge keeps the receiver's desktop_index.
+            if (state.OriginMachine is { } origin
+                && !MachineNameResolver.IsSameMachine(origin, Environment.MachineName)
+                && entry.DesktopIndex is null
+                && _publisherStore.Find(origin)?.DesktopIndex is null)
+            {
+                var desktop = RemoteDesktopDefault.Resolve(
+                    origin,
+                    entry.SessionId,
+                    _sessions.Values.Select(s => s.State with { DesktopIndex = s.DesktopIndex }),
+                    _desktopManager.GetCurrentDesktopIndex());
+                if (desktop.HasValue)
+                {
+                    entry.DesktopIndex = desktop.Value;
+                    PersistSessionDesktopIndex(entry);
+                    _logger.LogDebug("Auto-assigned remote session {SessionId} from {Machine} to desktop {Desktop}",
+                        entry.SessionId, origin, desktop.Value);
+                }
+            }
+
             // Session first observed as SessionEnd (tray started mid-session, or hook fired
             // before FSW picked up earlier writes) — start grace period so cleanup removes it.
             // Without this, FSW won't fire again and CleanupGoneSessions never sets RemoveAfter,
@@ -1033,8 +1056,10 @@ internal sealed class TrayApp : ApplicationContext, ISessionInteractionRouter, I
         // Load workspaces BEFORE sessions so ResolveSessionIconStyle has workspace data
         ReloadWorkspaces();
 
+        // Sessions that already have a desktop load first, so an unassigned remote session can
+        // inherit from its machine's siblings rather than from whatever desktop is active at startup.
         var stateFiles = _stateReader.ReadAllStateFiles(ImrdyPaths.Sessions);
-        foreach (var state in stateFiles)
+        foreach (var state in stateFiles.OrderBy(s => s.DesktopIndex is null))
         {
             HandleSessionFileChanged(Path.Combine(ImrdyPaths.Sessions, $"{state.SessionId}.json"));
         }
@@ -1745,8 +1770,10 @@ internal sealed class TrayApp : ApplicationContext, ISessionInteractionRouter, I
             return false;
         }
 
-        var mapped = _publisherStore.Find(origin)?.DesktopIndex;
-        if (mapped is null)
+        // The session's own desktop was set on this machine (auto-assigned on arrival or chosen
+        // from the session menu), so it wins over the publisher-wide mapping.
+        var target = entry.DesktopIndex ?? _publisherStore.Find(origin)?.DesktopIndex;
+        if (target is null)
         {
             _logger.LogInformation(
                 "Focus: session={Sid} is on {Machine}, which has no desktop mapping — nothing to switch to",
@@ -1758,11 +1785,12 @@ internal sealed class TrayApp : ApplicationContext, ISessionInteractionRouter, I
         if (_desktopManager.IsAvailable)
         {
             _logger.LogInformation(
-                "Focus: session={Sid} target=desktop {Target} (source=publisher {Machine})",
+                "Focus: session={Sid} target=desktop {Target} (source={Source} {Machine})",
                 entry.SessionId[..8],
-                mapped.Value,
+                target.Value,
+                entry.DesktopIndex.HasValue ? "session" : "publisher",
                 origin);
-            _desktopManager.SwitchToDesktop(mapped.Value);
+            _desktopManager.SwitchToDesktop(target.Value);
         }
 
         return true;

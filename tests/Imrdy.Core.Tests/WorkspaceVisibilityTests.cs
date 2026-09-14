@@ -48,6 +48,18 @@ public class WorkspaceVisibilityTests
     }
 
     [Fact]
+    public void Evaluate_RemoteSessionSamePath_WorkspaceVisibleAndDesktopUntouched()
+    {
+        var workspaces = new[] { MakeWorkspace(@"D:\dev\project", desktop: 0) };
+        var sessions = new[] { MakeSession(@"D:\dev\project", desktopIndex: 14) with { OriginMachine = "PC-EXCALIBUR" } };
+
+        var results = _visibility.Evaluate(workspaces, sessions);
+
+        results[0].IsVisible.Should().BeTrue();
+        results[0].TrackedDesktop.Should().Be(0);
+    }
+
+    [Fact]
     public void Evaluate_ActiveSessionDifferentPath_WorkspaceVisible()
     {
         var workspaces = new[] { MakeWorkspace(@"D:\dev\project-a") };
