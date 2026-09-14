@@ -268,7 +268,7 @@ imrdy integrates with Windows virtual desktops:
 - Toast notifications are suppressed for sessions on the current desktop
 - Pin workspaces to specific desktops via `imrdy workspace pin <path> --desktop 2`
 
-Supports Windows 10 (20H1+) and Windows 11 (all versions through 24H2).
+Supports Windows 10 (20H1+) and Windows 11 (all versions through 25H2).
 
 ## Cross-Machine Sessions
 

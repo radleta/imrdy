@@ -180,7 +180,7 @@ This is **display-only** — writing teal back into `StateFileModel.Status` woul
 
 ```bash
 dotnet build                                    # Debug build
-dotnet test --filter "Category!=Integration&Category!=Benchmark"  # Unit tests only (1116 tests: 1074 Core + 42 Windows)
+dotnet test --filter "Category!=Integration&Category!=Benchmark"  # Unit tests only (1151 tests: 1097 Core + 54 Windows)
 dotnet build src/Imrdy.Linux/Imrdy.Linux.csproj -r linux-x64   # The Linux hook+daemon binary, on the RID it ships on
 ./build-dev.sh                                  # Publish → stop tray/daemon → deploy to ~/.local/bin/ → auto-respawn → touches ~/.imrdy/.dev-build (enables default-Debug dev logging)
 ```
@@ -203,7 +203,7 @@ Target: `net10.0-windows10.0.17763.0` (Windows) / `net10.0` (Linux) | PublishSin
 
 ## Critical Constraints
 
-**COM Virtual Desktop Interop**: Uses undocumented `IVirtualDesktopManagerInternal` with build-keyed GUIDs (`VirtualDesktopGuids.cs`). Gracefully degrades on unknown Windows builds. Recovers from Explorer restart via lazy re-init on COMException. `PinWindowToAllDesktops(IntPtr)` on `IDesktopManager`/`ComVirtualDesktop` uses raw vtable dispatch (`UnmanagedFunctionPointer` delegates, `PinningGuids` static class, `IApplicationView` as opaque `IntPtr`) — no `ComImport` interface, since pinning requires locating the `IApplicationViewCollection` vtable slot at runtime.
+**COM Virtual Desktop Interop**: Uses undocumented `IVirtualDesktopManagerInternal`. The build number cannot pick its IID on its own, because servicing updates change the IID *within* a build (26200.9445 rejects `a3175f2d` with E_NOINTERFACE and accepts `53f5ca0b`). So `VirtualDesktopGuids.GetInternalLayouts(build)` returns a newest-first candidate list of `InternalLayout(Iid, HasMonitorArg, FindDesktopSlot)`, and `ComVirtualDesktop.GetManagerInternal` QueryServices each one, keeps the first accepted, and dispatches with that entry's layout (Debug log per candidate, one Warning only if all are rejected). **Each IID carries its own vtable layout. Never key the signature or slots off "is Windows 11"**: on `53f5ca0b` slot 13 is `RemoveDesktop`, not `FindDesktop` (slot 14), and the hWndOrMonitor argument is gone again. `SwitchDesktop` is slot 9 on every layout. Gracefully degrades on unknown Windows builds (empty list) or when every candidate is rejected. Recovers from Explorer restart via lazy re-init on COMException. `PinWindowToAllDesktops(IntPtr)` on `IDesktopManager`/`ComVirtualDesktop` uses raw vtable dispatch (`UnmanagedFunctionPointer` delegates, `PinningGuids` static class, `IApplicationView` as opaque `IntPtr`) — no `ComImport` interface, since pinning requires locating the `IApplicationViewCollection` vtable slot at runtime.
 
 **Single Instance**: Mutex-gated via `MutexAcl.TryOpenExisting` (`Global\ImrdyMonitor`). Hook fast-path probes mutex to decide whether to spawn tray.
 

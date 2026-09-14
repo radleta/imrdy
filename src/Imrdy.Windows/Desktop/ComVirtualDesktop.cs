@@ -16,7 +16,7 @@ internal sealed class ComVirtualDesktop : IDesktopManager
 {
     private readonly ILogger _logger;
     private readonly int _buildNumber;
-    private readonly Guid? _internalIid;
+    private readonly IReadOnlyList<InternalLayout> _internalLayouts;
     private readonly Guid? _virtualDesktopIid;
     private readonly object _lock = new();
 
@@ -28,6 +28,7 @@ internal sealed class ComVirtualDesktop : IDesktopManager
 
     // Undocumented COM interface — accessed via raw vtable calls
     private IntPtr _internalPtr;
+    private InternalLayout _internalLayout;
 
     // Pinning COM interface pointers — raw IntPtr to avoid .NET 10 CLR marshaler
     // refusing to generate a dispatch stub for `out IInspectable` on a ComImport IUnknown method.
@@ -37,16 +38,14 @@ internal sealed class ComVirtualDesktop : IDesktopManager
 
     public bool IsAvailable => _available && !_disposed;
 
-    private bool IsWindows11 => _buildNumber >= 22000;
-
     public ComVirtualDesktop(ILoggerFactory loggerFactory)
     {
         _logger = loggerFactory.CreateLogger<ComVirtualDesktop>();
         _buildNumber = Environment.OSVersion.Version.Build;
-        _internalIid = VirtualDesktopGuids.GetInternalIid(_buildNumber);
+        _internalLayouts = VirtualDesktopGuids.GetInternalLayouts(_buildNumber);
         _virtualDesktopIid = VirtualDesktopGuids.GetVirtualDesktopIid(_buildNumber);
 
-        if (_internalIid is null || _virtualDesktopIid is null)
+        if (_internalLayouts.Count == 0 || _virtualDesktopIid is null)
         {
             _logger.LogWarning("Unknown Windows build {Build} — virtual desktop switching disabled",
                 _buildNumber);
@@ -408,11 +407,6 @@ internal sealed class ComVirtualDesktop : IDesktopManager
 
     private IntPtr GetManagerInternal()
     {
-        if (_internalIid is null)
-        {
-            return IntPtr.Zero;
-        }
-
         try
         {
             // Get ImmersiveShell (the service provider)
@@ -430,19 +424,26 @@ internal sealed class ComVirtualDesktop : IDesktopManager
 
             try
             {
-                // QueryService for IVirtualDesktopManagerInternal
                 var serviceProvider = (IServiceProvider10)shell;
                 var sid = VirtualDesktopGuids.SID_VirtualDesktopManagerInternal;
-                var iid = _internalIid.Value;
-                var hr = serviceProvider.QueryService(ref sid, ref iid, out var ppvObject);
-                if (hr < 0 || ppvObject == IntPtr.Zero)
+                foreach (var layout in _internalLayouts)
                 {
-                    _logger.LogWarning("QueryService failed for IVirtualDesktopManagerInternal " +
-                        "(HRESULT: 0x{Hr:X8})", hr);
-                    return IntPtr.Zero;
+                    var iid = layout.Iid;
+                    var hr = serviceProvider.QueryService(ref sid, ref iid, out var ppvObject);
+                    if (hr >= 0 && ppvObject != IntPtr.Zero)
+                    {
+                        _internalLayout = layout;
+                        _logger.LogDebug("IVirtualDesktopManagerInternal IID {Iid} accepted", layout.Iid);
+                        return ppvObject;
+                    }
+
+                    _logger.LogDebug("QueryService rejected IVirtualDesktopManagerInternal IID {Iid} " +
+                        "(HRESULT: 0x{Hr:X8})", layout.Iid, hr);
                 }
 
-                return ppvObject;
+                _logger.LogWarning("QueryService rejected every known IVirtualDesktopManagerInternal IID " +
+                    "for build {Build}", _buildNumber);
+                return IntPtr.Zero;
             }
             finally
             {
@@ -595,7 +596,7 @@ internal sealed class ComVirtualDesktop : IDesktopManager
         // IVirtualDesktopManagerInternal::GetCurrentDesktop — vtable slot 6
         int hr;
         IntPtr desktopPtr;
-        if (IsWindows11)
+        if (_internalLayout.HasMonitorArg)
         {
             var fn = GetVtableDelegate<GetCurrentDesktopDelegate_Win11>(_internalPtr, 6);
             hr = fn(_internalPtr, IntPtr.Zero, out desktopPtr);
@@ -630,7 +631,7 @@ internal sealed class ComVirtualDesktop : IDesktopManager
         // IVirtualDesktopManagerInternal::GetDesktops — vtable slot 7
         int hr;
         IntPtr arrayPtr;
-        if (IsWindows11)
+        if (_internalLayout.HasMonitorArg)
         {
             var fn = GetVtableDelegate<GetDesktopsDelegate_Win11>(_internalPtr, 7);
             hr = fn(_internalPtr, IntPtr.Zero, out arrayPtr);
@@ -698,10 +699,8 @@ internal sealed class ComVirtualDesktop : IDesktopManager
             return;
         }
 
-        // IVirtualDesktopManagerInternal::FindDesktop
-        // Win10: slot 12 (F31574D6), Win11: slot 13 (B2F925B9)
-        var findSlot = IsWindows11 ? 13 : 12;
-        var findFn = GetVtableDelegate<FindDesktopDelegate>(_internalPtr, findSlot);
+        // IVirtualDesktopManagerInternal::FindDesktop — slot varies by IID
+        var findFn = GetVtableDelegate<FindDesktopDelegate>(_internalPtr, _internalLayout.FindDesktopSlot);
         var hr = findFn(_internalPtr, ref desktopId, out var desktopPtr);
         if (hr < 0 || desktopPtr == IntPtr.Zero)
         {
@@ -713,7 +712,7 @@ internal sealed class ComVirtualDesktop : IDesktopManager
         try
         {
             // IVirtualDesktopManagerInternal::SwitchDesktop — vtable slot 9
-            if (IsWindows11)
+            if (_internalLayout.HasMonitorArg)
             {
                 var switchFn = GetVtableDelegate<SwitchDesktopDelegate_Win11>(_internalPtr, 9);
                 hr = switchFn(_internalPtr, IntPtr.Zero, desktopPtr);
@@ -785,10 +784,10 @@ internal sealed class ComVirtualDesktop : IDesktopManager
     }
 
     // --- COM Delegates (vtable function signatures) ---
-    // Windows 10 (builds <22000): no hWndOrMonitor parameter
-    // Windows 11 (builds >=22000): added hWndOrMonitor parameter to GetCurrentDesktop, GetDesktops, SwitchDesktop
+    // Chosen by InternalLayout.HasMonitorArg, not by build: early Windows 11 IIDs added an
+    // hWndOrMonitor parameter to GetCurrentDesktop, GetDesktops, SwitchDesktop; 53F5CA0B dropped it again.
 
-    // Windows 10 signatures
+    // No hWndOrMonitor (Windows 10, Windows 11 53F5CA0B)
     [UnmanagedFunctionPointer(CallingConvention.StdCall)]
     private delegate int GetCurrentDesktopDelegate_Win10(IntPtr @this, out IntPtr desktop);
 
@@ -798,7 +797,7 @@ internal sealed class ComVirtualDesktop : IDesktopManager
     [UnmanagedFunctionPointer(CallingConvention.StdCall)]
     private delegate int SwitchDesktopDelegate_Win10(IntPtr @this, IntPtr desktop);
 
-    // Windows 11 signatures
+    // With hWndOrMonitor (Windows 11 B2F925B9, A3175F2D)
     [UnmanagedFunctionPointer(CallingConvention.StdCall)]
     private delegate int GetCurrentDesktopDelegate_Win11(IntPtr @this, IntPtr hWndOrMonitor,
         out IntPtr desktop);
