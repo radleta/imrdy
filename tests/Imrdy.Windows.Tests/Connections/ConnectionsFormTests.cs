@@ -94,6 +94,81 @@ public class ConnectionsFormTests
     }
 
     [Fact]
+    public void UnregisteredRow_DisablesEditAndRemove_RegisteredRowEnablesBoth()
+    {
+        // An unregistered row has no record to pre-fill: its editor would be the one Add… opens.
+        using var form = NewForm(new ConnectionsViewModel("box", true, 47600, AuthKeyConfigured: true, [
+            new ConnectionRow("alpha", "1.2.3.4:47600", IsRegistered: true, true, false, null, null, null, "never"),
+            new ConnectionRow("wsl-box", null, IsRegistered: false, true, false, null, null,
+                new SinkHealth("wsl-box", SinkState.FileSink, null, null, 0), "3s ago"),
+        ]));
+        form.Show();
+
+        var list = form.Controls.OfType<ListView>().Single();
+        var buttons = form.Controls.OfType<Button>().ToDictionary(b => b.Text);
+
+        list.Items.Cast<ListViewItem>().Single(i => i.Text == "wsl-box").Selected = true;
+        buttons["Edit…"].Enabled.Should().BeFalse();
+        buttons["Remove"].Enabled.Should().BeFalse();
+
+        list.SelectedItems.Clear();
+        list.Items.Cast<ListViewItem>().Single(i => i.Text == "alpha").Selected = true;
+        buttons["Edit…"].Enabled.Should().BeTrue();
+        buttons["Remove"].Enabled.Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData("PC-Excalibur-Ubuntu-24.04", "PC-Excalibur-Ubuntu-24.04")] // unregistered: its own name
+    [InlineData("alpha", "")] // registered: Add… is for a new record
+    [InlineData(null, "")] // nothing selected
+    [InlineData("old-box_lan", "")] // unregistered, named only by an old beat's token (r-11)
+    public void Add_StartsFromTheSelectedUnregisteredRowsName_AndNothingElse(string? select, string expectedName)
+    {
+        using var form = NewForm(new ConnectionsViewModel("box", true, 47600, AuthKeyConfigured: true, [
+            new ConnectionRow("alpha", "1.2.3.4:47600", IsRegistered: true, true, true, 4, null, null, "never"),
+            new ConnectionRow("PC-Excalibur-Ubuntu-24.04", null, IsRegistered: false, true, false, null, null,
+                new SinkHealth("PC-Excalibur-Ubuntu-24.04", SinkState.FileSink, null, null, 0), "3s ago"),
+            new ConnectionRow("old-box_lan", null, IsRegistered: false, true, false, null, null,
+                new SinkHealth("old-box_lan", SinkState.FileSink, null, null, 0), "3s ago", NameIsToken: true),
+        ]));
+        form.Show();
+
+        var list = form.Controls.OfType<ListView>().Single();
+        if (select is not null)
+        {
+            list.Items.Cast<ListViewItem>().Single(i => i.Text == select).Selected = true;
+        }
+
+        // Add… opens a modal dialog; a WinForms timer ticks inside its message loop, reads what the
+        // operator would see, and cancels it.
+        (string Title, string Name, string Endpoint, string Desktop, bool Muted)? seen = null;
+        using var timer = new System.Windows.Forms.Timer { Interval = 50 };
+        timer.Tick += (_, _) =>
+        {
+            if (Application.OpenForms.OfType<PublisherEditDialog>().FirstOrDefault() is not { } dialog) return;
+            timer.Stop();
+            seen = (dialog.Text, Field<TextBox>(dialog, "_name").Text, Field<TextBox>(dialog, "_endpoint").Text,
+                Field<TextBox>(dialog, "_desktop").Text, Field<CheckBox>(dialog, "_muted").Checked);
+            dialog.Close();
+        };
+        timer.Start();
+
+        form.Controls.OfType<Button>().Single(b => b.Text == "Add…").PerformClick();
+
+        seen.Should().NotBeNull("Add… must open the dialog");
+        seen!.Value.Title.Should().Be("imrdy — Add link", "it is still an add, not an edit");
+        seen.Value.Name.Should().Be(expectedName);
+        seen.Value.Endpoint.Should().BeEmpty("an unregistered row has no endpoint, and a registered one is not copied");
+        seen.Value.Desktop.Should().BeEmpty();
+        seen.Value.Muted.Should().BeFalse("alpha's mute must not leak into a new record");
+    }
+
+    private static T Field<T>(object owner, string name) =>
+        (T)owner.GetType()
+            .GetField(name, System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+            .GetValue(owner)!;
+
+    [Fact]
     public void NoLinks_SaysSo_RatherThanDrawingAnEmptyTableUnderPopulatedHeaders()
     {
         // Both CLI surfaces tell an operator with no links that they have none; the window

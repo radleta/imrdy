@@ -1,6 +1,6 @@
 using FluentAssertions;
 using Imrdy.Core.Publishing;
-using Imrdy.Core.State;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Imrdy.Core.Tests.Publishing;
 
@@ -8,17 +8,16 @@ namespace Imrdy.Core.Tests.Publishing;
 /// The caller-level cover for <c>f-filesink-no-socket</c>: a file-sink publisher opens no
 /// socket, so nothing it does ever reaches <c>WireListener.Health()</c> and a surface that
 /// enumerates publishers from the listener alone reports it as absent while it is actively
-/// delivering. The corpus already covered the TCP stranger — an inbound machine with no
-/// record — but it covered it by handing <c>ConnectionsViewModelBuilder</c> the
-/// <c>inbound</c> list directly, which cannot catch a caller that never reaches that
-/// parameter. These tests therefore start at the <em>disk</em>: a beat file and an ingested
-/// session file, nothing hand-fed.
+/// delivering. These tests start at the <em>disk</em> — a beat written by the real
+/// <see cref="HeartbeatWriter"/>, or the literal bytes an older one wrote — and never hand
+/// <c>ConnectionsViewModelBuilder</c> its input directly, which is the fixture shape that missed
+/// the defect.
 /// </summary>
 public class HeartbeatMachinesTests : IDisposable
 {
     private static readonly DateTimeOffset Now = new(2026, 9, 12, 12, 0, 0, TimeSpan.Zero);
 
-    /// <summary>A machine name that exercises the lossy part of the token: a dot and mixed case.</summary>
+    /// <summary>A machine name the filename token flattens: a dot and mixed case.</summary>
     private const string Machine = "PC-Excalibur-Ubuntu-24.04";
 
     private readonly string _root;
@@ -41,62 +40,53 @@ public class HeartbeatMachinesTests : IDisposable
         GC.SuppressFinalize(this);
     }
 
-    private void Beat(string machine, DateTimeOffset at)
+    /// <summary>A publisher registered against this receiver's sessions directory, beating once.</summary>
+    private void Beat(string machine, DateTimeOffset at) =>
+        new HeartbeatWriter(
+                () => [new PublisherEntry { Name = "receiver", Endpoint = _sessions }],
+                () => machine,
+                NullLogger.Instance)
+            .WriteIfDue(at).Should().BeTrue();
+
+    /// <summary>What a publisher built before the name was carried wrote: the timestamp alone.</summary>
+    private void OldBeat(string machine, DateTimeOffset at)
     {
         Directory.CreateDirectory(PublisherHeartbeat.DirectoryFor(_sessions));
-        File.WriteAllText(PublisherHeartbeat.PathFor(_sessions, machine), PublisherHeartbeat.Format(at));
+        File.WriteAllText(PublisherHeartbeat.PathFor(_sessions, machine), at.ToString("O"));
     }
 
-    private void IngestedSession(string id, string originMachine) =>
-        new StateFileReader().WriteStateFile(
-            Path.Combine(_sessions, id + ".json"),
-            new StateFileModel
-            {
-                SessionId = id,
-                Status = "idle",
-                Project = "demo",
-                Cwd = "/home/r/demo",
-                HookEvent = "Stop",
-                OriginMachine = originMachine,
-            });
+    private static ConnectionsViewModel Links(PublisherConfig publishers, IReadOnlyList<MachineBeat> beats) =>
+        LinksReport.Build(publishers, new NetworkConfig(), "receiver-box", wslDistro: null, beats, Now);
 
     [Fact]
-    public void Read_RecoversTheMachineNameFromAnIngestedSession_NotFromTheLossyToken()
+    public void Read_NamesThePublisherFromItsOwnBeat_WithNoSessionOnThisMachine()
     {
+        // The state the lossy filename could not survive: right after a retire, the beat is
+        // present and every session that could have carried origin_machine is gone.
         Beat(Machine, Now.AddSeconds(-3));
-        IngestedSession("s1", Machine);
 
-        var beats = HeartbeatMachines.Read(_sessions, registeredNames: []);
-
-        beats.Should().ContainSingle().Which.Name.Should().Be(
+        Directory.GetFiles(_sessions).Should().BeEmpty();
+        HeartbeatMachines.Read(_sessions).Should().ContainSingle().Which.Name.Should().Be(
             Machine,
-            "the beat filename flattens the dot and the case, so the only verbatim copy of the "
-            + "publisher's own name on this machine is what it stamped on the sessions it sent");
+            "the beat carries the publisher's own name, so the flattened filename never has to be "
+            + "reversed into one");
     }
 
     [Fact]
     public void LinksReport_WithNoPublishersJsonAtAll_StillReportsADeliveringFileSinkPublisher()
     {
-        // The exact shape the user's demo measured: a fresh beat on disk, ingested sessions
-        // carrying origin_machine, and an empty publishers.json — which printed "No links
-        // registered." while the publisher was delivering.
+        // The shape the user's demo measured: a fresh beat on disk and an empty publishers.json,
+        // which printed "No links registered." while the publisher was delivering.
         Beat(Machine, Now.AddSeconds(-3));
-        IngestedSession("s1", Machine);
 
-        var vm = LinksReport.Build(
-            new PublisherConfig(),
-            new NetworkConfig(),
-            "receiver-box",
-            wslDistro: null,
-            HeartbeatMachines.Read(_sessions, registeredNames: []),
-            Now);
+        var row = Links(new PublisherConfig(), HeartbeatMachines.Read(_sessions)).Rows.Should().ContainSingle().Subject;
 
-        var row = vm.Rows.Should().ContainSingle().Subject;
         row.Name.Should().Be(Machine);
         row.IsRegistered.Should().BeFalse("a receiver holds no allow-list (D24)");
         row.Endpoint.Should().BeNull();
         row.Inbound!.State.Should().Be(SinkState.FileSink, "there is no connection to call connected (D27)");
         row.LastDelivery.Should().Be("3s ago");
+        ConnectionRowFormatter.LastError(row).Should().BeEmpty();
         row.IsFailed.Should().BeFalse();
     }
 
@@ -107,28 +97,12 @@ public class HeartbeatMachinesTests : IDisposable
 
         var registered = new PublisherConfig
         {
-            Publishers =
-            [
-                new PublisherEntry
-                {
-                    Name = Machine,
-                    Endpoint = @"C:\Users\r\.imrdy\sessions",
-                    DesktopIndex = 3,
-                    Muted = true,
-                },
-            ],
+            Publishers = [new PublisherEntry { Name = Machine, Endpoint = null, DesktopIndex = 3, Muted = true }],
         };
 
-        var vm = LinksReport.Build(
-            registered,
-            new NetworkConfig(),
-            "receiver-box",
-            wslDistro: null,
-            HeartbeatMachines.Read(_sessions, registered.Publishers.Select(e => (string?)e.Name)),
-            Now);
-
-        var row = vm.Rows.Should().ContainSingle(
+        var row = Links(registered, HeartbeatMachines.Read(_sessions)).Rows.Should().ContainSingle(
             "a machine known by both a record and a beat is one publisher, not two").Subject;
+
         row.IsRegistered.Should().BeTrue();
         row.DesktopIndex.Should().Be(3, "the record's own values must survive the beat");
         row.Muted.Should().BeTrue();
@@ -136,103 +110,81 @@ public class HeartbeatMachinesTests : IDisposable
     }
 
     [Fact]
+    public void LinksReport_StaleBeat_StaysFileSinkAndSaysSo()
+    {
+        Beat(Machine, Now - PublisherHeartbeat.StaleAfter - TimeSpan.FromMinutes(1));
+
+        var row = Links(new PublisherConfig(), HeartbeatMachines.Read(_sessions)).Rows.Should().ContainSingle().Subject;
+
+        row.Name.Should().Be(Machine);
+        row.Inbound!.State.Should().Be(SinkState.FileSink, "imrdy links must not exit 1 on a distro that is merely down");
+        ConnectionRowFormatter.LastError(row).Should().Contain("no heartbeat for");
+    }
+
+    [Fact]
     public void Read_WithNoBeatsAtAll_ReportsNothing()
     {
-        IngestedSession("s1", Machine);
-
-        HeartbeatMachines.Read(_sessions, registeredNames: []).Should().BeEmpty(
+        HeartbeatMachines.Read(_sessions).Should().BeEmpty(
             "absence is not disconnection, and a receiver no file sink has ever written to must "
             + "behave exactly as it did before the heartbeat existed");
     }
 
     [Fact]
-    public void Resolve_FallsBackToTheToken_WhenNothingOnThisMachineNamesThePublisher()
+    public void Read_TimestampOnlyBeatFromAnOlderPublisher_StillReportsIt_UnderItsToken()
     {
-        // A publisher that beats but has not yet delivered a session and was never registered:
-        // the token is the only name in existence here, and a near-miss row beats no row.
-        Beat(Machine, Now.AddSeconds(-3));
+        // A partial upgrade: this receiver reads names, that publisher does not write one yet.
+        OldBeat(Machine, Now.AddSeconds(-3));
 
-        var beat = HeartbeatMachines.Read(_sessions, registeredNames: []).Should().ContainSingle().Subject;
+        var beat = HeartbeatMachines.Read(_sessions).Should().ContainSingle().Subject;
 
-        beat.Name.Should().Be(PublisherHeartbeat.TokenFor(Machine));
-        beat.NameIsToken.Should().BeTrue(
-            "a flattened name is fine to render and a silent trap to save: every behaviour keyed "
-            + "on a PublisherEntry joins on its name against the publisher's own origin_machine, "
-            + "so a record named 24_04 would never again match the machine sending 24.04");
+        beat.Name.Should().Be(PublisherHeartbeat.TokenFor(Machine), "the token is the only name that beat has");
+        beat.BeatAt.Should().Be(Now.AddSeconds(-3));
     }
 
     [Fact]
-    public void Read_RecoveredName_IsNotMarkedAsAToken()
+    public void LinksReport_OnlyATimestampOnlyBeatsRow_IsMarkedTokenNamed()
     {
+        // r-11: the window leaves Add…'s name empty on exactly this row, so the flag must come
+        // from the old beat on disk and from nowhere else.
+        OldBeat("old-box.lan", Now.AddSeconds(-3));
         Beat(Machine, Now.AddSeconds(-3));
-        IngestedSession("s1", Machine);
 
-        HeartbeatMachines.Read(_sessions, registeredNames: [])
-            .Should().ContainSingle().Which.NameIsToken.Should().BeFalse();
+        var rows = Links(new PublisherConfig(), HeartbeatMachines.Read(_sessions)).Rows;
+
+        rows.Should().HaveCount(2);
+        rows.Single(r => r.Name == PublisherHeartbeat.TokenFor("old-box.lan")).NameIsToken.Should().BeTrue();
+        rows.Single(r => r.Name == Machine).NameIsToken.Should().BeFalse("its name came from inside the beat");
     }
 
     [Fact]
-    public void LinksReport_TokenNamedRow_CarriesTheFlagAndSaysSoOnTheRow()
+    public void LinksReport_TimestampOnlyBeat_StillJoinsItsRegisteredRecord()
     {
-        // The first-run sequence: the daemon is up and beating before any session exists there.
-        Beat(Machine, Now.AddSeconds(-3));
-
-        var row = LinksReport.Build(
-                new PublisherConfig(),
-                new NetworkConfig(),
-                "receiver-box",
-                wslDistro: null,
-                HeartbeatMachines.Read(_sessions, registeredNames: []),
-                Now)
-            .Rows.Should().ContainSingle().Subject;
-
-        row.NameIsToken.Should().BeTrue("the window reads this to refuse seeding a record from it");
-        ConnectionRowFormatter.LastError(row).Should().Be(
-            ConnectionRowFormatter.NameDerived,
-            "imrdy links has no edit path, so the row's own cell is the only place the CLI can warn");
-    }
-
-    [Fact]
-    public void LinksReport_StaleAndTokenNamed_SaysBothRatherThanPickingOne()
-    {
-        Beat(Machine, Now - PublisherHeartbeat.StaleAfter - TimeSpan.FromMinutes(1));
-
-        var row = LinksReport.Build(
-                new PublisherConfig(),
-                new NetworkConfig(),
-                "receiver-box",
-                wslDistro: null,
-                HeartbeatMachines.Read(_sessions, registeredNames: []),
-                Now)
-            .Rows.Should().ContainSingle().Subject;
-
-        var error = ConnectionRowFormatter.LastError(row);
-        error.Should().Contain("no heartbeat for");
-        error.Should().Contain(ConnectionRowFormatter.NameDerived);
-    }
-
-    [Fact]
-    public void LinksReport_RegisteredMachineWithABeat_IsNeverMarkedTokenNamed()
-    {
-        // The record's name won, so the beat's own resolution is irrelevant — and the advisory
-        // must not ride along on a name the operator typed themselves.
-        Beat(Machine, Now.AddSeconds(-3));
+        OldBeat(Machine, Now.AddSeconds(-3));
 
         var registered = new PublisherConfig
         {
-            Publishers = [new PublisherEntry { Name = Machine, Endpoint = null }],
+            Publishers = [new PublisherEntry { Name = Machine, Endpoint = null, DesktopIndex = 2 }],
         };
 
-        var row = LinksReport.Build(
-                registered,
-                new NetworkConfig(),
-                "receiver-box",
-                wslDistro: null,
-                HeartbeatMachines.Read(_sessions, registered.Publishers.Select(e => (string?)e.Name)),
-                Now)
-            .Rows.Should().ContainSingle().Subject;
+        var row = Links(registered, HeartbeatMachines.Read(_sessions)).Rows.Should().ContainSingle(
+            "a record claims its beat by token, which an older beat still has").Subject;
 
-        row.NameIsToken.Should().BeFalse();
-        ConnectionRowFormatter.LastError(row).Should().BeEmpty();
+        row.Name.Should().Be(Machine);
+        row.IsRegistered.Should().BeTrue();
+        row.Inbound!.State.Should().Be(SinkState.FileSink);
+    }
+
+    [Fact]
+    public void Read_ControlCharactersInABeatsName_AreEscapedRatherThanRendered()
+    {
+        // The name arrived off another machine's mount, so it is untrusted however it was written.
+        Directory.CreateDirectory(PublisherHeartbeat.DirectoryFor(_sessions));
+        File.WriteAllText(
+            PublisherHeartbeat.PathFor(_sessions, "evil"),
+            "evil[2Jbox\n" + Now.ToString("O"));
+
+        var name = HeartbeatMachines.Read(_sessions).Should().ContainSingle().Subject.Name;
+
+        name.Should().Be("evil\\x1b[2Jbox");
     }
 }

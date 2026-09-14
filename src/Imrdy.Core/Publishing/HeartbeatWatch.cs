@@ -27,8 +27,8 @@ namespace Imrdy.Core.Publishing;
 public sealed class HeartbeatWatch
 {
     private readonly string _directory;
-    private IReadOnlyDictionary<string, DateTimeOffset> _beats =
-        new Dictionary<string, DateTimeOffset>(StringComparer.Ordinal);
+    private IReadOnlyDictionary<string, MachineBeat> _beats =
+        new Dictionary<string, MachineBeat>(StringComparer.Ordinal);
 
     /// <param name="heartbeatDirectory">
     /// Where publishers write their beats on this machine — <c>ImrdyPaths.Heartbeats</c> for
@@ -41,10 +41,10 @@ public sealed class HeartbeatWatch
     /// The current snapshot, keyed by <see cref="PublisherHeartbeat.TokenFor"/> token. Exposed
     /// because <see cref="IsDisconnected"/> answers about a publisher the caller can already
     /// name, and the connections surfaces have the opposite problem: they need to know a
-    /// file-sink publisher exists at all. The keys are tokens and a token is lossy, so name
-    /// them through <see cref="HeartbeatMachines.Resolve"/> rather than rendering a key.
+    /// file-sink publisher exists at all. The keys are lossy tokens; render
+    /// <see cref="MachineBeat.Name"/>, which the publisher wrote into its own beat.
     /// </summary>
-    public IReadOnlyDictionary<string, DateTimeOffset> Beats => _beats;
+    public IReadOnlyDictionary<string, MachineBeat> Beats => _beats;
 
     /// <summary>
     /// Re-reads every beat. Two failure levels, each deliberate. A <em>directory</em> that
@@ -55,15 +55,19 @@ public sealed class HeartbeatWatch
     /// </summary>
     public void Refresh()
     {
-        var beats = new Dictionary<string, DateTimeOffset>(StringComparer.Ordinal);
+        var beats = new Dictionary<string, MachineBeat>(StringComparer.Ordinal);
 
         try
         {
             foreach (var file in Directory.GetFiles(_directory, "*" + PublisherHeartbeat.FileExtension))
             {
-                if (PublisherHeartbeat.TryParse(ReadOrNull(file), out var beat))
+                if (PublisherHeartbeat.TryParse(ReadOrNull(file), out var beat, out var machine))
                 {
-                    beats[Path.GetFileNameWithoutExtension(file)] = beat;
+                    // A timestamp-only beat predates the name being carried. Its token is the
+                    // only name there is; it still answers IsDisconnected, which keys on the
+                    // token anyway.
+                    var token = Path.GetFileNameWithoutExtension(file);
+                    beats[token] = new MachineBeat(machine ?? token, beat, NameIsToken: machine is null);
                 }
             }
         }
@@ -82,7 +86,7 @@ public sealed class HeartbeatWatch
     /// </summary>
     public bool IsDisconnected(string machine, DateTimeOffset now) =>
         _beats.TryGetValue(PublisherHeartbeat.TokenFor(machine), out var beat)
-        && PublisherHeartbeat.IsStale(beat, now);
+        && PublisherHeartbeat.IsStale(beat.BeatAt, now);
 
     private static string? ReadOrNull(string file)
     {

@@ -59,23 +59,47 @@ public class PublisherHeartbeatTests
     }
 
     [Fact]
-    public void FormatAndTryParse_RoundTrip()
+    public void FormatAndTryParse_RoundTripTheTimestampAndTheName()
     {
         var beat = new DateTimeOffset(2026, 9, 11, 12, 34, 56, 789, TimeSpan.FromHours(-5));
 
-        PublisherHeartbeat.TryParse(PublisherHeartbeat.Format(beat), out var parsed).Should().BeTrue();
+        PublisherHeartbeat.TryParse(PublisherHeartbeat.Format("PC-Excalibur-Ubuntu-24.04", beat), out var parsed, out var machine)
+            .Should().BeTrue();
         parsed.Should().Be(beat);
+        machine.Should().Be("PC-Excalibur-Ubuntu-24.04", "the name the filename token cannot carry");
+    }
+
+    [Fact]
+    public void TryParse_TimestampOnlyBeat_StillParses_Nameless()
+    {
+        // What a publisher wrote before the name was carried. A partial upgrade must keep it alive.
+        PublisherHeartbeat.TryParse(Now.ToString("O"), out var parsed, out var machine).Should().BeTrue();
+        parsed.Should().Be(Now);
+        machine.Should().BeNull();
+    }
+
+    [Fact]
+    public void Format_NameWithANewline_CannotAddALine()
+    {
+        var text = PublisherHeartbeat.Format("box\n" + Now.ToString("O"), Now);
+
+        PublisherHeartbeat.TryParse(text, out var parsed, out var machine).Should().BeTrue();
+        parsed.Should().Be(Now);
+        machine.Should().StartWith("box\\n");
     }
 
     [Theory]
     [InlineData("")]
     [InlineData("   ")]
     [InlineData("not-a-timestamp")]
-    [InlineData("2026-09-11T12:00")] // a beat torn mid-write
+    [InlineData("2026-09-11T12:00")] // a timestamp-only beat torn mid-write
+    [InlineData("PC-Excalibur-Ubuntu-24.04\n2026-09-11T12:00")] // torn inside the timestamp
+    [InlineData("PC-Excalibur-Ubu")] // torn inside the name, before the newline
+    [InlineData("a\nb\n2026-09-11T12:00:00.0000000+00:00")]
     [InlineData(null)]
     public void TryParse_RejectsAnythingThatIsNotABeat(string? text)
     {
-        PublisherHeartbeat.TryParse(text, out _).Should().BeFalse();
+        PublisherHeartbeat.TryParse(text, out _, out _).Should().BeFalse();
     }
 
     [Theory]

@@ -30,7 +30,8 @@ internal sealed class PublisherEditDialog : Form
     public PublisherEntry? Result { get; private set; }
 
     /// <param name="existing">The record being edited, or null to add a new one.</param>
-    public PublisherEditDialog(PublisherEntry? existing)
+    /// <param name="name">When adding, the machine name to start from; ignored when editing.</param>
+    public PublisherEditDialog(PublisherEntry? existing, string? name = null)
     {
         Text = existing is null ? "imrdy — Add link" : $"imrdy — Edit {existing.Name}";
         FormBorderStyle = FormBorderStyle.FixedDialog;
@@ -54,6 +55,7 @@ internal sealed class PublisherEditDialog : Form
         }
         else
         {
+            _name.Text = name ?? string.Empty;
             _enabled.Checked = true;
         }
     }

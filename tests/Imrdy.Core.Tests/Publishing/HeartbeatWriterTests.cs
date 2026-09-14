@@ -39,14 +39,15 @@ public class HeartbeatWriterTests : IDisposable
         _entries.Add(new PublisherEntry { Name = name, Endpoint = _targetSessions, Enabled = enabled });
 
     [Fact]
-    public void WriteIfDue_FileLink_WritesABeatThatParsesBack()
+    public void WriteIfDue_FileLink_WritesABeatThatParsesBack_CarryingTheMachineName()
     {
         RegisterFileLink();
 
         Writer().WriteIfDue(Now).Should().BeTrue();
 
-        PublisherHeartbeat.TryParse(File.ReadAllText(BeatPath(_machine)), out var beat).Should().BeTrue();
+        PublisherHeartbeat.TryParse(File.ReadAllText(BeatPath(_machine)), out var beat, out var machine).Should().BeTrue();
         beat.Should().Be(Now);
+        machine.Should().Be(_machine);
     }
 
     [Fact]
@@ -85,7 +86,7 @@ public class HeartbeatWriterTests : IDisposable
         var later = Now + PublisherHeartbeat.Interval;
         writer.WriteIfDue(later).Should().BeTrue();
 
-        PublisherHeartbeat.TryParse(File.ReadAllText(BeatPath(_machine)), out var beat);
+        PublisherHeartbeat.TryParse(File.ReadAllText(BeatPath(_machine)), out var beat, out _);
         beat.Should().Be(later);
     }
 

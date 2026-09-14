@@ -171,9 +171,7 @@ internal static class LinksCommand
             ConfigReader.Read().Network,
             Environment.MachineName,
             Environment.GetEnvironmentVariable("WSL_DISTRO_NAME"),
-            HeartbeatMachines.Read(
-                ImrdyPaths.Sessions,
-                publishers.Publishers.Select(entry => (string?)entry.Name)),
+            HeartbeatMachines.Read(ImrdyPaths.Sessions),
             DateTimeOffset.UtcNow);
     }
 

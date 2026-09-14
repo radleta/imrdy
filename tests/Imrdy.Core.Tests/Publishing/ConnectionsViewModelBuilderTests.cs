@@ -155,7 +155,7 @@ public class ConnectionsViewModelBuilderTests
     {
         var beat = Now - PublisherHeartbeat.StaleAfter - TimeSpan.FromMinutes(4);
 
-        var row = Build(Config(), heartbeats: [new MachineBeat("wsl-box", beat, NameIsToken: false)])
+        var row = Build(Config(), heartbeats: [new MachineBeat("wsl-box", beat)])
             .Rows.Should().ContainSingle().Subject;
 
         row.Inbound!.State.Should().Be(
@@ -169,7 +169,7 @@ public class ConnectionsViewModelBuilderTests
     [Fact]
     public void Build_FreshBeat_ReportsNoError()
     {
-        var row = Build(Config(), heartbeats: [new MachineBeat("wsl-box", Now.AddSeconds(-4), NameIsToken: false)])
+        var row = Build(Config(), heartbeats: [new MachineBeat("wsl-box", Now.AddSeconds(-4))])
             .Rows.Should().ContainSingle().Subject;
 
         ConnectionRowFormatter.LastError(row).Should().BeEmpty();
@@ -185,7 +185,7 @@ public class ConnectionsViewModelBuilderTests
         var vm = Build(
             Config(Entry("wsl-box")),
             inbound: [Health("wsl-box", SinkState.Connected)],
-            heartbeats: [new MachineBeat("wsl-box", Now.AddSeconds(-4), NameIsToken: false)]);
+            heartbeats: [new MachineBeat("wsl-box", Now.AddSeconds(-4))]);
 
         vm.Rows.Should().ContainSingle().Which.Inbound!.State.Should().Be(SinkState.Connected);
     }

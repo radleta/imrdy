@@ -1,3 +1,5 @@
+using Imrdy.Core.Validation;
+
 namespace Imrdy.Core.Publishing;
 
 /// <summary>
@@ -29,8 +31,13 @@ namespace Imrdy.Core.Publishing;
 /// threshold below is derived from.
 /// </para>
 /// <para>
-/// The payload is one ISO-8601 round-trip timestamp and nothing else — no JSON — so it needs
-/// no <c>ImrdyJsonContext</c> registration and a torn read simply fails to parse.
+/// The payload is two lines, no JSON, so it needs no <c>ImrdyJsonContext</c> registration: the
+/// publisher's own machine name, then one ISO-8601 round-trip timestamp. The name is carried
+/// because the filename cannot carry it — <see cref="TokenFor"/> is lossy — and it is the one
+/// source of a publisher's name that survives a receiver holding none of its sessions. The
+/// timestamp goes last so a write torn anywhere leaves a timestamp that fails the exact parse:
+/// a torn beat is a clean miss, never a wrong name or a wrong age. A beat written before the
+/// name was added is the timestamp alone, and still parses, nameless.
 /// </para>
 /// </summary>
 public static class PublisherHeartbeat
@@ -42,10 +49,12 @@ public static class PublisherHeartbeat
     public const string FileExtension = ".hb";
 
     /// <summary>
-    /// Longest filename token derived from a machine name. Matches
-    /// <c>WireListener.MaxMachineNameLength</c>, so the two bounds on the same string agree.
+    /// Longest filename token, and longest name carried in a beat. Matches
+    /// <c>WireListener.MaxMachineNameLength</c> and <c>SessionIngest</c>'s bound on the
+    /// <c>origin_machine</c> it stamps, so every bound on the same string agrees — and a beat's
+    /// name equals the <c>origin_machine</c> on the sessions that publisher delivered.
     /// </summary>
-    private const int MaxTokenLength = 64;
+    private const int MaxNameLength = 64;
 
     /// <summary>Token used when a machine name sanitizes to nothing at all.</summary>
     private const string FallbackToken = "unnamed";
@@ -120,7 +129,7 @@ public static class PublisherHeartbeat
         }
 
         var trimmed = machine.Trim();
-        var length = Math.Min(trimmed.Length, MaxTokenLength);
+        var length = Math.Min(trimmed.Length, MaxNameLength);
         var token = new char[length];
 
         for (var i = 0; i < length; i++)
@@ -134,25 +143,53 @@ public static class PublisherHeartbeat
         return new string(token);
     }
 
-    /// <summary>Renders a beat. Round-trip format so it parses back exactly, offset included.</summary>
-    public static string Format(DateTimeOffset beat) => beat.ToString("O");
+    /// <summary>
+    /// Renders a beat: the machine name, a newline, then the round-trip timestamp. The name is
+    /// escaped and bounded exactly as <c>SessionIngest</c> stamps <c>origin_machine</c>, so a
+    /// control character cannot add a line and the two copies of the name match.
+    /// </summary>
+    public static string Format(string machine, DateTimeOffset beat) =>
+        LogFieldEscaper.EscapeBounded(machine, MaxNameLength) + "\n" + beat.ToString("O");
 
     /// <summary>
-    /// Reads a beat back. Exact rather than lenient on purpose: the format is ours, and a beat
-    /// torn mid-write is often still a <em>parseable</em> timestamp under lenient rules — just
-    /// the wrong one, which would be read as a live publisher's age. Exact parsing turns that
-    /// into a clean miss instead.
+    /// Reads a beat back. The timestamp is parsed exact rather than lenient on purpose: the
+    /// format is ours, and a beat torn mid-write is often still a <em>parseable</em> timestamp
+    /// under lenient rules — just the wrong one, which would be read as a live publisher's age.
+    /// Exact parsing turns that into a clean miss instead.
+    /// <para>
+    /// <paramref name="machine"/> is null for a timestamp-only beat, the format before the name
+    /// was carried, so a partial upgrade keeps an older publisher's liveness rather than losing
+    /// it. The name came off another machine's mount, so it is escaped and bounded again here:
+    /// both operations are idempotent on what <see cref="Format"/> wrote.
+    /// </para>
     /// </summary>
-    public static bool TryParse(string? text, out DateTimeOffset beat)
+    public static bool TryParse(string? text, out DateTimeOffset beat, out string? machine)
     {
         beat = default;
-        return !string.IsNullOrWhiteSpace(text)
-               && DateTimeOffset.TryParseExact(
-                   text.Trim(),
-                   "O",
-                   System.Globalization.CultureInfo.InvariantCulture,
-                   System.Globalization.DateTimeStyles.RoundtripKind,
-                   out beat);
+        machine = null;
+
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return false;
+        }
+
+        var lines = text.Trim().Split('\n');
+        if (lines.Length > 2 || !DateTimeOffset.TryParseExact(
+                lines[^1].Trim(),
+                "O",
+                System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.RoundtripKind,
+                out beat))
+        {
+            return false;
+        }
+
+        if (lines.Length == 2 && !string.IsNullOrWhiteSpace(lines[0]))
+        {
+            machine = LogFieldEscaper.EscapeBounded(lines[0].TrimEnd('\r'), MaxNameLength);
+        }
+
+        return true;
     }
 
     /// <summary>

@@ -99,7 +99,7 @@ public static class ConnectionsViewModelBuilder
             if (beatsClaimed.Contains(PublisherHeartbeat.TokenFor(beat.Name))) continue;
             if (!seen.Add(beat.Name)) continue;
 
-            var health = BeatHealth(beat.Name, beat.BeatAt, now, beat.NameIsToken);
+            var health = BeatHealth(beat.Name, beat.BeatAt, now);
             var outboundHealth = Lookup(outboundByName, beat.Name);
 
             rows.Add(new ConnectionRow(
@@ -164,9 +164,7 @@ public static class ConnectionsViewModelBuilder
 
         claimed.Add(token);
 
-        // The caller's name won — a record's or a hello's — so whatever the beat resolved to is
-        // irrelevant here and the derived-name advisory must not ride along on a real name.
-        return BeatHealth(name, beat.BeatAt, now, nameIsToken: false);
+        return BeatHealth(name, beat.BeatAt, now);
     }
 
     /// <summary>
@@ -178,32 +176,14 @@ public static class ConnectionsViewModelBuilder
     /// ages off <see cref="SinkHealth.LastSuccessAt"/>, and past
     /// <see cref="PublisherHeartbeat.StaleAfter"/> the last-error cell says so outright — the
     /// same moment the tray paints D20's disconnected treatment, from the same beat.
-    /// <para>
-    /// The last-error cell is also where a token-derived name says so. That cell is this row's one
-    /// channel to the operator on both surfaces — `imrdy links` has no edit path at all, so it is
-    /// the only place the CLI can warn — and it already carries the staleness advisory, which is
-    /// no more a transport error than this is. Both can be true at once, so they compose.
-    /// </para>
     /// </summary>
-    private static SinkHealth BeatHealth(string name, DateTimeOffset beat, DateTimeOffset now, bool nameIsToken)
-    {
-        var notes = new List<string>(2);
-
-        if (PublisherHeartbeat.IsStale(beat, now))
-        {
-            notes.Add($"no heartbeat for {RelativeTimeFormatter.FormatDuration(now - beat)} — publisher may be gone");
-        }
-
-        if (nameIsToken)
-        {
-            notes.Add(ConnectionRowFormatter.NameDerived);
-        }
-
-        return new SinkHealth(
+    private static SinkHealth BeatHealth(string name, DateTimeOffset beat, DateTimeOffset now) =>
+        new(
             name,
             SinkState.FileSink,
             beat,
-            notes.Count == 0 ? null : string.Join(" · ", notes),
+            PublisherHeartbeat.IsStale(beat, now)
+                ? $"no heartbeat for {RelativeTimeFormatter.FormatDuration(now - beat)} — publisher may be gone"
+                : null,
             SessionCount: 0);
-    }
 }

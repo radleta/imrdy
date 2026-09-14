@@ -39,7 +39,7 @@
       "lastDelivery": "14m 15s ago"
     },
     {
-      "name": "pc-excalibur-ubuntu-22_04",
+      "name": "pc-excalibur-Ubuntu-22.04",
       "endpoint": null,
       "isRegistered": false,
       "enabled": true,
@@ -47,14 +47,13 @@
       "desktopIndex": null,
       "outbound": null,
       "inbound": {
-        "name": "pc-excalibur-ubuntu-22_04",
+        "name": "pc-excalibur-Ubuntu-22.04",
         "state": 3,
         "lastSuccessAt": "2026-09-12T07:46:20+00:00",
-        "lastError": "name derived from the beat filename — confirm it before registering this machine",
+        "lastError": null,
         "sessionCount": 0
       },
-      "lastDelivery": "5s ago",
-      "nameIsToken": true
+      "lastDelivery": "5s ago"
     }
   ]
 }

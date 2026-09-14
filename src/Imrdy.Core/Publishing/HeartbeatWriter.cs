@@ -20,8 +20,9 @@ namespace Imrdy.Core.Publishing;
 /// It reads the registered links per beat rather than capturing them, so a link added through
 /// the connections window starts beating on the next period with no daemon restart (D25).
 /// <para>
-/// The machine name is a delegate for a narrower reason: the beat's filename and the
-/// <c>origin_machine</c> the sinks stamp must come from one source, or a publisher reads as two
+/// The machine name is a delegate for a narrower reason: the beat's filename, the name written
+/// inside the beat and the <c>origin_machine</c> the sinks stamp must come from one source, or a
+/// publisher reads as two
 /// machines with one of them permanently stale. The daemon hands both this and
 /// <see cref="SinkContext"/> the same value resolved once at startup, so today a rename needs a
 /// daemon restart to take effect on either — the delegate keeps them tied together, it does not
@@ -69,7 +70,7 @@ public sealed class HeartbeatWriter
         _lastBeat = now;
 
         var machine = _originMachine();
-        var beat = Encoding.UTF8.GetBytes(PublisherHeartbeat.Format(now));
+        var beat = Encoding.UTF8.GetBytes(PublisherHeartbeat.Format(machine, now));
 
         foreach (var entry in _entries())
         {

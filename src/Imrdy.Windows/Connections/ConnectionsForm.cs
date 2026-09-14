@@ -433,14 +433,21 @@ internal sealed class ConnectionsForm : Form
     private void UpdateButtonState()
     {
         var row = SelectedRow();
-        _editButton.Enabled = row is not null;
+        // An unregistered row carries no record to pre-fill, so its editor would be the one
+        // Add… opens.
+        _editButton.Enabled = row is { IsRegistered: true };
         _removeButton.Enabled = row is { IsRegistered: true };
         _clearButton.Enabled = row is not null;
     }
 
     private void AddNew()
     {
-        using var dialog = new PublisherEditDialog(null);
+        // Registering a machine that is already delivering starts from the name it reports. Only
+        // the name: an unregistered row carries no endpoint, desktop mapping or mute to copy. Not a
+        // flattened token from an old beat, which would save a record that never matches (r-11).
+        using var dialog = new PublisherEditDialog(
+            null,
+            SelectedRow() is { IsRegistered: false, NameIsToken: false } row ? row.Name : null);
         if (dialog.ShowDialog(this) == DialogResult.OK && dialog.Result is { } entry)
         {
             _host.SavePublisher(entry, previousName: null);
@@ -450,36 +457,12 @@ internal sealed class ConnectionsForm : Form
 
     private void EditSelected()
     {
-        if (SelectedRow() is not { } row) return;
-
-        // A row whose name came only from the beat filename must not seed a record with it. The
-        // token is lossy — PC-Excalibur-Ubuntu-24.04 flattens to pc-excalibur-ubuntu-24_04 — and
-        // every behaviour keyed on a saved record joins on its name by plain case-insensitive
-        // equality against the publisher's own origin_machine, so such a record would never match
-        // again: the desktop mapping, the mute and clear-this-machine would all silently do
-        // nothing, forever, with the operator shown a healthy registered row. So the name field
-        // starts empty and the dialog's own "Machine name is required" rule makes them type it.
-        if (row.NameIsToken)
-        {
-            MessageBox.Show(
-                this,
-                $"This publisher has not delivered a session yet, so imrdy only knows it by its "
-                + $"heartbeat filename: {row.Name}\n\n"
-                + "That name is flattened and may not be exact. Enter the machine's own name — "
-                + "network.machineName on that machine, or <hostname>-<distro> by default — or it "
-                + "will never match the sessions it sends.",
-                "imrdy — Confirm the machine name",
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Information);
-        }
-
-        // Null for an unregistered row: there is no record to rename, and handing the token name
-        // in as one would ask the store to remove a record that does not exist.
-        var previousName = row.IsRegistered ? row.Name : null;
+        // Double-click reaches here without the button's gate.
+        if (SelectedRow() is not { IsRegistered: true } row) return;
 
         using var dialog = new PublisherEditDialog(new PublisherEntry
         {
-            Name = row.NameIsToken ? string.Empty : row.Name,
+            Name = row.Name,
             Endpoint = row.Endpoint,
             DesktopIndex = row.DesktopIndex,
             Muted = row.Muted,
@@ -491,7 +474,7 @@ internal sealed class ConnectionsForm : Form
             // The name is editable here, and the store upserts on it, so a rename that did not
             // say what it replaced left two records: the old one kept its endpoint, its desktop
             // mapping, its mute and its sink, and the operator saw one machine twice.
-            _host.SavePublisher(entry, previousName);
+            _host.SavePublisher(entry, previousName: row.Name);
             RefreshFromHost();
         }
     }

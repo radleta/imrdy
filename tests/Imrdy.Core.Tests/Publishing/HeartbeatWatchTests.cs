@@ -37,7 +37,19 @@ public class HeartbeatWatchTests : IDisposable
     private void Beat(string machine, DateTimeOffset at)
     {
         Directory.CreateDirectory(_heartbeats);
-        File.WriteAllText(PublisherHeartbeat.PathFor(_sessions, machine), PublisherHeartbeat.Format(at));
+        File.WriteAllText(PublisherHeartbeat.PathFor(_sessions, machine), PublisherHeartbeat.Format(machine, at));
+    }
+
+    [Fact]
+    public void IsDisconnected_StaleTimestampOnlyBeatFromAnOlderPublisher_IsDisconnected()
+    {
+        // Liveness is keyed on the filename token, so a beat that predates the name still answers.
+        Directory.CreateDirectory(_heartbeats);
+        File.WriteAllText(
+            PublisherHeartbeat.PathFor(_sessions, "pc-Ubuntu"),
+            (Now - PublisherHeartbeat.StaleAfter - TimeSpan.FromSeconds(1)).ToString("O"));
+
+        Watch().IsDisconnected("pc-Ubuntu", Now).Should().BeTrue();
     }
 
     [Fact]
@@ -120,7 +132,7 @@ public class HeartbeatWatchTests : IDisposable
     public void Refresh_IgnoresFilesThatAreNotBeats()
     {
         Directory.CreateDirectory(_heartbeats);
-        File.WriteAllText(Path.Combine(_heartbeats, "notes.txt"), PublisherHeartbeat.Format(Now));
+        File.WriteAllText(Path.Combine(_heartbeats, "notes.txt"), PublisherHeartbeat.Format("pc-Ubuntu", Now));
 
         var act = () => Watch();
 

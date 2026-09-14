@@ -36,17 +36,6 @@ public static class ConnectionRowFormatter
         "TCP publishers cannot reach this machine · file-sink publishers are unaffected";
 
     /// <summary>
-    /// What a row whose name came only from the beat filename says about itself. The name is a
-    /// fine label and a trap as a saved record's name, because the flattening
-    /// <see cref="PublisherHeartbeat.TokenFor"/> applies is not reversible and every other
-    /// behaviour keyed on a <see cref="PublisherEntry"/> joins on its name by plain
-    /// case-insensitive equality. Kept short because it shares the last-error cell with the
-    /// staleness advisory.
-    /// </summary>
-    public const string NameDerived =
-        "name derived from the beat filename — confirm it before registering this machine";
-
-    /// <summary>
     /// Three different absences, kept apart, because they need three different actions from
     /// the operator: a machine with no record at all (legitimate — a receiver holds no
     /// allow-list, D24), a record that deliberately carries no endpoint because it is

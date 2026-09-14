@@ -34,14 +34,8 @@ namespace Imrdy.Core.Publishing;
 /// <see cref="SinkHealth"/> records for <c>imrdy links --json</c> to consume.
 /// </param>
 /// <param name="NameIsToken">
-/// True only for a file-sink publisher whose beat nothing on this machine could name, where
-/// <paramref name="Name"/> is the flattened filename token standing in (see
-/// <see cref="MachineBeat.NameIsToken"/>). The row carries it because the name is not merely
-/// rendered: the connections window seeds a <see cref="PublisherEntry"/>'s name from it, and a
-/// record saved under a flattened name never matches the <c>origin_machine</c> that D18's desktop
-/// mapping, D22's mute and clear-this-machine all join on. Defaulted, so every row built from a
-/// record or from a <c>hello</c> — where the name came from the operator or from the publisher
-/// itself — says false without restating it.
+/// True only for a row built from a timestamp-only beat (see <see cref="MachineBeat.NameIsToken"/>).
+/// Defaulted, so every other row says false without restating it.
 /// </param>
 public sealed record ConnectionRow(
     string Name,
