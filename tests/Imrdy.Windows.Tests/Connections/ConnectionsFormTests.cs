@@ -209,11 +209,16 @@ public class ConnectionsFormTests
         using var form = NewForm();
         form.Show();
         var list = form.Controls.OfType<ListView>().Single();
+
+        // Windows caps a window at the screen size, and CI runners have a 1024x768 display, so
+        // grow from the minimum size by no more than the screen leaves room for.
+        form.Size = form.MinimumSize;
         var before = list.Width;
+        var grow = Math.Min(400, Screen.FromControl(form).WorkingArea.Width - form.Width);
 
-        form.Size = new Size(form.Width + 400, form.Height + 240);
+        form.Size = new Size(form.Width + grow, form.Height + 240);
 
-        list.Width.Should().Be(before + 400, "the list is anchored to both side edges");
+        list.Width.Should().Be(before + grow, "the list is anchored to both side edges");
         form.Controls.OfType<Button>().Should().AllSatisfy(b =>
             b.Bottom.Should().BeLessThanOrEqualTo(form.ClientSize.Height,
                 "the buttons are anchored to the bottom edge"));

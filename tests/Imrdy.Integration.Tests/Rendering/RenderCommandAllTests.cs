@@ -18,7 +18,7 @@ namespace Imrdy.Integration.Tests.Rendering;
 public class RenderCommandAllTests
 {
     private const int ExpectedDashboardFixtureCount = 14;
-    private const int ExpectedGlobalFixtureCount    = 23; // 14 dashboard + 2 workspace-dashboard + 5 overlay + 2 connections
+    private const int ExpectedGlobalFixtureCount    = 24; // 14 dashboard + 2 workspace-dashboard + 5 overlay + 3 connections
 
     /// <summary>
     /// Returns the repo root by walking up from the test binary output directory.

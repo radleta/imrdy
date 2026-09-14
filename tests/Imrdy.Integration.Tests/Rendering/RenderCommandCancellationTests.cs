@@ -94,6 +94,9 @@ public class RenderCommandCancellationTests
         {
             FileName = fileName,
             Arguments = arguments,
+            // render --all resolves tests/fixtures relative to the working directory when no
+            // .dev-build marker names a repo root, as on CI. bin/Release/<tfm> is 5 levels deep.
+            WorkingDirectory = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..")),
             UseShellExecute = false,
             CreateNoWindow = true,
             RedirectStandardOutput = true,

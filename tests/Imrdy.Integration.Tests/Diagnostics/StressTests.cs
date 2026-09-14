@@ -135,10 +135,17 @@ public class StressTests : IAsyncLifetime
         _tray = await StartTrayAsync();
         await WaitForPipeAsync(timeout: TimeSpan.FromSeconds(10));
 
-        // Case 1: Oversize body (5 KiB > 4 KiB server limit)
+        // Case 1: Oversize body (5 KiB > 4 KiB server limit). Only the length prefix is sent: the
+        // server refuses on the prefix without reading the body, so a client still writing a
+        // 5 KiB body into the 4 KiB pipe buffer sees "Pipe is broken" instead of the error.
         {
-            var bigBody = Encoding.UTF8.GetBytes(new string('x', 5120));
-            var resp = SendRaw(bigBody, timeout: TimeSpan.FromSeconds(5));
+            using var client = new NamedPipeClientStream(".", "ImrdyInspect", PipeDirection.InOut);
+            client.Connect(5000);
+            var lenBuf = new byte[4];
+            BinaryPrimitives.WriteInt32LittleEndian(lenBuf, 5120);
+            client.Write(lenBuf, 0, 4);
+
+            var resp = ReadResponse(client);
             resp.Error.Should().NotBeNullOrEmpty("oversized body must return an error");
         }
 
