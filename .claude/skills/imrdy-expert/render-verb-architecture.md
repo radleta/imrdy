@@ -15,9 +15,9 @@ code-cites: []
 | `dashboard` | `SessionDashboardForm` | `tests/fixtures/dashboards` (14) |
 | `workspace-dashboard` | `WorkspaceDashboardForm` | `tests/fixtures/workspace-dashboards` (2) |
 | `overlay` | `OverlayPanel` | `tests/fixtures/overlays` (5) |
-| `connections` | `ConnectionsForm` via `NullConnectionsHost` | `tests/fixtures/connections` (2) |
+| `connections` | `ConnectionsForm` via `NullConnectionsHost` | `tests/fixtures/connections` (3) |
 
-`imrdy render --all` therefore produces **23** PNGs. `ConnectionsRenderer` pins an explicit `ClientSize` because that window is resizable, unlike the other three.
+`imrdy render --all` therefore produces **24** PNGs. `ConnectionsRenderer` pins an explicit `ClientSize` because that window is resizable, unlike the other three.
 
 Key commands:
 - `imrdy render <component> <fixture.json>` — render a single fixture
