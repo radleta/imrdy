@@ -28,8 +28,9 @@ public static class MachineNameResolver
     }
 
     /// <summary>
-    /// True when a publisher's sessions belong to the receiver's own box, which earns them
-    /// real terminal focus and no desktop mapping (D19). A distro publisher named
+    /// True when a publisher's sessions belong to the receiver's own box, which sends their
+    /// activation down the ordinary local path and never reads the publisher's desktop mapping
+    /// (D19). A distro publisher named
     /// <c>&lt;hostname&gt;-&lt;distro&gt;</c> is local to the receiver whose hostname is that
     /// prefix; another machine, and any distro on it, is not.
     /// </summary>

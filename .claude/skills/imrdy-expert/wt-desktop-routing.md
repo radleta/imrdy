@@ -21,7 +21,7 @@ Order matters: the desktop switch fires before any focus attempt because `ForceF
 
 In priority order:
 
-- **Pinned (`entry.DesktopIndex` is set)** — wins outright; `targetSource = "pinned"`. The user (or WT auto-lock on `SessionStart`) explicitly chose this desktop, so any later "where does the window actually live" answer is ignored.
+- **Pinned (`entry.DesktopIndex` is set)** — wins outright; `targetSource = "pinned"`. The user (or WT auto-lock on `SessionStart`, or the remote auto-assign) explicitly chose this desktop, so any later "where does the window actually live" answer is ignored. A same-machine WSL session (`MachineNameResolver.IsSameMachine`) reaches this local path too, but its `claude_pid` is a Linux PID that neither the WT auto-lock nor the dynamic lookup can resolve — its pin comes only from the remote auto-assign (`RemoteDesktopDefault.Resolve`) or the session menu.
 - **Dynamic lookup (`entry.DesktopIndex is null` AND terminal is non-WT)** — call `_desktopManager.GetDesktopForWindow(hwnd)` on the terminal's main window handle; `targetSource = "dynamic"`. This handles the unpinned conhost / wezterm / non-WT case where the user drags the terminal window between desktops.
 - **Unset** — when both fail (no pin, no hwnd, or hwnd is a WT window), `target` stays null. Step 2 is skipped — no desktop switch. Step 3 still fires unconditionally (preserves the original best-effort focus behavior for the dropped-on-the-floor case).
 

@@ -970,18 +970,23 @@ internal sealed class TrayApp : ApplicationContext, ISessionInteractionRouter, I
                 }
             }
 
-            // A remote session has no local window to locate, so it defaults to the desktop its
-            // machine's other sessions were last on, else the one the user is on now. A
-            // publisher-wide mapping takes precedence, so skip it then. The value sticks because
-            // RemoteSessionMerge keeps the receiver's desktop_index.
+            // A remote session has no Windows window to locate, and that includes a WSL distro on
+            // this box: its claude_pid is a Linux PID, so neither the WT auto-lock above nor the
+            // dynamic lookup at click time can find its terminal. So it takes the desktop the user
+            // is on when it launches, else the one its machine's other sessions were last on. A
+            // publisher-wide mapping takes precedence for another machine; a same-machine session
+            // never reads that mapping on click, so it is not consulted here either. The value
+            // sticks because RemoteSessionMerge keeps the receiver's desktop_index.
             if (state.OriginMachine is { } origin
-                && !MachineNameResolver.IsSameMachine(origin, Environment.MachineName)
                 && entry.DesktopIndex is null
-                && _publisherStore.Find(origin)?.DesktopIndex is null)
+                && (MachineNameResolver.IsSameMachine(origin, Environment.MachineName)
+                    || _publisherStore.Find(origin)?.DesktopIndex is null))
             {
                 var desktop = RemoteDesktopDefault.Resolve(
                     origin,
                     entry.SessionId,
+                    launched: !IsBootstrapping
+                              && string.Equals(state.HookEvent, "SessionStart", StringComparison.OrdinalIgnoreCase),
                     _sessions.Values.Select(s => s.State with { DesktopIndex = s.DesktopIndex }),
                     _desktopManager.GetCurrentDesktopIndex());
                 if (desktop.HasValue)
@@ -1757,8 +1762,9 @@ internal sealed class TrayApp : ApplicationContext, ISessionInteractionRouter, I
     /// <c>desktop_index</c> is never the source — the ingest merge already discarded the incoming
     /// number, and the receiver's value means a desktop on *this* box.
     /// <para>
-    /// A publisher on the receiver's own box is not remote (D19): a WSL distro here has a real
-    /// local terminal worth focusing, so it falls through to the ordinary local path.
+    /// A publisher on the receiver's own box is not remote (D19): a WSL distro here falls through
+    /// to the ordinary local path, which routes it by the desktop auto-assigned on arrival, since
+    /// its Linux <c>claude_pid</c> gives the window lookups nothing to resolve.
     /// </para>
     /// </summary>
     /// <returns>True when the activation was handled as remote and the local path must not run.</returns>

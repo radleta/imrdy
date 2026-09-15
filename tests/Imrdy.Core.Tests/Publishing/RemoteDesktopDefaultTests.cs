@@ -29,7 +29,7 @@ public class RemoteDesktopDefaultTests
             Session("recent", "pc-excalibur", 14, minutes: 10),
         };
 
-        RemoteDesktopDefault.Resolve("PC-EXCALIBUR", "new", sessions, currentDesktop: 3).Should().Be(14);
+        RemoteDesktopDefault.Resolve("PC-EXCALIBUR", "new", launched: false, sessions, currentDesktop: 3).Should().Be(14);
     }
 
     [Fact]
@@ -43,12 +43,28 @@ public class RemoteDesktopDefaultTests
             Session("local", null, 5, minutes: 10),
         };
 
-        RemoteDesktopDefault.Resolve("PC-EXCALIBUR", "new", sessions, currentDesktop: 3).Should().Be(3);
+        RemoteDesktopDefault.Resolve("PC-EXCALIBUR", "new", launched: false, sessions, currentDesktop: 3).Should().Be(3);
     }
 
     [Fact]
     public void Resolve_NoSiblingsAndNoCurrentDesktop_ReturnsNull()
     {
-        RemoteDesktopDefault.Resolve("PC-EXCALIBUR", "new", [], currentDesktop: null).Should().BeNull();
+        RemoteDesktopDefault.Resolve("PC-EXCALIBUR", "new", launched: false, [], currentDesktop: null).Should().BeNull();
+    }
+
+    [Fact]
+    public void Resolve_Launched_TakesCurrentDesktopOverSiblings()
+    {
+        var sessions = new[] { Session("recent", "PC-EXCALIBUR", 14, minutes: 10) };
+
+        RemoteDesktopDefault.Resolve("PC-EXCALIBUR", "new", launched: true, sessions, currentDesktop: 3).Should().Be(3);
+    }
+
+    [Fact]
+    public void Resolve_LaunchedWithNoCurrentDesktop_FallsBackToSibling()
+    {
+        var sessions = new[] { Session("recent", "PC-EXCALIBUR", 14, minutes: 10) };
+
+        RemoteDesktopDefault.Resolve("PC-EXCALIBUR", "new", launched: true, sessions, currentDesktop: null).Should().Be(14);
     }
 }

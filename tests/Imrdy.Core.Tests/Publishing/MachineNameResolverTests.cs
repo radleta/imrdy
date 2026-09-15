@@ -48,7 +48,7 @@ public class MachineNameResolverTests
     [Fact]
     public void IsSameMachine_ADistroOnTheReceiversOwnBox_IsLocal()
     {
-        // D19: it earns real terminal focus and no desktop mapping.
+        // D19: it takes the ordinary local activation path and ignores any publisher desktop mapping.
         MachineNameResolver.IsSameMachine("workstation-Ubuntu", "workstation").Should().BeTrue();
     }
 

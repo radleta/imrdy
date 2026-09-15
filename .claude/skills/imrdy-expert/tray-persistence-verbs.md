@@ -79,7 +79,7 @@ Use this page as the diagnostic checklist when a tray-side change "doesn't seem 
 |---|---|---|
 | `PersistSessionSoundPack(entry)` | `SoundPack` | Right-click session → Sound Pack submenu |
 | `PersistSessionIconStyle(entry)` | `IconStyle` | Right-click session → Icon Style submenu |
-| `PersistSessionDesktopIndex(entry)` | `DesktopIndex` | (1) Right-click session → "Assign to this Desktop" menu action. (2) WT auto-lock: new-session branch of `HandleSessionFileChanged` when `state.HookEvent == "SessionStart"` AND `entry.DesktopIndex is null` AND `IsWindowsTerminal(entry)` — captures `_desktopManager.GetCurrentDesktopIndex()` so the active desktop is remembered for the WT session. |
+| `PersistSessionDesktopIndex(entry)` | `DesktopIndex` | (1) Right-click session → "Assign to this Desktop" menu action. (2) WT auto-lock: new-session branch of `HandleSessionFileChanged` when `state.HookEvent == "SessionStart"` AND `entry.DesktopIndex is null` AND `IsWindowsTerminal(entry)` — captures `_desktopManager.GetCurrentDesktopIndex()` so the active desktop is remembered for the WT session. (3) Remote auto-assign: same branch, when `state.OriginMachine` is set AND `entry.DesktopIndex is null` AND (the origin is this box per `MachineNameResolver.IsSameMachine`, or its publisher has no `desktop_index`) — takes `RemoteDesktopDefault.Resolve`, which is the current desktop on a non-bootstrap `SessionStart`, else the most recently active same-machine sibling's desktop, else the current desktop. |
 
 **Failure modes (in order of likelihood):**
 
