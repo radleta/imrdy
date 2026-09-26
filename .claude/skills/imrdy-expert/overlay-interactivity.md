@@ -1,8 +1,33 @@
 ---
 tags: [imrdy-expert/overlay]
-summary: "DragCompleted event fires at end of drag-to-reposition in OnMouseUp; companion to SurfaceInteracted with separate contract; subscription lifecycle identical (P6 TrayApp owns wiring)"
-last-verified: "2026-09-25"
+summary: "Overlay input: only the grip arms a drag, the threshold is per-monitor-DPI, a drop snaps and persists per-monitor offsets, there is no click-through mode; DragCompleted and SurfaceInteracted carry separate contracts wired by TrayApp"
+last-verified: "2026-09-26"
 ---
+
+# Overlay Interactivity
+
+## Grip Drag
+
+[`OverlayPanel.cs` `IsGripHit`](../../../src/Imrdy.Windows/Overlay/OverlayPanel.cs) is the only
+drag-arming test. `OnMouseDown` arms a drag only on the left grip handle (the 6-dot glyph,
+`GripWidth` wide, dimmed until hovered) and only while `overlay.locked` is false. A chip or the
+gutter never arms one: a chip click activates on `OnMouseUp`, and a grip or gutter click with no
+drag does nothing.
+
+- **The threshold is per-monitor DPI.** It is `PInvokeOverlay.GetSystemMetricForDpi(SM_CXDRAG /
+  SM_CYDRAG, DeviceDpi)`, not `SystemInformation.DragSize`, which reads the system DPI and is wrong
+  on a monitor whose DPI differs. Keep the per-DPI call if the threshold moves.
+- **A drop snaps, clamps and persists per monitor.** The panel lands at the release point on the
+  monitor under the cursor; [`OverlayPlacement.cs` `ComputeEdgeSnap`](../../../src/Imrdy.Core/Overlay/OverlayPlacement.cs)
+  snaps it to a working-area edge or corner within 24 logical px, `ClampToWorkingArea` keeps it
+  fully on-screen, and the result is written as `overlay.offsetX` / `overlay.offsetY` plus
+  `overlay.monitor`. The placement fields behind that are on
+  [overlay-rendering-internals](overlay-rendering-internals.md#monitor-and-position-placement).
+- **A position preset writes an offset too.** The overlay menu's position presets resolve the anchor
+  through `OverlayPlacement.AnchorToOffset` and write the offset, not a bare enum. An offset wins over
+  `overlay.position`, so once one is set, editing `overlay.position` alone does not move the panel.
+- **There is no click-through overlay.** `OverlayPanel` has no `WM_NCHITTEST` override and no
+  passive variant. To get the overlay out of the way, set `overlay.enabled: false`.
 
 ## DragCompleted Event
 

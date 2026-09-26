@@ -1,7 +1,7 @@
 ---
 tags: [imrdy-expert/overlay]
-summary: "OverlayPanel OnPaint rendering; bitmap cache keyed by (style,status,disconnected); aging via chip-background opacity ladder in OnPaint; the empty-state placeholder chip; Form.Bounds reliability on non-layered forms; placement through mutable fields and OverlayPlacement"
-last-verified: "2026-09-25"
+summary: "OverlayPanel OnPaint rendering; bitmap cache keyed by (style,status,disconnected); aging via chip-background opacity ladder in OnPaint; the empty-state placeholder chip; Form.Bounds reliability on non-layered forms; TopMost with no watchdog; placement through mutable fields and OverlayPlacement"
+last-verified: "2026-09-26"
 code-cites:
   - src/Imrdy.Windows/Overlay/OverlayPanel.cs
   - src/Imrdy.Windows/Desktop/PInvokeOverlay.cs
@@ -21,7 +21,7 @@ DWM native corner rounding is applied via `ImrdyPalette.ApplyRoundedCorners(this
 
 ## Bitmap Cache
 
-`OverlayPanel._cache` is a `Dictionary<(string style, string status, bool disconnected), Bitmap>` — one glyph per unique combination, populated lazily by `GetOrCreateBitmap`. The disconnected flag IS part of the key because `DisconnectedGlyph` is a geometry change (shrink to 60% + dashed ring); the aging tier is NOT, because aging is an opacity treatment applied at paint time. `InvalidateStyleCache()` (called when the user changes icon styles) and `Dispose` both dispose every cached bitmap.
+`OverlayPanel._cache` is a `Dictionary<(string style, string status, bool disconnected), Bitmap>` — one glyph per unique combination, populated lazily by `GetOrCreateBitmap`. The disconnected flag IS part of the key because `DisconnectedGlyph` is a geometry change (shrink to 60% + dashed ring — see [Publisher Liveness](publisher-liveness.md)); the aging tier is NOT, because aging is an opacity treatment applied at paint time. `InvalidateStyleCache()` (called when the user changes icon styles) and `Dispose` both dispose every cached bitmap.
 
 **Cache miss path**: built-in shape via `GetShapeDelegate` OR pack icon via `RenderFromPack`. Fallback on exception: circle via `RenderCircleFallback`.
 
@@ -39,7 +39,7 @@ AgingTier 0-4 is computed by `StatusMap.GetAgingTier` in `Imrdy.Core/Status/Stat
 
 Aging is applied in `OnPaint` → `PaintChip` → `ChipBgAlpha(tier, isAlert)` as a chip-background opacity ladder: tier 0 = alpha 255 (most opaque), tier 1 = 200, tier 2 = 160, tier 3 = 120, tier 4 = 80 (faintest). Alert statuses (`permission`/`error`, matched by `IsAlertStatus`) are floored at alpha 160 regardless of tier (Decision 2c). Tier 4 also applies a slight glyph dim (`ColorMatrix.Matrix33 = 0.85f`, only when `tier > 3`); tiers 0-3 use no `ColorMatrix`.
 
-The tray-icon renderers (`ParametricShapeRenderer`, `PackIconRenderer` in `src/Imrdy.Windows/Icons/`) bake tier-based aging into their per-icon bitmaps instead (RGB multiplier for built-in shapes; `ApplyAgingColorMatrix` for SVG pack icons). That path is separate from the overlay.
+The tray-icon renderers (`ParametricShapeRenderer`, `PackIconRenderer` — see [Tray Icon Rendering](tray-icon-rendering.md)) bake tier-based aging into their per-icon bitmaps instead (RGB multiplier for built-in shapes; `ApplyAgingColorMatrix` for SVG pack icons). That path is separate from the overlay.
 
 ## OnPaint Rendering Flow
 
@@ -71,9 +71,20 @@ Components in `src/Imrdy.Windows/Desktop/PInvokeOverlay.cs`:
 | `WS_EX_TOOLWINDOW` | Applied to OverlayPanel's extended window style |
 | `ScreenToClientPoint(hwnd, …)` | DPI-correct screen→client conversion for hover-highlight poll and hit-testing (`Bounds` subtraction is wrong above 100% scale) |
 | `WindowAtPoint(point)` | Z-order hit test for the hover-dashboard z-order gate |
-| `RegisterWindowMessage` | `TaskbarCreated` message ID; OverlayPanel re-pins after Explorer restart |
+| `RegisterWindowMessage` | `TaskbarCreated` message ID; OverlayPanel re-pins itself to all virtual desktops after Explorer restart |
 
 The layered-window plumbing (`UpdateLayeredWindow` + GDI P/Invokes, `SetBitmap`, `GetActualWindowRect` + `RECT`, `DecodeLParamPoint`) is gone; `OnPaint` needs none of it.
+
+## TopMost, and no watchdog
+
+`OverlayPanel` sets `Form.TopMost = true` once, in its constructor, and nothing re-asserts
+`HWND_TOPMOST` afterwards. Do not add a timer that does. Re-asserting topmost pushes the overlay
+above every other topmost window, an open `ContextMenuStrip` included, and clips the menu on every
+tick. The earlier layered overlay ran a 5-second `SetWindowPos` watchdog plus a menu-`Opened`
+topmost re-apply; commit 01e51c3 deleted both, and the comment that recorded why (removed with the
+layered base class in d14e8c0) put it the same way: if the overlay is ever displaced in z-order,
+recover at the source of the displacement, not on a periodic timer. Keeping overlay menus open is
+already delicate — see [Overlay Context Menus](overlay-context-menus.md).
 
 ## Monitor and Position Placement
 

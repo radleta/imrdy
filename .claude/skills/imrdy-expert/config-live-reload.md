@@ -1,6 +1,7 @@
 ---
 tags: [imrdy-expert/architecture]
 summary: "config.json FSW routes through OnConfigChanged for full live reload (sound + icon style + tray god toggle + overlay + network); overlay structural-delta: Position/Monitor/Locked/OffsetX/OffsetY apply in-place, Enabled/Size/Spacing recreate; network re-resolves machineName always and rebinds the listener only on a ListenEnabled/ListenPort change; startup uses LoadSoundConfig separately"
+last-verified: "2026-09-26"
 ---
 
 # Config Live Reload
@@ -50,11 +51,11 @@ The try/catch swallows `IOException`/`JsonException` from mid-write transient re
 | Overlay (`config.Overlay`) | Structural-delta classification: non-structural changes (Position/Monitor/Locked/OffsetX/OffsetY) call `ApplyPositionConfig` in-place — no flash, no dispose+recreate; structural changes (Enabled/Size/Spacing) or Enabled toggle: disposes old panel, controllers, and subscriptions; recreates from fresh config values if `overlay.enabled: true`. Drag-in-flight guard: defers the entire overlay block via `_overlayReloadDeferred` until `IsDragging == false`. |
 | Network (`config.Network`) | `ApplyNetworkConfig`: always re-resolves `_machineName` through `MachineNameResolver`, because sinks resolve the origin per write rather than capturing it — without this a renamed machine kept stamping `origin_machine` with the old name until restart, and the far end saw one machine under two. The inbound listener is disposed and restarted **only** when `ListenEnabled` or `ListenPort` changed; every other field is a no-op rebind-wise. Registered publisher records live in `publishers.json`, not here. |
 
-All comparisons are value-based — a controller-menu change that also writes the file produces a harmless second no-op call.
+The controller and overlay menus write `config.json` and then call `OnConfigChanged` directly, so the file change arrives as a second call. That call is harmless rather than a no-op: the value-compared settings find nothing changed, and the sound block reloads the same packs.
 
 ### Startup vs Live Reload
 
-`LoadSoundConfig()` is called once at startup (before the FSW is active). It loads sound settings only. `OnConfigChanged` is the FSW path — it handles all settings and is never called at startup.
+`LoadSoundConfig()` is called once at startup (before the FSW is active). It loads sound settings only. `OnConfigChanged` is the live path — the FSW drain and the controller and overlay menus reach it — and it handles all settings and is never called at startup.
 
 ```
 Startup:       LoadSoundConfig()        → sound only

@@ -19,7 +19,7 @@ Framing: 4-byte **little-endian length prefix** followed by a UTF-8 JSON body, u
 
 The third verb exists so `imrdy links` can report **live** link health rather than only the
 records in `publishers.json` (ruling r-2). It is session-independent: the handler returns the tray's own
-assembled `ConnectionsViewModel` — the same object the connections window renders — so the CLI and
+assembled `ConnectionsViewModel` — the same object the connections window renders ([Connections Surfaces](connections-surfaces.md)) — so the CLI and
 the window cannot disagree, and no second payload type was needed (`ConnectionsViewModel` was already
 registered in `ImrdyJsonContext` for the window).
 

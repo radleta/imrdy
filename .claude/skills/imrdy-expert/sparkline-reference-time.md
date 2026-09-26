@@ -1,6 +1,7 @@
 ---
 tags: [imrdy-expert/display]
 summary: "SparklineControl requires a reference time anchor for correct rendering in live and fixture-preview paths"
+last-verified: "2026-09-26"
 ---
 
 # Sparkline Reference Time Anchor
@@ -30,11 +31,11 @@ protected override void OnPaint(PaintEventArgs e)
 }
 ```
 
-The caller sets `ReferenceTime` before assigning `Timestamps`:
+[`SparklineControl.cs` `ReferenceTime`](../../../src/Imrdy.Windows/Dashboard/SparklineControl.cs) is that property. The caller, [`SessionDashboardForm.cs` `Update`](../../../src/Imrdy.Windows/Dashboard/SessionDashboardForm.cs), sets `ReferenceTime` before assigning `Timestamps`:
 
 ```csharp
 _sparkline.ReferenceTime = vm.LastHookAt;
-_sparkline.Timestamps = vm.Timestamps;
+_sparkline.Timestamps = vm.ActivityTimestamps;
 ```
 
 ## Why This Works for Both Paths
@@ -43,19 +44,3 @@ _sparkline.Timestamps = vm.Timestamps;
 - **Fixture preview**: `LastHookAt` is the fixture's capture time; the window correctly spans the historical timestamps in the fixture, all frozen at that moment.
 
 The semantics are identical — render timestamps within a 60-second window ending at `ReferenceTime` — whether that's wall-clock (live) or fixture time (preview).
-
-## Anti-Pattern: Hardcoded UtcNow
-
-The anti-pattern is checking `DateTimeOffset.UtcNow` during paint:
-
-```csharp
-// WRONG: unportable to fixtures
-protected override void OnPaint(PaintEventArgs e)
-{
-    var now = DateTimeOffset.UtcNow;
-    var windowStart = now.AddSeconds(-60);
-    // ...
-}
-```
-
-This breaks testability and fixture-based preview harnesses.

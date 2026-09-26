@@ -1,7 +1,7 @@
 ---
 tags: [imrdy-expert/dashboard]
-summary: "VM-as-complete-render-contract: builders take an explicit 'now' parameter and precompute every display string; forms/renderers have zero clock reads, so a fixture renders the same PNG at any hour"
-last-verified: "2026-09-25"
+summary: "VM-as-complete-render-contract: builders take an explicit 'now' parameter and precompute every display string, so a form that reads no clock renders a fixture to the same PNG at any hour — SessionDashboardForm.Update is the exception and derives its time labels from UtcNow"
+last-verified: "2026-09-26"
 ---
 
 # VM-as-Complete-Render-Contract
@@ -71,6 +71,10 @@ The VM-as-contract pattern applies to the _content_ of the VM. Keeping "ago" str
 - **Multi-point time-series rendering** (sparklines) → `ReferenceTime` anchor in the control is acceptable
 
 See [Sparkline Reference Time](sparkline-reference-time.md) for the `ReferenceTime` pattern.
+
+## The exception: SessionDashboardForm
+
+[`SessionDashboardForm.cs` `Update`](../../../src/Imrdy.Windows/Dashboard/SessionDashboardForm.cs) reads `DateTimeOffset.UtcNow` and derives its elapsed label (`for …`, `idle … ago`) and its session-age label (`… old`) from it, while `DashboardViewModelBuilder.Build` receives a `now` and discards it. So the `dashboard` component's PNGs carry wall-clock-dependent time labels: when two renders of an unchanged `dashboard` fixture differ only in those labels, that is this read, not a regression. `WorkspaceDashboardForm`, `ConnectionsForm` and `OverlayPanel` read no clock.
 
 ## How a clock leak shows up
 

@@ -58,7 +58,7 @@ Use this page as the diagnostic checklist when a tray-side change "doesn't seem 
 
 ## Remote session state — `~/.imrdy/sessions/{session_id}.json` (receiver side)
 
-**Entry point:** `SessionIngest` (`src/Imrdy.Core/Publishing/SessionIngest.cs`) — the single writer of remote session files, shared by `FileSink` (writing into *another* machine's directory over a mount) and `WireListener` (writing into this machine's own).
+**Entry point:** [`SessionIngest.cs`](../../../src/Imrdy.Core/Publishing/SessionIngest.cs) — the single writer of remote session files and the receiver's trust boundary (see [Cross-Machine Publishing](cross-machine-publishing.md#receiver-side)), shared by `FileSink` (writing into *another* machine's directory over a mount) and `WireListener` (writing into this machine's own).
 
 **Pattern:** `RemoteSessionMerge` then `StateFileReader.WriteStateFileIfChanged` — a direct write, **never** a rename, since delete-then-move suppresses the receiver's FSW `Changed` event (same reason as [State File Write Path](state-file-write-path.md)), skipped when the merged bytes already match the file.
 

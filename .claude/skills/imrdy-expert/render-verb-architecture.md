@@ -26,6 +26,8 @@ Key commands:
 
 **Adding a fixture or a component is a two-place change.** `RenderCommandAllTests` hardcodes the per-component fixture counts *and* a summary-line prefix filter. Miss the filter and the PNG assertion passes while the summary-line assertion fails by exactly the new fixture count — which reads as "the renders did not run" when they did. Count what `--all` will render with `ls tests/fixtures/{dashboards,workspace-dashboards,overlays,connections}/*.json | wc -l`.
 
+**The render CLI tests share one xunit collection.** `RenderCommandAllTests`, `RenderCommandHelpTests` and `RenderCommandSingleTests` redirect `Console.Out`, which is process-wide, and xunit v2 runs distinct test classes in parallel — so all three carry `[Collection("RenderCommandConsole")]`, which serializes them. A new test class that redirects the console joins that collection, and restores the writer it captured *before* redirecting (`Console.SetOut(Console.Out)` afterwards restores nothing); otherwise its assertions intermittently read another class's output.
+
 ## Output Layout
 
 - **No `--output-dir`:** each component writes to `{repoRoot}/scratch/views/{component}/`, where `repoRoot` is the path stored in the `~/.imrdy/.dev-build` marker; without a marker, `./scratch/views/{component}/` under the current directory. Fixture directories resolve against the same root.
@@ -98,4 +100,3 @@ Run `./build-dev.sh` immediately before `imrdy render --all`, or invoke the just
 
 - [Dev Build Marker & Logging](dev-build-marker-logging.md) — `.dev-build` controls both the default output root and debug logging
 - [Hover Dashboard Form Lifecycle](hover-dashboard-form-lifecycle.md) — the dashboard forms render captures
-- [xunit Parallel Console Redirects](xunit-parallel-console-redirect.md) — why the render CLI tests share one `[Collection]`

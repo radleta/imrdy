@@ -38,4 +38,4 @@ The next process to start logs at Information and keeps the inspect pipe off (un
 
 ## What Debug Adds
 
-Debug-level lines include hook raw stdin payloads, the hover controllers' state heartbeat (every 10th drain tick, with cursor, overlay bounds, dwell and cooldown state) and their enter/exit transitions, COM virtual-desktop candidate probing, and foreground-capture decisions for context menus. When hover, focus or desktop behavior looks wrong, turn the marker on and read those lines before reading code.
+Debug-level lines include hook raw stdin payloads, the hover controllers' state heartbeat (every 10th drain tick, with cursor, overlay bounds, dwell and cooldown state) and their enter/exit transitions, COM virtual-desktop candidate probing (read per [COM Virtual Desktop Interop](com-virtual-desktop-interop.md)), and foreground-capture decisions for context menus. When hover, focus or desktop behavior looks wrong, turn the marker on and read those lines before reading code.

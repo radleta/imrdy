@@ -1,7 +1,7 @@
 ---
 tags: [imrdy-expert/desktop-routing]
 summary: "SwitchToSessionDesktop 3-step routing: resolve target → switch desktop → guarded focus. WT skipped from dynamic lookup; ForceForeground guarded against ping-pong; auto-lock on SessionStart only"
-last-verified: "2026-09-25"
+last-verified: "2026-09-26"
 ---
 
 # WT Desktop Routing
@@ -13,10 +13,10 @@ Clicking a tray dot for a session must (a) land the user on the right virtual de
 | Step | Code region | Purpose |
 |---|---|---|
 | 1. Resolve target | first block of method | Pick the desktop the user *should* land on |
-| 2. Switch desktop | second block | `_desktopManager.SwitchToDesktop(target.Value)` — fire this first, unconditionally |
+| 2. Switch desktop | second block | `_desktopManager.SwitchToDesktop(target.Value)` — fire this first, unconditionally ([COM Virtual Desktop Interop](com-virtual-desktop-interop.md)) |
 | 3. Guarded focus | third block | Best-effort `ForceForeground(hwnd)`, suppressed when it would cause ping-pong |
 
-A session from another machine never reaches these stages: `TrySwitchToRemoteSessionDesktop` runs first and switches to its desktop without any window lookup or focus. A same-machine WSL session falls through to the three stages below.
+A session from another machine never reaches these stages: `TrySwitchToRemoteSessionDesktop` runs first and switches to the session's own `DesktopIndex`, else its publisher's `desktop_index`, else nowhere — without any window lookup or focus ([Cross-Machine Publishing](cross-machine-publishing.md#receiver-side)). A same-machine WSL session falls through to the three stages below.
 
 Order matters: the desktop switch fires before any focus attempt because `ForceForeground` is the operation Windows can refuse from a balloon-tip context, while `SwitchToDesktop` works regardless. If focus fails, the user still lands on the right desktop.
 

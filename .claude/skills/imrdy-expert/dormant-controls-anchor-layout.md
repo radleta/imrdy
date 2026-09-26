@@ -1,15 +1,16 @@
 ---
 tags: [imrdy-expert/winforms]
 summary: "WinForms Anchor-based layouts: invisible-but-present sibling controls reduce available width for Anchor=Left|Right peers"
+last-verified: "2026-09-26"
 ---
 
-## WinForms Anchor-Based Layouts: Invisible Siblings Steal Width
+## Dormant Controls in Anchor Layouts
 
 In `SessionDashboardForm`'s header layout, when a dormant control (e.g., `_personaChip`) is added to `Controls` with `Visible=true` and a non-zero `Width`, it reserves horizontal space even when its text is empty or placeholder text. This forces neighboring `Anchor=Left|Right` controls (like the session-name label) to shrink and triggers `AutoEllipsis` truncation.
 
 **The gotcha:** Setting `Visible=false; Width=0` does not always release space cleanly under WinForms Anchor rules. The control still participates in layout calculations.
 
-**The fix:** Remove dormant controls from `Controls` entirely via `Controls.Remove()` — do not add them in the first place. The field can remain declared for future re-introduction, but its layout footprint must be zero.
+**The fix:** Remove dormant controls from `Controls` entirely via `Controls.Remove()` — do not add them in the first place. The field can remain declared for future re-introduction, but its layout footprint must be zero — as [`SessionDashboardForm.cs` `_personaChip`](../../../src/Imrdy.Windows/Dashboard/SessionDashboardForm.cs) is: declared, never added to the header row.
 
 **Real-world case:** Session name `overlay-dashboard-context` (24 chars) truncated to `overlav-dashboard-context` (ellipsis) at form `MinimumSize = (520, 0)` — mockup-exact 520 px and far above the 360 px floor that originally caused truncation. Increasing form width did NOT fix this because the persona chip's fixed-width reservation scaled with it, keeping the session label shrunk. Two visual seal iterations were needed to surface the root cause (budget-stealing, not a label-width constraint).
 

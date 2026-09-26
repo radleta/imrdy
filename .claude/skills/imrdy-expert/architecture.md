@@ -1,7 +1,7 @@
 ---
 tags: [imrdy-expert/architecture]
 summary: "Seven entry points, timer interactions, field preservation, and state file lifecycle"
-last-verified: "2026-09-25"
+last-verified: "2026-09-26"
 ---
 
 # Architecture
@@ -53,21 +53,22 @@ TrayApp has multiple timers that interact:
 | Timer | Interval | Purpose |
 |-------|----------|---------|
 | Drain timer | 100ms | Process pending file changes, effective-status resolution, dwell dispatch |
-| Sweep timer | 10s | Existence-check only via `CleanupGoneSessions`; removes in-memory entries whose state files are gone |
-| Stale timer | 60s | Remove sessions past grace period |
+| Sweep timer | 10s | Existence-check only via `CleanupGoneSessions`: starts a `RemoveAfter` grace period for an entry whose state file is gone, and removes every entry past its grace period — including the one `SessionEnd` sets |
+| Stale timer | 60s | `CleanupStaleSessions`: removes an entry idle longer than `StaleMinutes` whose state file is also gone |
+| Aging timer | 5s | Refreshes publisher heartbeats, re-renders an icon only when its aging tier or disconnected state changed, and rewrites every tooltip |
 
 The drain timer is the central coordination point:
 1. Process queued file change events
 2. Recompute `DisplayStatus.Resolve` per session and diff against `SessionEntry.LastEffectiveStatus` — the sole dwell driver for status changes, including the teal → green flip. `Resolve` is time-independent: it reads the stored roster, so this loop fires on genuine state changes rather than on the passage of time (see [Teammate Detection](teammate-detection.md), [Status Mapping](status-mapping.md))
 3. Dispatch fired dwell notifications
 
-The sweep timer is **existence-check only** since commit 4702e86: it runs `CleanupGoneSessions`, which iterates the in-memory session entries and removes any whose state file no longer exists on disk. It does NOT re-read state file contents. FSW (FileSystemWatcher) is the sole real-time path for content changes — the drain timer drains queued FSW events on the 100ms tick. State file bootstrapping at startup is handled separately by `BootstrapSessions`, a one-time scan that runs before the timers start. `SessionEntry.LastProcessedTimestamp` is used in the FSW path: `HandleSessionFileChanged` returns early when the file's `Timestamp` matches `LastProcessedTimestamp`.
+The sweep timer is **existence-check only** since commit 4702e86: it runs `CleanupGoneSessions`, which iterates the in-memory session entries, starts a grace period for any whose state file no longer exists on disk, and removes it once that period expires. It does NOT re-read state file contents. FSW (FileSystemWatcher) is the sole real-time path for content changes — the drain timer drains queued FSW events on the 100ms tick. State file bootstrapping at startup is handled separately by `BootstrapSessions`, a one-time scan that runs before the timers start. `SessionEntry.LastProcessedTimestamp` is used in the FSW path: `HandleSessionFileChanged` returns early when the file's `Timestamp` matches `LastProcessedTimestamp`.
 
 ## Session Icon Style Resolution
 
 Chain: session override → workspace override (Cwd match) → global config
 
-`ResolveSessionIconStyle()` implements this fallback. Renderer cache is keyed by style name. Changing a workspace's style refreshes all matching session icons.
+`ResolveSessionIconStyle()` implements this fallback. Renderer cache is keyed by style name; the renderers themselves are on [Tray Icon Rendering](tray-icon-rendering.md). Changing a workspace's style refreshes all matching session icons.
 
 ## Single Instance
 
@@ -75,7 +76,7 @@ Mutex-gated via `Global\ImrdyMonitor`. Hook fast-path probes mutex to decide whe
 
 ## Stop Signal
 
-Named `EventWaitHandle` (`Local\ImrdyStop`). `imrdy stop` signals it. Tray listens on background thread, marshals `ExitThread` to UI thread.
+Named `EventWaitHandle` (`Local\ImrdyStop`). `imrdy stop` signals it. The tray waits on it on a background thread and calls `Application.Exit()`, which is thread-safe and posts `WM_QUIT` to the UI pump — not a `BeginInvoke` onto a UI control; [`TrayApp.cs` `ListenForStopSignal`](../../../src/Imrdy.Windows/TrayApp.cs) says why.
 
 ## Diagnostics IPC Server
 

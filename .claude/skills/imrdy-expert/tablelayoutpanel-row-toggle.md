@@ -1,6 +1,7 @@
 ---
 tags: [imrdy-expert/winforms]
 summary: "TableLayoutPanel row toggling via Absolute height 0; MinimumSize (not Width) pins fixed width with AutoSize=GrowAndShrink"
+last-verified: "2026-09-26"
 ---
 
 ## TableLayoutPanel Row Toggle: Use Absolute Height 0 — Not Control.Visible or Dock=Fill
@@ -9,6 +10,11 @@ The canonical WinForms pattern for conditionally collapsing a `TableLayoutPanel`
 **toggle the row's `RowStyle` height between the desired pixel value and 0** (both as
 `SizeType.Absolute`). Do NOT use `Control.Visible = false` on the cell's control — that
 hides the control but leaves the row height allocated, causing blank gaps.
+
+A row that stays visible, such as the session header, has the counterpart rule for its own
+controls: a dormant chip stays out of `Controls` entirely rather than sitting there with
+`Visible=false`, because it still takes width from its `Anchor=Left|Right` peers — see
+[Dormant Controls in Anchor Layouts](dormant-controls-anchor-layout.md).
 
 ```csharp
 private void SetRowVisible(int rowIndex, bool visible, int height)
@@ -44,21 +50,25 @@ _tableLayout = new TableLayoutPanel
     AutoSizeMode = AutoSizeMode.GrowAndShrink,
     Left         = 0,
     Top          = 0,
-    Width        = ClientSize.Width,  // captures FormMinWidth at ctor time (FormBorderStyle.None)
+    Width        = FormMinWidth,      // the same width the form's MinimumSize carries
     // NO Dock = DockStyle.Fill
 };
 Controls.Add(_tableLayout);
 ```
 
-The form auto-sizes to the panel's height sum; the panel's width is pinned to the form's
-`ClientSize.Width` at construction time. Row height changes via `SetRowVisible` automatically
-propagate to the form height because `AutoSize=true` on both panel and form.
+The form auto-sizes to the panel's height sum; the panel's width is pinned to `FormMinWidth`,
+the value `HoverDashboardFormBase` also puts in `MinimumSize`. Row height changes via
+`SetRowVisible` automatically propagate to the form height because `AutoSize=true` on both panel
+and form. [`HoverDashboardFormBase.cs`](../../../src/Imrdy.Windows/Dashboard/HoverDashboardFormBase.cs)
+holds the form-level half and
+[`SessionDashboardForm.cs` `SetRowVisible`](../../../src/Imrdy.Windows/Dashboard/SessionDashboardForm.cs)
+the panel half.
 
 **Critical: use `MinimumSize` not `Width` to pin the fixed width.** Setting `Width` directly is
 overridden by AutoSize. `MaximumSize` must remain `Size.Empty` — `MaximumSize = new Size(w, 0)`
 collapses the form height to zero because WinForms interprets height 0 as "no height allowed".
 
-**Why the FlowLayoutPanel+Dock=Fill alternative failed (3 iters):**
+**Why the FlowLayoutPanel+Dock=Fill alternative fails:**
 A `FlowLayoutPanel` with `FlowDirection=TopDown` and `Dock=Fill` inside a scroll `Panel`
 with `Dock=Fill` produces zero-height output in headless/`DrawToBitmap` paths because:
 - `Dock=Fill` children are sized AFTER the parent computes its own size
