@@ -1,41 +1,46 @@
 ---
 tags: [imrdy-expert/rendering]
-summary: "imrdy render verb: in-process PNG capture of WinForms surfaces without a screen — layer split, Program.cs placement, DrawToBitmap caveats, sequential STA execution"
-code-cites: []
+summary: "imrdy render verb: in-process PNG capture of WinForms surfaces without a screen — layer split, Program.cs placement, the offscreen-Show capture sequence, output layout, sequential STA execution"
+last-verified: "2026-09-25"
 ---
 
 # Render Verb Architecture
 
 ## Overview
 
-`imrdy render <component> [--output <path> | --output-dir <dir>]` produces deterministic PNG artifacts of WinForms UI surfaces without a live screen or running tray process. Four registered components (`RenderRegistry.Components`), all via `Form.DrawToBitmap`:
+`imrdy render <component> [--output <path> | --output-dir <dir>]` produces deterministic PNG artifacts of WinForms UI surfaces without a running tray process. Four registered components (`RenderRegistry.Components`), all captured via `Form.DrawToBitmap`:
 
-| Component | Form | Fixture directory |
+| Component | Form | Fixture directory (`DefaultFixtureDir`) |
 |-----------|------|-------------------|
-| `dashboard` | `SessionDashboardForm` | `tests/fixtures/dashboards` (14) |
-| `workspace-dashboard` | `WorkspaceDashboardForm` | `tests/fixtures/workspace-dashboards` (2) |
-| `overlay` | `OverlayPanel` | `tests/fixtures/overlays` (5) |
-| `connections` | `ConnectionsForm` via `NullConnectionsHost` | `tests/fixtures/connections` (3) |
+| `dashboard` | `SessionDashboardForm` | `tests/fixtures/dashboards` |
+| `workspace-dashboard` | `WorkspaceDashboardForm` | `tests/fixtures/workspace-dashboards` |
+| `overlay` | `OverlayPanel` | `tests/fixtures/overlays` |
+| `connections` | `ConnectionsForm` via `NullConnectionsHost` | `tests/fixtures/connections` |
 
-`imrdy render --all` therefore produces **24** PNGs. `ConnectionsRenderer` pins an explicit `ClientSize` because that window is resizable, unlike the other three.
+`tests/fixtures/dashboards-bad/` holds invalid fixtures for the renderer's validation path; `--all` does not read it. `ConnectionsRenderer` pins an explicit `ClientSize` because that window is resizable, unlike the other three.
 
 Key commands:
 - `imrdy render <component> <fixture.json>` — render a single fixture
 - `imrdy render --list` — enumerate registered components
 - `imrdy render --all [--output-dir <dir>]` — render every fixture of every component
 
-**Adding a fixture or a component is a two-place change.** `RenderCommandAllTests` hardcodes the per-component fixture counts *and* a summary-line prefix filter. Miss the filter and the PNG assertion passes while the summary-line assertion fails by exactly the new fixture count — which reads as "the renders did not run" when they did.
+**Adding a fixture or a component is a two-place change.** `RenderCommandAllTests` hardcodes the per-component fixture counts *and* a summary-line prefix filter. Miss the filter and the PNG assertion passes while the summary-line assertion fails by exactly the new fixture count — which reads as "the renders did not run" when they did. Count what `--all` will render with `ls tests/fixtures/{dashboards,workspace-dashboards,overlays,connections}/*.json | wc -l`.
+
+## Output Layout
+
+- **No `--output-dir`:** each component writes to `{repoRoot}/scratch/views/{component}/`, where `repoRoot` is the path stored in the `~/.imrdy/.dev-build` marker; without a marker, `./scratch/views/{component}/` under the current directory. Fixture directories resolve against the same root.
+- **`--all --output-dir <dir>`:** every component writes **flat** into `<dir>`. The console prints `dashboard/aged-done.png 520x392`, but the `component/` prefix is a display label, not a path segment — the file is `<dir>/aged-done.png`. Anything that consumes the output must build `<dir>/<fixture-stem>.png`.
+
+Because the flat layout keys on the fixture stem alone, two components with a fixture of the same name would overwrite each other's PNG silently. Fixture stems are unique across the four directories; keep them so when adding one.
 
 ## Layer Split (D1)
 
 Pure contracts live in `Imrdy.Core/Rendering/`:
-- `IRenderableSurface` — interface a form implements to be renderable
-- `RenderContext` — input (fixture path, output path, options)
-- `RenderResult` — output (image, timing, success/failure)
+- `IRenderableSurface` — interface a renderable component implements
+- `RenderContext` — input (fixture args, output path, logger factory, repo root)
+- `RenderResult` — output (success, error, width, height)
 
-No WinForms types cross into Core. Concrete renderer implementations and `RenderRegistry` live in `Imrdy.Windows/Rendering/` (WinForms-dependent). `RenderCommand` and all concrete `IRenderableSurface` impls (e.g., `DashboardSurface`) live in `Imrdy.Windows/`.
-
-This mirrors the existing Core/Windows split everywhere else in the project — Core is the stable API surface; Windows is the platform-specific implementation.
+No WinForms types cross into Core. `RenderCommand` (`Imrdy.Windows/Commands/`) and the concrete renderers plus `RenderRegistry` (`Imrdy.Windows/Rendering/`) are WinForms-dependent.
 
 ## Program.cs Branch Placement
 
@@ -47,72 +52,50 @@ The `"render"` branch is placed BETWEEN `preview-dashboard` and the bare-tray fa
 4. `render` — WinForms dev tool, bypasses mutex  ← here
 5. Tray — full app, mutex-gated
 
-The Spectre CLI branches skip WinForms init; render needs it (STA thread + visual styles + `Application.SetHighDpiMode`). The render branch re-uses the same three WinForms init lines as preview-dashboard.
+The Spectre CLI branches skip WinForms init; render needs it. The render branch runs the same three init lines as preview-dashboard: `SetHighDpiMode`, `EnableVisualStyles`, `SetCompatibleTextRenderingDefault(false)`.
 
 ## Mutex Bypass Rationale
 
-`Global\ImrdyMonitor` is NOT checked for render (same as preview-dashboard). Render is a dev tool that must run while the live tray is running — after `build-dev.sh` deploys a new binary, the dev immediately runs `imrdy render --all` to inspect PNG output before filing a verdict. Requiring the tray to stop first would break the dev workflow.
+`Global\ImrdyMonitor` is NOT checked for render (same as preview-dashboard). Render is a dev tool that must run while the live tray is running — after `build-dev.sh` deploys a new binary, the dev immediately runs `imrdy render --all` to inspect PNG output. Requiring the tray to stop first would break that workflow.
 
-## DrawToBitmap Caveats
+## The Capture Sequence
 
-`Form.DrawToBitmap` has several non-obvious requirements:
+`CreateControl()` alone gives a form a handle, but its child controls never run their paint cycle without the message pump, and `DrawToBitmap` then captures only the form background. Every renderer therefore uses the offscreen-Show sequence:
 
-- **`CreateControl()` required** — the form handle must be created even though the form is never shown
-- **`PerformLayout()` required** — must be called after `CreateControl()` or child controls have zero-size bounds and render as blank
-- **`Size` must be set** — the form's client size is used as the bitmap dimensions; default is 300×300
-- **DWM mica/acrylic does NOT render** — `DrawToBitmap` captures only GDI+ content; the backdrop is applied via `DwmSetWindowAttribute` which targets the compositor, not the GDI layer; rendered PNGs show the standard WinForms background color instead of mica
-- **Font rendering uses GDI+ metrics, not ClearType** — output is representative but not pixel-identical to on-screen rendering
+1. Construct the form with its headless collaborators: the dashboards take `desktopManager: null` (no COM desktop interop, no all-desktops pinning), the overlay a `NullSessionInteractionRouter`, the connections window a `NullConnectionsHost`.
+2. `StartPosition = FormStartPosition.Manual`; `Location = new Point(-32000, -32000)` (effectively hidden on every monitor, no flicker, no activation).
+3. `Show()`.
+4. `Application.DoEvents()` to drain the pending paint cycle for every child, then `PerformLayout()` (`ConnectionsRenderer` drains once more after it).
+5. `DrawToBitmap` into a bitmap of the form's size and save the PNG.
+6. `Hide()` in a `finally`; the form is disposed by its `using`.
+
+Further `DrawToBitmap` caveats:
+
+- **DWM mica/acrylic does NOT render** — the backdrop targets the compositor, not the GDI layer; PNGs show the form background color instead.
+- **Low-alpha decorative lines can vanish** — see [DrawToBitmap Alpha Compositing](drawtobitmap-alpha-compositing.md).
+- **Font rendering uses GDI+ metrics, not ClearType** — output is representative but not pixel-identical to on-screen rendering.
+- **Fixture types must be registered with `ImrdyJsonContext`** — see [Source-Generated JSON Registration](source-gen-json-registration.md).
 
 ## Sequential STA Execution (D5)
 
-All fixtures for all components render sequentially on the main STA thread. No parallelism. `Form.DrawToBitmap` is not thread-safe, and STA-affinity of WinForms controls cannot be bypassed. SIGINT between fixtures cancels with exit code 130 (standard Unix convention for SIGINT cancellation).
-
-## Default Output Directory Resolution
-
-When `--output-dir` is not specified:
-
-1. If `~/.imrdy/.dev-build` marker exists → `{repoRoot}/scratch/views/{component}/` (dev build path — keeps PNGs in scratch where they're visible without polluting cwd)
-2. Otherwise → `./` (current working directory fallback)
-
-`repoRoot` is detected by walking up from the imrdy binary location looking for a `.git` directory.
+All fixtures for all components render sequentially on the main STA thread. No parallelism: `DrawToBitmap` and WinForms controls are STA-affine. Ctrl-C (`Console.CancelKeyPress`) sets a flag checked between fixtures; a cancelled run exits 130.
 
 ## Inline DI (D3)
 
-`RenderCommand.Run` uses an inline `ServiceCollection` (same as `PreviewDashboardCommand`) rather than a shared service builder. The extract-on-third-caller rule applies: `HookServiceBuilder` and `MonitorServiceBuilder` exist because the tray and hook are distinct long-running processes. Preview-dashboard and render are both short-lived dev tools — extracting a shared builder for two callers would be premature abstraction.
+`RenderCommand.Run` builds an inline `ServiceCollection` (same as `PreviewDashboardCommand`) rather than a shared service builder. `HookServiceBuilder` and `MonitorServiceBuilder` exist because the tray and hook are distinct long-running processes; preview-dashboard and render are short-lived dev tools, and a shared builder for two callers would be premature.
 
 ## Visual Seal Protocol
 
-For any UI-bearing change (SessionDashboardForm, WorkspaceDashboardForm, overlay, tray icons, menus):
+For any UI-bearing change (SessionDashboardForm, WorkspaceDashboardForm, ConnectionsForm, overlay, tray icons, menus), run `imrdy render --all` after a successful build and inspect every PNG before declaring the work complete. A passing verifier wave is NOT a substitute: layout-collapse bugs (controls rendered at zero size) pass every non-visual gate. See the user-scoped `verify-fix-loop-expert` wiki for the full four-gate protocol.
 
-1. Build succeeds
-2. Unit and integration tests pass
-3. Verifier wave APPROVED (completeness/quality/security)
-4. **Run `imrdy render --all` and inspect every PNG** — mandatory fourth seal
+### Render with the binary you just built
 
-A passing verifier wave is NOT a substitute for visual inspection. Layout-collapse bugs (controls rendered at zero size) pass all three verifier gates cleanly. See the user-scoped `verify-fix-loop-expert` wiki for the full four-gate protocol.
+The bare `imrdy` on PATH is `~/.local/bin/imrdy.exe`, the binary the last `./build-dev.sh` deployed. `dotnet build` does not touch it. So `dotnet build` + `imrdy render --all` renders with the previously deployed code and reports "defects" that are already fixed in source — a stale grip-less overlay at the old panel widths was once filed exactly that way.
 
-### PATH Binary Staleness Gotcha
-
-The bare `imrdy` command on PATH resolves to `~/.local/bin/imrdy.exe`, the deployed binary from the last `build-dev.sh` run. `dotnet build` only rebuilds the Debug assembly in `bin/Debug/.../imrdy.exe` — it does NOT touch the PATH binary. This means:
-
-- **`dotnet build` + `imrdy render --all`** = renders with yesterday's (or older) binary
-- **`./build-dev.sh` + `imrdy render --all`** = renders with today's source
-
-If a visual-seal step runs `imrdy render` via the bare PATH command without first running `./build-dev.sh`, the render will silently use a stale deployed binary, producing false-positive "defects" (visual artifacts from old code that are already fixed in source).
-
-**Solution:** Always run `./build-dev.sh` immediately before `imrdy render --all` during visual-seal verification. Alternatively, invoke the just-built Debug exe by its full bin path: `src/Imrdy.Windows/bin/Debug/net10.0-windows/win-x64/imrdy.exe render --all`.
-
-**Discovery:** During step 3 iteration 2, the visual seal reported a missing grip handle and wrong panel widths (72×72 / 360×72). The source in `OverlayPanel.cs` already had the grip correctly implemented. Running `./build-dev.sh` to redeploy the binary fixed the PATH binary; re-running `imrdy render --all` then showed the correct output (86×72 / 374×72) with the grip visible — no source change was needed.
-
-## Deferred
-
-Currently omitted:
-- `--json` output (machine-readable metadata)
-- `--quiet` / `--verbose` / `--version` flags
-
-These defer per D8 (add on first external consumer, not speculatively).
+Run `./build-dev.sh` immediately before `imrdy render --all`, or invoke the just-built Debug exe by path: `src/Imrdy.Windows/bin/Debug/net10.0-windows10.0.17763.0/win-x64/imrdy.exe render --all`.
 
 ## Related
 
-- [Dev Build Marker & Logging](dev-build-marker-logging.md) — `.dev-build` controls both default output dir and debug logging
-- [Hover Dashboard Form Lifecycle](hover-dashboard-form-lifecycle.md) — `SessionDashboardForm` is the Phase 1 render target; form lifecycle constraints apply equally to preview and render paths
+- [Dev Build Marker & Logging](dev-build-marker-logging.md) — `.dev-build` controls both the default output root and debug logging
+- [Hover Dashboard Form Lifecycle](hover-dashboard-form-lifecycle.md) — the dashboard forms render captures
+- [xunit Parallel Console Redirects](xunit-parallel-console-redirect.md) — why the render CLI tests share one `[Collection]`

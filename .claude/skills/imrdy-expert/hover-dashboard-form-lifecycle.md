@@ -1,6 +1,7 @@
 ---
 tags: [imrdy-expert/dashboard]
-summary: "HoverDashboardFormBase owns the shared shell (DWM, focus guard, pin/unpin, anchor placement); derived forms (SessionDashboardForm, WorkspaceDashboardForm) own their content panels — field-promote all dynamic controls for Update(vm) access"
+summary: "HoverDashboardFormBase owns the shared shell (rounded Region, focus guard, pin/unpin, anchor placement, all-desktops pinning); derived forms (SessionDashboardForm, WorkspaceDashboardForm) own their content panels — field-promote all dynamic controls for Update(vm) access"
+last-verified: "2026-09-25"
 ---
 
 # Hover Dashboard Form Lifecycle
@@ -13,11 +14,13 @@ summary: "HoverDashboardFormBase owns the shared shell (DWM, focus guard, pin/un
 - No DWM mica backdrop — dashboards fade via `Form.Opacity` (layered window); mica on a layered form composites white into GDI `Region`-carved corners. `ImrdyPalette.ApplyMica` is NOT called from `OnHandleCreated`. Overlay uses DWM mica; dashboards do not.
 - Rounded `Region` clip (radius 14)
 - `WM_MOUSEACTIVATE` focus guard (`MA_NOACTIVATE` when unpinned / `MA_ACTIVATE` when pinned)
+- `ShowWithoutActivation => true`, so `Show()` never activates the form and disposing a shown dashboard never changes the OS active window (see [Hover Dashboard State Machine](hover-dashboard-state-machine.md) for the menu it would otherwise close)
 - `Pin()` / `Unpin()` / `IsPinned` API — two-click pin-then-activate invariant
 - Escape key handler — `OnKeyDown` unpins + hides
-- Adaptive screen-aware anchor-edge placement (`PlaceWithAnchor` — above/below flip + multi-monitor X clamp)
+- Screen-aware anchor-edge placement (`ComputeAnchorPlacement` → `PlaceWithAnchor`)
+- `PinAcrossVirtualDesktops()` — pins the form to every virtual desktop
 - `FormatDuration` — thin delegating wrapper to `RelativeTimeFormatter` in `Imrdy.Core.Time`
-- Palette colors (`BgForm`, `FgPrimary`, `FgSecondary`, `FgMuted`, `BgFooter`) sourced from `ImrdyPalette` (extracted to `src/Imrdy.Windows/Theme/`); `BridgeGap=12` as `protected static`
+- Palette colors (`BgForm`, `FgPrimary`, `FgSecondary`, `FgMuted`, `BgFooter`) sourced from `ImrdyPalette` (`src/Imrdy.Windows/Theme/`); `BridgeGap=12` as `protected const`
 - `FormMinWidth = 520` declared on base so derived forms seed inner widths consistently
 
 Derived classes own their **content panel only**:
@@ -26,180 +29,59 @@ Derived classes own their **content panel only**:
 
 **Field-promote pattern**: every control whose text/visibility/colors change per-VM must be declared as a class field. `Update(vm)` is the sole content source — locals inside helper methods are unreachable from `Update`. See [WinForms Update Field-Promote](winforms-update-field-promote.md).
 
-**Conditional rows**: use `SetRowVisible(rowIndex, visible, height)` to toggle `TableLayoutPanel.RowStyle.Height` between 0 (hidden) and the normal height (visible). Both `SessionDashboardForm` and `WorkspaceDashboardForm` use this pattern for the git row.
+**Conditional rows**: use `SetRowVisible(rowIndex, visible, height)` to toggle `TableLayoutPanel.RowStyle.Height` between 0 (hidden) and the normal height (visible). Both `SessionDashboardForm` and `WorkspaceDashboardForm` use this pattern.
 
 **BuildLayout / Update split**: ctor calls `BuildLayout()` (VM-agnostic skeleton: create controls, add to layout, wire fonts/colors) then `Update(vm)` (sole content source: assign text, set visibility, rebuild chip lists). On each VM refresh, only `Update(vm)` is called — no re-layout.
 
-## The Challenge
+## Show Sequence
 
-A non-layered top-level WinForms form must appear instantly on hover (200ms dwell) **on whichever virtual desktop the user is currently viewing**. Three problems collide:
+`HoverDashboardControllerBase.TryShowForm` builds the view model, then:
 
-1. **Virtual desktop binding:** Non-layered forms are automatically bound to the desktop they were created on. Once bound, the form is invisible on all other desktops.
-2. **Geometry constraints:** The overlay defaults to the bottom of the screen, so a downward-tether form would be created off-screen. Screen awareness is required.
-3. **Form persistence:** A form created on desktop 1 cannot be moved to desktop 2 via `IVirtualDesktopManager.MoveWindowToDesktop` (the stable documented API) — Windows silently ignores the request for non-layered, already-visible windows.
+1. **Recreate** — `DisposeForm()` on any previous form, then `CreateForm(viewModel)`. A dashboard is never reused across shows.
+2. **Place** — `ComputeAnchorPlacement(overlayBounds, cursor, workingArea)` then `PlaceWithAnchor`.
+3. **Fade in** — `Opacity = 0`, then `ShowForm`; the drain tick steps opacity by 0.5 per tick.
+4. **Pin to all desktops** — `PinAcrossVirtualDesktops()`.
+5. `OnFormShown`, then the `FormShown` event (the cross-controller hide protocol).
 
-## Solution Architecture
+Hiding fades out the same way and disposes the form when opacity reaches 0; `ForceHideForm` disposes immediately.
 
-### Three-Part Pattern
+## Placement
 
-1. **Adaptive anchor**: Screen-aware positioning (below if fits, above otherwise)
-2. **Recreate-per-show**: Dispose form on hide, create fresh on dwell (ensures desktop binding at creation time)
-3. **IVirtualDesktopPinnedApps for persistence**: If the form must stay visible across desktops (not applicable to step-02 hover, but documented for future use)
+`ComputeAnchorPlacement` uses the working area of `Screen.FromControl(_overlayWindow)` — never `Screen.PrimaryScreen`, which is wrong when the overlay sits on a secondary monitor.
 
-## Part 1: Adaptive Anchor — Screen-Aware Positioning
+- **Y:** below the overlay (`BridgeGap` under its bottom edge) when the form fits there, else above it; when neither fits, whichever side has more room.
+- **X:** the form's span is kept inside the overlay's span, sliding toward the cursor within that range; when the form is wider than the overlay it is centred over the overlay. A final clamp keeps it inside the working area. Do NOT centre on the cursor X — the form width is fixed, so for an edge-docked overlay that pins the popup to the screen edge.
 
-A bottom-anchored overlay with downward tether breaks when the overlay sits near the bottom of the screen. Use `Screen.FromControl(_overlayWindow).WorkingArea` to detect monitor bounds and pick the anchor direction dynamically.
+The grace-corridor geometry (`Rectangle.Union` + `BridgeGap` inflate) is agnostic to above/below.
 
-**Bad pattern (hard-coded below):**
-```csharp
-var overlayBounds = _overlayWindow.Bounds;
-var formBounds = new Rectangle(
-    overlayBounds.Left + 20,
-    overlayBounds.Bottom + gap,  // ← Always below, even if off-screen
-    width, height
-);
-```
+## Virtual Desktops
 
-**Good pattern (adaptive):**
-```csharp
-var screen = Screen.FromControl(_overlayWindow);
-var workingArea = screen.WorkingArea;
-var overlayBounds = _overlayWindow.Bounds;
+A shown dashboard has to appear on whichever virtual desktop the user is on. Two mechanisms carry that:
 
-// Try below first
-var formBounds = new Rectangle(
-    Math.Max(workingArea.Left, overlayBounds.Left + 20),
-    overlayBounds.Bottom + gap,
-    width, height
-);
+- **Recreate-per-show.** A fresh top-level window is created on the current desktop. Moving an existing shown window with the documented `IVirtualDesktopManager::MoveWindowToDesktop` was tried and returned `S_OK` without moving it, so no code path relies on it.
+- **Pin to all desktops.** `PinAcrossVirtualDesktops` calls `IDesktopManager.PinWindowToAllDesktops(Handle)`, which pins the window's `IApplicationView` through `IVirtualDesktopPinnedApps`. It is a no-op when the form has no desktop manager — headless callers (`imrdy render`, fixtures) pass `null`.
 
-// Flip above if it doesn't fit
-if (formBounds.Bottom > workingArea.Bottom)
-{
-    formBounds.Y = overlayBounds.Top - gap - height;
-}
-
-// Clamp X to working area (multi-monitor safety)
-if (formBounds.Right > workingArea.Right)
-{
-    formBounds.X = workingArea.Right - width;
-}
-```
-
-**Key details:**
-- Use `Screen.FromControl(_overlayWindow)`, NOT `Screen.PrimaryScreen` — fails on multi-monitor setups where the overlay is on a secondary monitor.
-- X is constrained to the overlay panel's horizontal span, biased toward the hovered chip (falls back to overlay center when the form is wider than the overlay). Final working-area clamp is retained. Do NOT center on cursor X — for an edge-docked overlay this pins the popup to the screen edge.
-- The grace-corridor geometry (`Rectangle.Union` + `BridgeGap` expansion) is agnostic to above/below — it works identically either way.
-
-### Part 2: Recreate-Per-Show — Virtual Desktop Binding Strategy
-
-**Attempted approach (FAILED):** Call `IVirtualDesktopManager.MoveWindowToDesktop` after `Show`.
-
-```csharp
-// Iter 7–8 approach — Windows silently ignores this for non-layered, shown windows
-_form.Show();
-_desktopManager.MoveWindowToCurrentDesktop(_form.Handle);  // ← S_OK but no-op
-```
-
-**Why it fails:** The documented COM API `IVirtualDesktopManager::MoveWindowToDesktop` (GUID `a5cd92ff-29be-454c-8d04-d82879fb3f1b`, slot 3) returns `S_OK` but Windows silently rejects the request for non-layered, already-visible top-level windows. The shell enforces desktop binding separately from the COM call's return value.
-
-**Working approach: Recreate-per-show**
-
-```csharp
-private void TryShowForm()
-{
-    DisposeForm();  // Clean up old form if any
-    _form = new SessionDashboardForm(...);
-    
-    var screen = Screen.FromControl(_overlayWindow);
-    var workingArea = screen.WorkingArea;
-    var overlayBounds = _overlayWindow.Bounds;
-    
-    // Adaptive anchor geometry (see Part 1)
-    var formBounds = ComputeFormBounds(overlayBounds, workingArea);
-    
-    _form.Bounds = formBounds;
-    _form.Show();
-    // Windows automatically binds this fresh top-level window to the current desktop
-}
-
-private void HideForm()
-{
-    DisposeForm();
-}
-
-private void DisposeForm()
-{
-    if (_form != null)
-    {
-        _form.Dispose();
-        _form = null;
-    }
-}
-```
-
-**Why this is cheap enough:**
-- SessionDashboardForm is a lightweight non-layered WinForms Form.
-- Even with full child-control layout (step 05), recreation is <50ms (acceptable within the 200ms dwell delay).
-- No `MoveWindowToDesktop` call needed — Windows binds each new form to the current desktop at creation time automatically.
-
-### Part 3: IVirtualDesktopPinnedApps for Persistence (Future Use)
-
-Step 02 hover dismisses on click, so persistence is not needed. Documented here for future surfaces (tooltips, persistent sidebars).
-
-**The API:**
-```csharp
-[ComImport]
-[Guid("B5A399E7-1C87-46B8-88E9-FC5747B171BD")]  // CLSID_VirtualDesktopPinnedApps
-private interface IVirtualDesktopPinnedApps
-{
-    int IsViewPinned(IntPtr view, out int isPinned);
-    int PinView(IntPtr view);
-    int UnpinView(IntPtr view);
-}
-```
-
-**Critical: IApplicationView is IInspectable**
-
-The `IApplicationView` interface type is `[InterfaceIsIInspectable]`. Do NOT try built-in marshaling on .NET 10 — use raw vtable dispatch instead (see `.NET 10: IInspectable Out-Parameter Marshaling Limitation` in com-interop-expert wiki). This caused iter 10 runtime failures.
-
-**Stable GUIDs (Win10 1809 → Win11 24H2, no build-keying):**
+Pinning uses raw vtable dispatch (`UnmanagedFunctionPointer` delegates, `IApplicationView` as an opaque `IntPtr`), not a `[ComImport]` interface: `IApplicationView` is an `IInspectable` interface that .NET 10's built-in COM marshaling does not handle as an out-parameter, and the `IApplicationViewCollection` slot has to be located at runtime. The GUIDs live in `ComVirtualDesktop`'s `PinningGuids`:
 
 | Name | GUID |
 |---|---|
 | `CLSID_VirtualDesktopPinnedApps` | `B5A399E7-1C87-46B8-88E9-FC5747B171BD` |
 | `IID_IVirtualDesktopPinnedApps` | `4CE81583-1E4C-4632-A621-07A53543148F` |
 | `IID_IApplicationViewCollection` | `1841C6D7-4F9D-42C0-AF41-8747538F10E5` |
-| `IID_IApplicationView` | `372E1D3B-38D3-42E4-A15B-8AB2B178F513` |
-
-**Pattern (not used in step 02, but if you need it):**
-```csharp
-// Acquire IApplicationView via raw vtable (see com-interop-expert wiki)
-var viewPtr = GetApplicationViewForHwnd(_form.Handle);
-
-// Pin it
-var pinnedApps = GetVirtualDesktopPinnedAppsInterface();
-var hr = pinnedApps.PinView(viewPtr);
-if (hr >= 0)
-{
-    // Form is now visible on all desktops
-}
-
-Marshal.Release(viewPtr);
-```
 
 ## Grace Corridor and Dismissal
 
 The form is dismissed when:
-1. Cursor leaves the grace corridor (expanded union of overlay bounds + form bounds) for `DwellResetDelay`
-2. User clicks on the overlay icon (activates a session) — `OverlayPanel.SurfaceInteracted` event fires (see [Hover Dashboard State Machine](hover-dashboard-state-machine.md))
+1. The cursor stays outside the grace corridor (overlay ∪ form, inflated by `BridgeGap`) for `DismissThresholdTicks`
+2. The user left-clicks an overlay chip — `OverlayPanel.SurfaceInteracted` fires
+3. The peer dashboard shows — `HideIfVisible` via the `FormShown` protocol
 
-The grace corridor geometry works identically for above/below anchoring — it's a simple `Rectangle.Union` with expansion.
+See [Hover Dashboard State Machine](hover-dashboard-state-machine.md) for all three.
 
 ## Related
 
-- [Hover Dashboard State Machine](hover-dashboard-state-machine.md) — Dismiss logic and event patterns
+- [Hover Dashboard State Machine](hover-dashboard-state-machine.md) — dwell, corridor, dismissal and the cross-controller protocol
 - [Dev Build Marker & Logging](dev-build-marker-logging.md) — Debug logging for diagnostic traces during development
-- [Overlay Interactivity](overlay-interactivity.md) — OverlayPanel single-class design and ISessionInteractionRouter
+- [Overlay Interactivity](overlay-interactivity.md) — the overlay's `SurfaceInteracted` and `DragCompleted` events
 - [Sparkline Reference Time](sparkline-reference-time.md) — ReferenceTime anchor on SparklineControl for correct fixture-preview rendering
 - [WinForms Custom Property Serialization](winforms-custom-property-serialization.md) — WFO1000 fix for SparklineControl.Timestamps and other non-serializable UserControl properties

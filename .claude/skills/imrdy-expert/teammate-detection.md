@@ -1,6 +1,7 @@
 ---
 tags: [imrdy-expert/teammates]
 summary: "How imrdy reads the background_tasks roster Claude Code sends: the agent_id gate keeps subagents from moving lead status, Stop/SubagentStop supply running_tasks, and DisplayStatus.Resolve renders an idle lead with a non-empty roster as teal"
+last-verified: "2026-09-25"
 ---
 
 # Teammate Detection
@@ -66,9 +67,8 @@ Logged as a warning, not an error.
 ## The roster (`background_tasks` → `running_tasks`)
 
 `Stop` and `SubagentStop` payloads carry a top-level `background_tasks` array listing everything
-still running for the session. **Only those two events carry it** — across the whole of
-`evidence/capture.log`, 13/13 `Stop` and 96/96 `SubagentStop` payloads have the key, and no other
-event type does. `HookCommand` deserializes it into `List<BackgroundTaskModel>?` and persists it as
+still running for the session. **Only those two events carry it** — in the Aug 2026 hook capture,
+13/13 `Stop` and 96/96 `SubagentStop` payloads have the key, and no other event type does. `HookCommand` deserializes it into `List<BackgroundTaskModel>?` and persists it as
 `StateFileModel.RunningTasks` (`running_tasks` on disk). See
 [Hook Events](hook-events.md#the-running-work-roster) for the per-entry wire shape.
 
@@ -84,8 +84,8 @@ event type does. `HookCommand` deserializes it into `List<BackgroundTaskModel>?`
 `newState.RunningTasks ?? existing.RunningTasks` merge — a write that says nothing about running
 work leaves the previous measurement in place.
 
-**Every entry counts, regardless of its `status` value (D19).** All 277 roster entries across
-`evidence/capture.log` are `status: "running"`, so a filter on that value would be written against
+**Every entry counts, regardless of its `status` value (D19).** All 277 roster entries in the
+Aug 2026 capture are `status: "running"`, so a filter on that value would be written against
 a vocabulary with exactly one observed member and would fail silently the day the vocabulary
 changed. Counting everything errs toward teal (silent); filtering would err toward premature green
 (noisy). The entry `status` rides on the `tasks=` token in the hook log so drift is detected
@@ -93,10 +93,20 @@ empirically rather than guessed at.
 
 **The roster is trusted verbatim — there is no self-inclusion filter (D3).** A `SubagentStop` can
 list its own `agent_id` among the running entries, but every observed case self-corrected within
-one event. See
-[SubagentStop rosters usually name a sibling](subagentstop-roster-usually-names-a-sibling.md)
-before concluding that a non-empty roster on a `SubagentStop` *is* self-inclusion — usually it is
-a stopping agent correctly reporting a different agent that is still running.
+one event.
+
+**A non-empty roster on a `SubagentStop` is usually a sibling, not self-inclusion.** Self-inclusion
+means one thing: the payload's own `agent_id` appears *inside its own* `background_tasks` array. In
+the Aug 2026 capture only 11 of 96 `SubagentStop` payloads did that; the common case is a stopping
+agent correctly reporting a *different* agent that is still running, and several stops in a row can
+carry textually identical rosters naming the same sibling. Compare the event's `agent_id` with the
+entry ids before counting anything as self-inclusion — the roster column alone cannot tell them
+apart. On the INF `Hook:` log line the actor is the `[teammate agent=…]` suffix at the end of the
+line, after the `tasks=` token.
+
+Do not assume subagent lifecycle events pair up inside a capture window either: a `SubagentStop`
+can reach the lead stream with no matching `SubagentStart` in the same capture, so
+`grep -c SubagentStart` is not an agent count.
 
 ## The roster-clearing rule (D25)
 
@@ -143,7 +153,7 @@ edit that looks like a simplification:
    reported running work — precisely the false-green bug this mechanism exists to remove.
 
 4. **There is no empirical basis for any `SessionStart` frequency claim.** The event appears
-   **0 times** in `evidence/capture.log`, which begins mid-session. This rule is derived from
+   **0 times** in the Aug 2026 roster capture, which begins mid-session. This rule is derived from
    process semantics — who owns a background task's lifetime — and not from a measurement. Do not
    attach an observed count to it, and treat any figure you find quoted against it as invented.
 
@@ -260,11 +270,3 @@ about `ClearsRoster` (see sub-point 4 above):
 `UserPromptSubmit` (14) — never by further lead work.** Lead `Stop` is therefore a reliable
 "waiting for the user" signal, and `Stop → idle` is correct. See [Hook Events](hook-events.md)
 for the registration gap this measurement also exposed.
-
-## Reference: clawd-on-desk
-
-The [clawd-on-desk](https://github.com/anthropics/clawd-on-desk) reference implementation:
-- Maps Stop→"attention" (one-shot 4s animation, not persistent status)
-- Tracks SubagentStart→"juggling" state
-- Uses `STATE_PRIORITY` ordering and `ONESHOT_STATES` set
-- Different philosophy: animation-based vs persistent icon status

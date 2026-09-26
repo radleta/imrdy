@@ -1,6 +1,7 @@
 ---
 tags: [imrdy-expert/ipc]
 summary: "Tray IPC: the render-live, inspect-live and links-live verbs — pipe protocol, dev-default gate, walker+analyzer, threading model, ACL"
+last-verified: "2026-09-25"
 ---
 
 # Tray IPC: the render-live, inspect-live and links-live verbs
@@ -16,8 +17,8 @@ Framing: 4-byte **little-endian length prefix** followed by a UTF-8 JSON body, u
 
 ### links-live
 
-The third verb, added for ruling r-2 so `imrdy links` can report **live** link health rather than
-only the records in `publishers.json`. It is session-independent: the handler returns the tray's own
+The third verb exists so `imrdy links` can report **live** link health rather than only the
+records in `publishers.json` (ruling r-2). It is session-independent: the handler returns the tray's own
 assembled `ConnectionsViewModel` — the same object the connections window renders — so the CLI and
 the window cannot disagree, and no second payload type was needed (`ConnectionsViewModel` was already
 registered in `ImrdyJsonContext` for the window).
@@ -50,7 +51,7 @@ Resolution rule used by `TrayApp`: `IpcEnabled ?? File.Exists(ImrdyPaths.DevBuil
 
 `EnsureDefaults` does **not** flatten null to false — the three-state semantics are intentional. Callers MUST use the `?? File.Exists(...)` idiom, never assume `IpcEnabled == false` means disabled.
 
-To enable in production: `imrdy config set diagnostics.ipcEnabled true` (or add `"diagnostics": { "ipcEnabled": true }` to `config.json`).
+To enable in production, add `"diagnostics": { "ipcEnabled": true }` to `config.json` — `imrdy config set` has no key for it. The config watcher does not start or stop the pipe; `ipcEnabled` is read when the tray starts.
 
 ## Schema versioning policy
 
@@ -60,7 +61,7 @@ To enable in production: `imrdy config set diagnostics.ipcEnabled true` (or add 
 - **Breaking changes** (field removal, type change, semantic change) bump to `"2"`. v1 and v2 will be co-served for at least one release cycle.
 - Agents SHOULD check `schemaVersion` before processing; treat unknown versions as future schemas and degrade gracefully.
 
-Full JSON shape documented in `docs/dashboard-inspect-schema.md`.
+Full JSON shape documented in [`docs/dashboard-inspect-schema.md`](../../../docs/dashboard-inspect-schema.md).
 
 ## Walker output shape (inspect-live)
 
@@ -116,9 +117,8 @@ Only the current user's SID gets `FullControl`. Other accounts cannot connect. A
 
 ## Cross-references
 
-- JSON schema details: `docs/dashboard-inspect-schema.md`
-- Dev build marker: `dev-build-marker-logging.md` (this wiki)
-- Render verb (offline DrawToBitmap): `render-verb-architecture.md` (this wiki)
+- JSON schema details: [`docs/dashboard-inspect-schema.md`](../../../docs/dashboard-inspect-schema.md)
+- [Dev Build Marker & Logging](dev-build-marker-logging.md)
+- [Render Verb Architecture](render-verb-architecture.md) — offline `DrawToBitmap` capture
 
-**Discovered:** During live-inspect step 09 source-doc rollup (schema drift check against as-built code).
-**Impact:** Agents using inspect-live must use `controlPath` (not `nodeIndex`) to identify findings, and must handle `"info"` severity. FormGeometry field names differ from the intuitive `x`/`y`/`width`/`height`.
+A consumer of `inspect-live` identifies a finding by `controlPath` (there is no `nodeIndex`), must handle `"info"` severity, and reads `FormGeometry` by its `formX`/`formWidth` names rather than `x`/`width`.

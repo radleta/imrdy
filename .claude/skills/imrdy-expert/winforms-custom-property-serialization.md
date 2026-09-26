@@ -1,6 +1,7 @@
 ---
 tags: [imrdy-expert/winforms]
 summary: "UserControl public properties of non-serializable types require DesignerSerializationVisibility attribute to avoid WFO1000 build error"
+last-verified: "2026-09-25"
 ---
 
 # WinForms Custom Property Serialization (WFO1000)
@@ -29,15 +30,9 @@ This tells the WinForms designer to skip the property during code generation **w
 
 ## When This Occurs
 
-This is a **design-time only** constraint. The property compiles fine and works at runtime. The error only appears in the Visual Studio designer's code generation phase when:
+WFO1000 is reported by `dotnet build` on the property declaration, not only inside the Visual Studio designer, and this repo's `TreatWarningsAsErrors=true` (`Directory.Build.props`) turns it into a build failure. The attribute changes nothing at runtime: the property stays public and assignable; it only tells the designer's code generator to skip it. `SparklineControl` carries it on both `Timestamps` and `ReferenceTime`.
 
-1. The UserControl is placed in a designer (e.g., a Form or another UserControl in the editor)
-2. Visual Studio generates code to serialize property values
-3. The designer doesn't recognize how to serialize `IReadOnlyList<DateTimeOffset>` and raises WFO1000
-
-## Impact
-
-Any `UserControl` in imrdy with public properties of non-serializable types needs this attribute. It's a WinForms designer serialization requirement, not a runtime constraint. Runtime property assignment works without the attribute — the attribute only silences the designer.
+Any `UserControl` or `Form` in imrdy that adds a public settable property of a type the designer cannot serialize needs this attribute.
 
 ## Related
 

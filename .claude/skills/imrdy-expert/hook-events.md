@@ -1,6 +1,7 @@
 ---
 tags: [imrdy-expert/hooks]
 summary: "All 20 Claude Code hook events — what they send, status mapping, the background_tasks roster on Stop/SubagentStop and its type-dependent entry shape, how to grep the tasks= token without reading your own echo, and real-world behavior"
+last-verified: "2026-09-25"
 ---
 
 # Hook Events
@@ -38,14 +39,14 @@ See [Status Mapping](status-mapping.md) for the two-layer mapping from hook even
 
 ## Key Behavioral Discoveries
 
-### Stop IS idle (corrected 2026-08-20)
-Earlier guidance said Stop fires between teammate coordination turns and therefore doesn't mean
-idle, so Stop was mapped to "done" (teal). **Measurement disproved this.** Across 1341 hook events
-from three heavy-subagent sessions, all 40 lead `Stop` events were followed by either
+### Stop means the lead is waiting
+A lead `Stop` is not a between-turns signal from teammate coordination, and mapping it to "done"
+(teal) is wrong. Measured in Aug 2026 across 1341 hook events from three heavy-subagent sessions,
+all 40 lead `Stop` events were followed by either
 `Notification/idle_prompt` (26) or `UserPromptSubmit` (14) — never by more lead work. Subagent turn
 ends do not surface as a lead `Stop`; a lead `Stop` fires only when the main agent's turn is over.
 
-`Stop` (without `agent_id`) is now the primary "waiting for the user" signal, and `idle_prompt` is
+`Stop` (without `agent_id`) is the primary "waiting for the user" signal, and `idle_prompt` is
 a 60s confirmation backstop rather than the sole authority.
 
 ### PermissionDenied → idle (not busy)
@@ -53,8 +54,8 @@ Initially mapped to "busy" assuming Claude would process the denial. Real-world 
 
 ### idle_prompt is a confirmation backstop
 Notification with notification_type="idle_prompt" fires ~60 seconds after the lead's last activity
-and repeats while the session stays idle. It confirms what `Stop` already established. It is no
-longer suppressed when teammates are active — that suppression was destroying the signal. See
+and repeats while the session stays idle. It confirms what `Stop` already established. It is not
+suppressed when teammates are active — suppressing it destroyed the signal. See
 [Teammate Detection](teammate-detection.md).
 
 ### agent_id presence is the teammate gate
@@ -118,9 +119,9 @@ Standard fields on every event: `hook_event_name`, `session_id`, `cwd`, `session
 | agent_id | Any event from a teammate/subagent |
 | agent_type | Any event from a teammate (e.g., "worker") |
 | **background_tasks** | **Stop and SubagentStop only** — see below |
-| agent_transcript_path | SubagentStop (96/96 across `evidence/capture.log`) |
-| is_interrupt | PostToolUseFailure (12/12 across `evidence/capture.log`; every observed value was `false`) |
-| duration_ms | PostToolUse (279/279) and PostToolUseFailure (12/12) across `evidence/capture.log` |
+| agent_transcript_path | SubagentStop (96/96 in the Aug 2026 capture) |
+| is_interrupt | PostToolUseFailure (12/12 in the Aug 2026 capture; every observed value was `false`) |
+| duration_ms | PostToolUse (279/279) and PostToolUseFailure (12/12) in the Aug 2026 capture |
 
 `agent_transcript_path`, `is_interrupt`, and `duration_ms` are recorded here because they are
 **observed on the wire**, not because imrdy consumes them. imrdy models none of the three; they
@@ -134,10 +135,10 @@ Undocumented fields land in `[JsonExtensionData]` on `HookEventModel` and are lo
 
 `Stop` and `SubagentStop` payloads carry a top-level `background_tasks` array listing everything
 still running for the session. **Only those two events carry it**, and both carry it always:
-across the whole of `evidence/capture.log`, **13/13 `Stop`** and **96/96 `SubagentStop`** payloads
-have the key, and no other event type has it at the top level.
+in the Aug 2026 hook capture, **13/13 `Stop`** and **96/96 `SubagentStop`** payloads have the key,
+and no other event type has it at the top level.
 
-> Parse, do not grep. A naive substring grep over `capture.log` also reports hits on `PreToolUse`,
+> Parse, do not grep. A naive substring grep over a raw capture also reports hits on `PreToolUse`,
 > `PostToolUse`, and `PostToolUseFailure`. All of them are the circular-capture artifact — the
 > harness recording its own analysis text inside a rendered `tool_input` — and none has the key at
 > the top level.
@@ -149,7 +150,7 @@ empty) are **different facts** and are never collapsed into each other. See
 
 ### Entry shape is type-dependent
 
-Two `type` values are observed across the 277 roster entries in `evidence/capture.log` — 216
+Two `type` values are observed across the 277 roster entries in the Aug 2026 capture — 216
 `subagent` and 61 `shell` — and **the two shapes differ in which keys are present**:
 
 ```json
@@ -159,6 +160,14 @@ Two `type` values are observed across the 277 roster entries in `evidence/captur
  {"id":"7f0c1a2b3d4e5f6a7","type":"subagent","status":"running",
   "description":"Investigate overlay chip cache invalidation","agent_type":"general-purpose"}]
 ```
+
+The values in that example are invented, and any example of a payload taken from a real capture
+must be. Roster `description` and `command` strings are another session's real task text — often
+from an unrelated, confidential codebase — and a pattern-based scan for ids, paths and usernames
+does not catch them, because they have no distinguishing shape. Keep the structure the example
+teaches (which keys each entry type carries, the `status` value) and fabricate every identifier and
+free-text string; then grep each literal of the finished example back against the capture — any
+match is not synthetic.
 
 | `type` | Key set (exact) | Count |
 |---|---|---|
@@ -186,7 +195,7 @@ Two things about that are easy to get backwards:
 harmlessly on deserialization and does not round-trip to the state file. Unknown members in general
 deserialize without error — a future Claude Code build adding a key will not break the hook path.
 
-Every observed entry is `status: "running"` — **277/277 across `evidence/capture.log`** — but
+Every observed entry is `status: "running"` — **277/277 in the Aug 2026 capture** — but
 imrdy counts entries without inspecting that field, since filtering on a one-member vocabulary
 would fail silently the day the vocabulary changed. Each entry's `status` is emitted on the
 `tasks=` token of the hook log line so drift shows up in the logs rather than being guessed at.
@@ -194,7 +203,7 @@ would fail silently the day the vocabulary changed. Each entry's `status` is emi
 ### Reading the `tasks=` token safely
 
 The obvious `grep -o "tasks=[0-9]*\[[^]]*\]"` **reports readings it never took.** That is not a
-hypothetical: the first RK5 census returned one non-`running` entry and appeared to trip the
+hypothetical: a census of the token once returned one non-`running` entry and appeared to trip the
 wire. The "entry" was the observing session's own grep output, echoed back into the hook log
 inside a `PostToolUse tool=Grep` payload — a log-injection false positive arriving by accident,
 with no attacker involved.

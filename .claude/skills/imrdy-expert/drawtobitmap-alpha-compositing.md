@@ -1,25 +1,17 @@
 ---
 tags: [imrdy-expert/rendering]
-summary: "DrawToBitmap requires higher alpha for decorative lines than runtime DWM compositing"
+summary: "DrawToBitmap renders very-low-alpha decorative lines invisible — dashboard border and separator lines use alpha 80, not the 20-alpha Border constant"
+last-verified: "2026-09-25"
 ---
 
-## DrawToBitmap Alpha Compositing: Very-Low-Alpha Colors Disappear
+## DrawToBitmap Alpha Compositing: Very-Low-Alpha Lines Disappear
 
-`Form.DrawToBitmap` (used by `DashboardRenderer`) composites children onto a pre-filled background color — it does not start from a transparent surface. GDI+ Pen/Brush with alpha below ~30 will render as nearly invisible because the compositing arithmetic yields a final pixel that is indistinguishable from the background color.
+`Form.DrawToBitmap` (used by every `imrdy render` component) renders alpha over an already-composited surface rather than a transparent one. A GDI+ `Pen` or `Brush` with a very low alpha therefore yields pixels indistinguishable from the background, and the line vanishes from the PNG.
 
-The design system `Border` constant (`Color.FromArgb(20, 255, 255, 255)`, ~8% white) is intentionally subtle at runtime (where DWM composites over a blurred backdrop). In the static PNG render path the backdrop is absent, so the same alpha value renders invisible.
+`SessionDashboardForm` keeps a design-system `Border` constant of `Color.FromArgb(20, 255, 255, 255)` (~8% white), copied from the mockup's CSS border alpha. Drawn at that alpha, the last-prompt accent line and the desktop-chip outline disappear from rendered PNGs, so both `Paint` handlers draw with `Color.FromArgb(80, 255, 255, 255)` instead — and the comment at each site says why.
 
-**Rule:** When painting decorative elements (border-left lines, separator lines) via `OnPaint` or `Paint` events that must be visible in `DrawToBitmap` output, use alpha ≥ 60–80 for single-pixel or 2px lines. Do not blindly copy the CSS `var(--border)` alpha (typically 8–15%).
-
-## Application
-
-In `SessionDashboardForm.OnPaint` overrides and child Panel `Paint` event handlers:
-- Border-left decorative lines: use `Color.FromArgb(80, 255, 255, 255)` or higher
-- Separator lines: use `Color.FromArgb(100, 255, 255, 255)` or higher
-- Nested child control Paint events: same rule applies if the control tree is rendered via `DrawToBitmap`
-
-For runtime display in the tray dashboard, the lower alpha values render correctly via DWM; the render-verb path is the only place this discrepancy appears.
+**Rule:** a decorative line (accent bar, separator, chip outline) painted in `OnPaint` or a `Paint` handler uses alpha ≥ 80 for 1–2px strokes. Do not copy a mockup's 8–15% border alpha straight into a pen; the visual seal would then inspect PNGs that are missing the line.
 
 ## Related
 
-- [Render Verb Architecture](render-verb-architecture.md) — DrawToBitmap caveats and render-registry contracts
+- [Render Verb Architecture](render-verb-architecture.md) — the capture sequence and other `DrawToBitmap` caveats

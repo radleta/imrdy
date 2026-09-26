@@ -1,6 +1,7 @@
 ---
 tags: [imrdy-expert/dashboard]
-summary: "VM-as-complete-render-contract: builders take explicit 'now' parameter; forms/renderers have zero clock reads; visual seal detected the clock-leak pattern when workspace ActivityText diverged hours after baseline capture"
+summary: "VM-as-complete-render-contract: builders take an explicit 'now' parameter and precompute every display string; forms/renderers have zero clock reads, so a fixture renders the same PNG at any hour"
+last-verified: "2026-09-25"
 ---
 
 # VM-as-Complete-Render-Contract
@@ -71,13 +72,9 @@ The VM-as-contract pattern applies to the _content_ of the VM. Keeping "ago" str
 
 See [Sparkline Reference Time](sparkline-reference-time.md) for the `ReferenceTime` pattern.
 
-## Discovery
+## How a clock leak shows up
 
-**How the clock-leak was found (workspace dashboard iter-3/4)**: the visual seal passed on the first render right after build. Hours later, a second render of the same fixture produced "active 6h 11m ago" instead of the baseline "active 5h 40m ago". The visual seal diff caught the divergence — the "ago" string was advancing with wall-clock time, revealing that `WorkspaceDashboardForm.Update` was reading `DateTimeOffset.UtcNow` directly.
-
-The fix was to move `ActivityText` computation into `WorkspaceDashboardViewModelBuilder.Build(entry, git, desktopIndex, lastSeenAt, now)` (explicit `now` parameter) and remove the clock read from the form.
-
-This is a canonical example of why visual seal testing across time is valuable: the first passing seal is insufficient if the render contains a live clock read.
+A form that reads the clock passes its first visual seal and fails a later one: the workspace dashboard's fixture rendered "active 5h 40m ago" at baseline and "active 6h 11m ago" hours later, because `WorkspaceDashboardForm.Update` read `DateTimeOffset.UtcNow`. Moving the computation into `WorkspaceDashboardViewModelBuilder.Build(entry, git, desktopIndex, lastSeenAt, now)` fixed it. A single seal run cannot catch this class — re-render an unchanged fixture later and diff, or grep the form for clock reads.
 
 ## Related
 

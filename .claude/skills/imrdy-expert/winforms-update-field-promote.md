@@ -1,6 +1,7 @@
 ---
 tags: [imrdy-expert/dashboard]
-summary: "Field-promote all dynamic WinForms controls for Update(vm) access; BuildLayout/Update split; SetRowVisible for conditional rows; chip list clear+rebuild — workspace→workspace stale-fields bug was caused by missing field promotion"
+summary: "Field-promote all dynamic WinForms controls for Update(vm) access; BuildLayout/Update split; SetRowVisible for conditional rows; chip list clear+rebuild — a dynamic control left as a local shows stale fields on switch"
+last-verified: "2026-09-25"
 ---
 
 # WinForms Update — Field-Promote Pattern
@@ -58,15 +59,15 @@ internal sealed class WorkspaceDashboardForm : HoverDashboardFormBase
     public void Update(WorkspaceDashboardViewModel vm)
     {
         // Sole content source — reassigns all dynamic controls
-        _nameLabel.Text     = vm.Name;
-        _desktopChip.Text   = $"Desktop {vm.Desktop + 1}";
-        _pathLabel.Text     = vm.WorkspacePath;
-        _iconStyleChip.Text = vm.IconStyle ?? "circles";
-        _activityLabel.Text = vm.ActivityText;
+        _nameLabel.Text        = vm.Name;
+        _desktopChip.Text      = $"Desktop {vm.Desktop}";
+        _iconStyleChip.Visible = vm.IconStyle is not null;
+        if (vm.IconStyle is not null) _iconStyleChip.Text = vm.IconStyle;
+        _pathLabel.Text        = vm.WorkspacePath;
+        _activityLabel.Text    = vm.ActivityText;
 
-        var hasGit = vm.Git is not null;
-        SetRowVisible(RowGit, hasGit, GitRowHeight);
-        if (hasGit) RebuildGitChips(vm.Git!);
+        SetRowVisible(RowGit, vm.Git is not null, GitRowHeight);
+        UpdateGitChips(vm.Git);   // disposes stale chips; adds new ones when Git is non-null
     }
 }
 ```
@@ -93,16 +94,18 @@ See [TableLayoutPanel Row Toggle](tablelayoutpanel-row-toggle.md) for MinimumSiz
 Chip list controls (FlowLayoutPanels populated with per-item labels) must be **cleared and rebuilt** on every `Update`:
 
 ```csharp
-private void RebuildGitChips(GitInfo git)
+private void UpdateGitChips(GitInfo? git)
 {
     // Dispose old controls before clearing (prevents GDI handle leak)
     foreach (Control c in _gitRow.Controls)
         c.Dispose();
     _gitRow.Controls.Clear();
 
-    if (git.Ahead > 0) _gitRow.Controls.Add(MakeChip($"↑{git.Ahead}"));
-    if (git.Behind > 0) _gitRow.Controls.Add(MakeChip($"↓{git.Behind}"));
-    if (!string.IsNullOrEmpty(git.Branch)) _gitRow.Controls.Add(MakeChip(git.Branch));
+    if (git is null) return;
+    _gitRow.Controls.Add(MakeChip($"⎇ {git.Branch}", ImrdyPalette.FgSecondary));
+    _gitRow.Controls.Add(MakeChip($"+{git.DirtyCount}", ImrdyPalette.FgSecondary));
+    if (git.Ahead > 0)  _gitRow.Controls.Add(MakeChip($"↑{git.Ahead}", ImrdyPalette.FgSecondary));
+    if (git.Behind > 0) _gitRow.Controls.Add(MakeChip($"↓{git.Behind}", ImrdyPalette.FgSecondary));
 }
 ```
 
@@ -116,13 +119,11 @@ The constructor follows this two-phase shape:
 2. **`BuildLayout()`** — build the VM-agnostic layout skeleton (TableLayoutPanel structure, fonts, fixed colors, padding)
 3. **`Update(vm)`** — assign all VM-specific values
 
-`SessionDashboardForm` follows the same pattern. When `SessionHoverDashboardController` calls `form.Update(newVm)` on a workspace→workspace switch, `Update` refreshes every dynamic field cleanly.
+`SessionDashboardForm` follows the same pattern. When the hover controller calls `form.Update(newVm)` on a switch from one item to another, `Update` refreshes every dynamic field cleanly.
 
-## Discovery
+## Why it matters
 
-**iter-5 bug**: after the iter-3/4 fix that introduced `ActivityText` as a builder-precomputed field and promoted `_activityLabel` to a class field, workspace→workspace switching still showed stale name/path/desktop for workspace B. Investigation revealed that `_nameLabel`, `_pathLabel`, `_desktopChip`, and `_iconStyleChip` were still local variables in `BuildLayout` — `Update(vm)` could not reach them. Promoting all four to class fields and adding assignments in `Update` fixed the bug.
-
-**Lesson**: when adding a new dynamic field to a form, always check whether the corresponding control is a class field. If it's a local, field-promote it before wiring the `Update` assignment.
+A form whose `Update` reaches only some of its dynamic controls looks correct on first show and goes stale on the first switch: workspace→workspace traversal once showed workspace B's activity under workspace A's name, path and desktop, because those labels were locals inside `BuildLayout` and only `_activityLabel` had been promoted. When adding a dynamic field to a form, check that its control is a class field before wiring the `Update` assignment.
 
 ## Related
 

@@ -1,6 +1,7 @@
 ---
 tags: [imrdy-expert/desktop-routing]
 summary: "SwitchToSessionDesktop 3-step routing: resolve target → switch desktop → guarded focus. WT skipped from dynamic lookup; ForceForeground guarded against ping-pong; auto-lock on SessionStart only"
+last-verified: "2026-09-25"
 ---
 
 # WT Desktop Routing
@@ -14,6 +15,8 @@ Clicking a tray dot for a session must (a) land the user on the right virtual de
 | 1. Resolve target | first block of method | Pick the desktop the user *should* land on |
 | 2. Switch desktop | second block | `_desktopManager.SwitchToDesktop(target.Value)` — fire this first, unconditionally |
 | 3. Guarded focus | third block | Best-effort `ForceForeground(hwnd)`, suppressed when it would cause ping-pong |
+
+A session from another machine never reaches these stages: `TrySwitchToRemoteSessionDesktop` runs first and switches to its desktop without any window lookup or focus. A same-machine WSL session falls through to the three stages below.
 
 Order matters: the desktop switch fires before any focus attempt because `ForceForeground` is the operation Windows can refuse from a balloon-tip context, while `SwitchToDesktop` works regardless. If focus fails, the user still lands on the right desktop.
 
@@ -58,11 +61,11 @@ if (target.HasValue)
 if (shouldFocus) { PInvokeWindow.ForceForeground(hwnd); }
 ```
 
-Three cases:
+Four cases:
 
 - **`target` null** — no switch happened, no risk of pulling the user away. `ForceForeground` fires unconditionally (old behavior).
 - **`hwndDesktop == target`** — terminal lives where the user just landed. `ForceForeground` fires. This is the lucky-match case for both pinned-and-actually-there and dynamic-lookup-set-target-from-hwnd.
-- **`hwndDesktop != target`** — terminal lives elsewhere. Suppress `ForceForeground`; the user stays on `target` without focus. Log the suppression with hwnd, hwndDesktop, target so the diagnostic is visible in `imrdy_*.log`.
+- **`hwndDesktop != target`** — terminal lives elsewhere. Suppress `ForceForeground`; the user stays on `target` without focus. Log the suppression with hwnd, hwndDesktop, target so the diagnostic is visible in the tray log (`~/.imrdy/logs/monitor_*.log`).
 - **`hwndDesktop is null`** — COM unavailable or hwnd gone between resolution and lookup. Skip (fail-safe — the desktop switch already landed the user correctly).
 
 The `target` is the desktop just switched to in step 2, so comparing `hwndDesktop` to `target` is functionally equivalent to comparing to `GetCurrentDesktopIndex()` but cheaper (no extra COM round-trip).
@@ -95,7 +98,7 @@ The auto-lock writes through `PersistSessionDesktopIndex`, which means the `Desk
 
 ## Residual race-loss hazard
 
-The auto-lock write inherits the structural tray-vs-hook race documented in [Tray vs Hook Write Race](tray-hook-write-race.md). A concurrent hook event that read the state file before the auto-lock write lands can apply `PreserveFields` against a stale `existing` snapshot and clobber the freshly written `DesktopIndex` with `null`. The mitigation (`PreserveFields` listing) only protects against the post-write hook event, not the in-flight one. This is acknowledged technical debt — closing the race fully requires architectural change (one-writer model or write-coordination). For day-to-day operation, the window is small (~50-200ms hook RMW) and tray writes are infrequent, so loss is rare.
+The auto-lock write inherits the structural tray-vs-hook race documented in [Tray vs Hook Write Race](tray-hook-write-race.md). A concurrent hook event that read the state file before the auto-lock write lands can apply `PreserveFields` against a stale `existing` snapshot and clobber the freshly written `DesktopIndex` with `null`. The mitigation (`PreserveFields` listing) only protects against the post-write hook event, not the in-flight one. For day-to-day operation, the window is small (~50-200ms hook RMW) and tray writes are infrequent, so loss is rare.
 
 ## Cross-references
 

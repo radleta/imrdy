@@ -1,6 +1,7 @@
 ---
 tags: [imrdy-expert/notifications]
 summary: "Dwell timer system that gates toast/sound behind status settling — prevents notification storms"
+last-verified: "2026-09-25"
 ---
 
 # Notification Dwell
@@ -12,7 +13,7 @@ summary: "Dwell timer system that gates toast/sound behind status settling — p
 1. On each 100ms drain tick, `OnDrainTimerTick` recomputes `DisplayStatus.Resolve` per session and
    diffs it against `SessionEntry.LastEffectiveStatus` — this **effective-status transition**, not
    the raw hook-driven `StateFileModel.Status` write, is what feeds the dwell system. It is the sole
-   dwell driver for status changes; `HandleSessionFileChanged` no longer creates a dwell entry on
+   dwell driver for status changes; `HandleSessionFileChanged` does not create a dwell entry on
    `statusChanged`. Icon updates track the same effective status and land within one 100ms tick.
 2. On a transition, `OnStatusChanged()` creates/replaces a pending dwell entry for the new effective
    status (this happens for every status, including "done" — see below).
@@ -46,10 +47,10 @@ Three layers prevent notification storms:
 
 When a new status change arrives before the dwell fires, it *replaces* the pending entry (latest wins). `LastNotifiedAt` is intentionally preserved across replacements to maintain the toast cooldown. This means rapid status cycling never triggers — only the final settled status fires.
 
-## Roster-Aware Behavior (rewritten Aug 2026)
+## Roster-Aware Behavior
 
 See [Teammate Detection](teammate-detection.md) for the full lead-readiness / roster /
-display-resolution system this replaced. Dwell no longer suppresses anything based on teammate
+display-resolution system. Dwell suppresses nothing based on teammate
 activity — it dwells every effective-status transition, including "done", and lets the toast/sound
 layer decide what's worth surfacing:
 
@@ -72,24 +73,22 @@ layer decide what's worth surfacing:
 
 ## The teal → green edge is hook-announced, not time-detected
 
-This is the part that changed. The edge used to be a *timeout*: nothing announced it, so the drain
-tick watched a clock and declared the session free once activity had been absent long enough. Dwell
-was therefore gating a notification whose trigger was the passage of time.
+Before Aug 2026 the edge was a *timeout*: nothing announced it, so the drain tick watched a clock
+and declared the session free once activity had been absent long enough.
 
-Now the edge is announced by a hook event. A `Stop` arrives carrying an empty `background_tasks`
+The edge is announced by a hook event. A `Stop` arrives carrying an empty `background_tasks`
 roster, that roster lands in the state file on the same atomic write as `Status = "idle"`,
 `DisplayStatus.Resolve` stops returning "done", and the transition is a genuine state change with a
 payload behind it. Nothing infers it from silence.
 
-**The drain-tick loop is unchanged and remains the single dwell driver (D7).** `OnDrainTimerTick`
-still recomputes `Resolve` per session every 100ms and diffs against
-`SessionEntry.LastEffectiveStatus`; that diff is still what creates the dwell entry. The difference
-is only in what makes the diff non-empty — a hook write rather than an elapsed interval — so the
-loop now fires on genuine state changes only. Removing it is a separate, independently verifiable
-change and was deliberately not bundled here.
+**The drain-tick loop is the single dwell driver (D7).** `OnDrainTimerTick`
+recomputes `Resolve` per session every 100ms and diffs against
+`SessionEntry.LastEffectiveStatus`; that diff is what creates the dwell entry. What makes the diff
+non-empty is a hook write rather than an elapsed interval, so the loop fires on genuine state
+changes only.
 
 Teal stays silent throughout (not in `DefaultToastEvents`, no sound arm) and the toast plus
-`SoundEvent.Finished` fire on the resulting done→idle edge, exactly as before.
+`SoundEvent.Finished` fire on the resulting done→idle edge.
 
 ## Sound Triggers
 

@@ -16,6 +16,8 @@ summary: "One-line description"
 
 Page staleness is tracked via git log / filesystem mtime — no `updated:` field required.
 
+**last-verified:** optional, a quoted date string (`last-verified: "2026-09-25"`) recording when the page's claims were last checked against the code — written only on a verification or a correction, never on an ordinary edit.
+
 ## Page Types
 
 - **Research**: Factual findings about platform behavior, system architecture, or codebase discovery
@@ -25,8 +27,8 @@ Page staleness is tracked via git log / filesystem mtime — no `updated:` field
 
 ## Linking
 
-Use standard markdown links: `[Page Title](page-file.md)` — not wikilinks.
+Use standard markdown links: `[Page Title](page-file.md)` — not wikilinks. Cite code as a link to the file with a stable token in the anchor text (``[`TrayApp.cs` `PersistSessionField`](../../../src/Imrdy.Windows/TrayApp.cs)``), never a line number.
 
 ## Organization
 
-Pages live as flat siblings alongside SKILL.md. No deep nesting.
+Pages live as flat siblings alongside SKILL.md, with at most one level of group folder (e.g. `testing/`) when a subject area warrants it.

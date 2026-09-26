@@ -10,7 +10,7 @@ namespace Imrdy.Integration.Tests;
 /// roster survives source-generated JSON serialization through the <b>published single-file
 /// self-contained binary</b>, where a missing or wrong <c>[JsonSerializable]</c> registration
 /// produces silent null output rather than a build error (see
-/// <c>.claude/skills/imrdy-expert/displayitem-source-gen-gotcha.md</c>). This test deliberately
+/// <c>.claude/skills/imrdy-expert/source-gen-json-registration.md</c>). This test deliberately
 /// does <b>not</b> re-test branch logic, the D6 degradation, or the D3 self-inclusion lock — those
 /// live in <c>tests/Imrdy.Core.Tests/Hooks/HookCommandTests.cs</c> (D16) and run in-process against
 /// the standard unit pass. It requires a Release publish of <c>src/Imrdy.Windows</c>

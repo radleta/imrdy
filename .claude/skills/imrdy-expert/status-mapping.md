@@ -1,11 +1,12 @@
 ---
 tags: [imrdy-expert/status]
-summary: "Two-layer status mapping: hook event → base status → RGB color, with 9 base statuses"
+summary: "Status mapping: hook event → status → base status → RGB color, plus the display-only teal done status and icon aging tiers"
+last-verified: "2026-09-25"
 ---
 
 # Status Mapping
 
-imrdy uses a two-layer status mapping: hook events derive a status string, which maps to a base status, which maps to an RGB color.
+Hook events derive a status string, which maps to a base status, which maps to an RGB color.
 
 See [Hook Events](hook-events.md) for the full list of events that produce these statuses.
 
@@ -80,7 +81,7 @@ stops sending `background_tasks`, imrdy reverts to lead-readiness-only behaviour
 idle, exactly as it behaved before the teal layer — rather than stranding sessions at teal.
 
 **Every entry counts, whatever its `status` value (D19).** `Resolve` tests `Count > 0` and does not
-inspect `BackgroundTaskModel.Status`. All 277 roster entries across `evidence/capture.log` are
+inspect `BackgroundTaskModel.Status`. All 277 roster entries in the Aug 2026 hook capture are
 `status: "running"`, so filtering on that value would encode a guess about a one-member vocabulary.
 
 Teal exists because an idle lead with running work may **resume itself** without the user —
@@ -108,8 +109,7 @@ A hook event announces it: the roster comes back empty on a `Stop`, `Resolve` st
 
 `OnDrainTimerTick` still compares `DisplayStatus.Resolve(...)` against
 `SessionEntry.LastEffectiveStatus` every 100ms and drives both the icon and the dwell entry from
-that transition — the loop is unchanged (D7), it simply now fires only on genuine state changes
-rather than on the passage of time. This keeps the drain tick the single dwell driver for status
+that transition (D7); it fires only on genuine state changes, never on the passage of time. This keeps the drain tick the single dwell driver for status
 changes, which is what keeps teal silent and green audible.
 
 ## Aging
