@@ -181,6 +181,8 @@ public sealed class WireListener : IDisposable
         {
             using (client)
             {
+                // Without probes a half-open link reads as connected here forever.
+                WireProtocol.EnableKeepAlive(client.Client);
                 var reader = new WireLineReader(client.GetStream());
 
                 while (true)

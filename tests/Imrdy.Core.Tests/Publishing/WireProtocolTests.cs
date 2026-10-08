@@ -1,3 +1,4 @@
+using System.Net.Sockets;
 using System.Text;
 using FluentAssertions;
 using Imrdy.Core.Publishing;
@@ -118,5 +119,25 @@ public class WireProtocolTests
     public void IsCompatible_AcceptsOnlyTheSameMajor(string? version, bool expected)
     {
         WireProtocol.IsCompatible(version).Should().Be(expected);
+    }
+
+    [Fact]
+    public void EnableKeepAlive_ProbesAnIdleLinkWithinAMinute()
+    {
+        using var socket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+
+        WireProtocol.EnableKeepAlive(socket);
+
+        ((int)socket.GetSocketOption(SocketOptionLevel.Socket, SocketOptionName.KeepAlive)!).Should().NotBe(0);
+        socket.GetSocketOption(SocketOptionLevel.Tcp, SocketOptionName.TcpKeepAliveTime).Should().Be(30);
+        socket.GetSocketOption(SocketOptionLevel.Tcp, SocketOptionName.TcpKeepAliveInterval).Should().Be(10);
+        socket.GetSocketOption(SocketOptionLevel.Tcp, SocketOptionName.TcpKeepAliveRetryCount).Should().Be(3);
+
+        if (OperatingSystem.IsLinux())
+        {
+            var userTimeout = new byte[4];
+            socket.GetRawSocketOption(6, 18, userTimeout);
+            BitConverter.ToInt32(userTimeout).Should().Be(60_000);
+        }
     }
 }

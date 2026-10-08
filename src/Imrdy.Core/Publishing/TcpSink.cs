@@ -266,6 +266,7 @@ public sealed class TcpSink : ISessionSink, IDisposable
         try
         {
             await client.ConnectAsync(_host, _port, cancellationToken).ConfigureAwait(false);
+            WireProtocol.EnableKeepAlive(client.Client);
 
             var stream = client.GetStream();
             var hello = WireProtocol.Serialize(

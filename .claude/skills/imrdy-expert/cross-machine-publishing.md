@@ -26,7 +26,10 @@ A publisher writes only through
   `FileSink`, never `Connected`: a mount has no connection to report.
 - **`TcpSink`** dials in the background with 1 s → 30 s exponential backoff, sends `hello` then a
   full connect snapshot, and **drops events while the link is down, never queues them**. The
-  connect snapshot on reconnect is what restores current state.
+  connect snapshot on reconnect is what restores current state. Both ends call
+  `WireProtocol.EnableKeepAlive` on the socket: nothing crosses a quiet link, so WSL's NAT
+  forgot it silently and Linux kept "sending" into it for ~15 minutes before reporting it dead,
+  leaving the receiver frozen. Keep the probes on both ends.
 - **[`SinkFactory.cs`](../../../src/Imrdy.Core/Publishing/SinkFactory.cs)** picks the sink by endpoint
   shape: `host:port` first, then a rooted path; anything else is skipped with a Warning.
   `IsFileEndpoint` answers from the same two branches in the same order — keep them in lockstep, or

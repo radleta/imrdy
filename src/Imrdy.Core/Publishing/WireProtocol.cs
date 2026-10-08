@@ -1,3 +1,4 @@
+using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
 
@@ -22,6 +23,30 @@ public static class WireProtocol
     /// logged reason instead of growing a buffer to fit it.
     /// </summary>
     public const int MaxLineBytes = 64 * 1024;
+
+    /// <summary>
+    /// Turns on TCP keepalive so an idle link is probed every few seconds. Nothing else crosses
+    /// a quiet link (the receiver never sends, D4), so without probes a NAT in the path — WSL's
+    /// default networking mode is one — silently forgets the connection, neither end hears of
+    /// it, and the publisher's next writes vanish for the ~15 minutes Linux spends retrying
+    /// before it reports the link dead. The probes keep the NAT entry alive and find a dead
+    /// peer in about a minute. Keepalive does not run while written data is unacknowledged, so
+    /// on Linux TCP_USER_TIMEOUT bounds that case to the same minute.
+    /// </summary>
+    public static void EnableKeepAlive(Socket socket)
+    {
+        socket.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.KeepAlive, true);
+        socket.SetSocketOption(SocketOptionLevel.Tcp, SocketOptionName.TcpKeepAliveTime, 30);
+        socket.SetSocketOption(SocketOptionLevel.Tcp, SocketOptionName.TcpKeepAliveInterval, 10);
+        socket.SetSocketOption(SocketOptionLevel.Tcp, SocketOptionName.TcpKeepAliveRetryCount, 3);
+
+        if (OperatingSystem.IsLinux())
+        {
+            const int IpProtoTcp = 6;
+            const int TcpUserTimeout = 18;
+            socket.SetRawSocketOption(IpProtoTcp, TcpUserTimeout, BitConverter.GetBytes(60_000));
+        }
+    }
 
     /// <summary>Serializes one frame to its wire line, newline included.</summary>
     public static byte[] Serialize(WireFrame frame)
